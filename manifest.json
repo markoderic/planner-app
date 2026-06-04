@@ -1,0 +1,19 @@
+{
+  "name": "Personal Planner",
+  "short_name": "Planner",
+  "description": "A mobile-first personal planner and life dashboard.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#050509",
+  "theme_color": "#050509",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
