@@ -1307,7 +1307,7 @@
         </section>
 
         <section class="card panel section">
-            <div class="section-header">
+            <div class="section-header task-tools-header">
               <h2>Custom tasks</h2>
               <div class="actions">
                 ${actionButton("add-task-category", "", "Add category", "plus", "secondary")}

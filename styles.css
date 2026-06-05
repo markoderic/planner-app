@@ -254,6 +254,33 @@ h3 {
   margin-left: auto;
 }
 
+.task-tools-header {
+  flex-wrap: wrap;
+  align-items: flex-start;
+  row-gap: 10px;
+}
+
+.task-tools-header h2 {
+  flex: 1 0 140px;
+  padding-top: 8px;
+}
+
+.task-tools-header > .actions {
+  flex: 1 1 280px;
+  min-width: 0;
+  margin-left: auto;
+}
+
+.task-tools-header > .actions .secondary {
+  flex: 0 0 auto;
+}
+
+.task-tools-header > .actions select {
+  flex: 1 1 132px;
+  min-width: 122px;
+  max-width: 190px;
+}
+
 .card {
   border: 1px solid rgba(255, 255, 255, 0.035);
   border-radius: var(--radius);
@@ -1075,8 +1102,8 @@ details[open] .details-body {
 }
 
 .tax-details summary {
-  min-height: 62px;
-  padding: 0 12px;
+  min-height: 70px;
+  padding: 10px 16px;
 }
 
 .summary-copy {
@@ -1111,7 +1138,7 @@ details[open] .details-body {
 }
 
 .tax-details-body {
-  padding: 0 12px 12px;
+  padding: 0 16px 14px;
 }
 
 .tax-scope-actions,
