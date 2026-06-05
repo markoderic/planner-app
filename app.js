@@ -141,6 +141,7 @@
   let syncPushTimer = null;
   let syncInFlight = false;
   let undoState = null;
+  let recentCompletion = null;
   let appData = loadData();
   normalizeData();
   saveData({ skipSync: true, touch: false });
@@ -259,6 +260,11 @@
     });
     appData.finance.debts.forEach((debt) => {
       debt.debtType = normalizedDebtType(debt);
+    });
+    appData.finance.spending.forEach((entry) => {
+      entry.paymentMethod = normalizedPaymentMethod(entry.paymentMethod, entry.debtId);
+      if (entry.necessary === undefined) entry.necessary = true;
+      if (entry.paymentMethod !== "Credit card") entry.debtId = "";
     });
   }
 
@@ -449,6 +455,30 @@
     return appData.finance.debts.filter((debt) => normalizedDebtType(debt) === "credit-card");
   }
 
+  function normalizedPaymentMethod(value = "", debtId = "") {
+    if (debtId) return "Credit card";
+    const method = String(value || "").toLowerCase();
+    if (method.includes("credit")) return "Credit card";
+    if (method.includes("cash")) return "Cash";
+    return "Debit card";
+  }
+
+  function spendingUsesCredit(entry = {}) {
+    return normalizedPaymentMethod(entry.paymentMethod, entry.debtId) === "Credit card";
+  }
+
+  function normalizeSpendingValues(values = {}) {
+    const cards = creditCardDebts();
+    const next = { ...values };
+    next.paymentMethod = normalizedPaymentMethod(next.paymentMethod, next.debtId);
+    if (next.paymentMethod === "Credit card" && !next.debtId && cards.length === 1) {
+      next.debtId = cards[0].id;
+    }
+    if (next.debtId) next.paymentMethod = "Credit card";
+    if (next.paymentMethod !== "Credit card") next.debtId = "";
+    return next;
+  }
+
   function icon(name) {
     const icons = {
       grid: '<path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z" />',
@@ -462,6 +492,7 @@
       trash: '<path d="M3 6h18" /><path d="M8 6V4h8v2" /><path d="M6 6l1 16h10l1-16" />',
       done: '<path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />',
       undo: '<path d="M9 14 4 9l5-5" /><path d="M4 9h11a5 5 0 0 1 0 10h-1" />',
+      chevron: '<path d="m9 18 6-6-6-6" />',
       calendar: '<path d="M8 2v4M16 2v4M3 10h18" /><path d="M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" />',
       chart: '<path d="M3 3v18h18" /><path d="M7 15v-5M12 15V7M17 15v-9" />',
       upload: '<path d="M12 16V4" /><path d="m7 9 5-5 5 5" /><path d="M20 16v4H4v-4" />',
@@ -762,6 +793,11 @@
         <div class="item-actions">${actions}</div>
       </article>
     `;
+  }
+
+  function recentCompletionClass(id, isComplete) {
+    if (recentCompletion?.id !== id) return "";
+    return isComplete ? "just-completed" : "just-uncompleted";
   }
 
   function emptyState(message) {
@@ -1093,8 +1129,8 @@
     const done = isHabitDone(habit.id, today());
     return itemCard({
       title: habit.title,
-      meta: [done ? "Complete today" : "Open today"],
-      className: done ? "complete" : "",
+      meta: [],
+      className: `daily-habit-card ${done ? "complete" : ""} ${recentCompletionClass(habit.id, done)}`,
       actions: `
         ${actionButton("toggle-daily-habit", habit.id, done ? "Uncheck" : "Complete", done ? "undo" : "check")}
         ${actionButton("edit-daily-habit", habit.id, "Edit", "edit")}
@@ -1121,7 +1157,7 @@
       title: task.title,
       meta: [task.category, task.priority, task.dueDate ? formatDate(task.dueDate) : "No due date", task.reminderTime ? `Reminder ${task.reminderTime}` : ""],
       note: task.notes,
-      className: task.completed ? "complete" : "",
+      className: `${task.completed ? "complete" : ""} ${recentCompletionClass(task.id, task.completed)}`,
       actions: `
         ${actionButton("toggle-task", task.id, task.completed ? "Uncomplete" : "Complete", task.completed ? "undo" : "check")}
         ${actionButton("edit-task", task.id, "Edit", "edit")}
@@ -1159,7 +1195,7 @@
         </section>
 
         <section class="metric-grid">
-          ${metric("Total current money", formatCurrency(finance.currentMoney), "Checking, savings, cash, other")}
+          ${metric("Total current money", formatCurrency(finance.currentMoney), "After cash/debit spending logged through today")}
           ${metric("Upcoming bills", formatCurrency(finance.billsDue), `${finance.billOccurrences.length} due in range`)}
           ${metric("Debt payments", formatCurrency(safeFinance.debtPayments), `${safeFinance.debtPaymentOccurrences.length} due in ${safetyRange.label.toLowerCase()}`)}
           ${metric("Safe-to-spend", formatCurrency(safeFinance.safeToSpend), `Protected through ${formatDate(safetyRange.end)}`)}
@@ -1193,7 +1229,9 @@
   function renderAccounts(finance, safeFinance = finance, safetyRange = finance.range) {
     return `
       <div class="metric-grid">
-        ${metric("Total current money", formatCurrency(finance.currentMoney), "")}
+        ${metric("Account balances", formatCurrency(finance.accountMoney), "Checking, savings, cash, other")}
+        ${metric("Cash/debit spent", formatCurrency(finance.postedCashSpending), "Already removed from current money")}
+        ${metric("Total current money", formatCurrency(finance.currentMoney), "Balances minus cash/debit spending")}
         ${metric("Safe-to-spend", formatCurrency(safeFinance.safeToSpend), `After obligations through ${formatDate(safetyRange.end)}`)}
       </div>
       <div class="list">
@@ -1278,12 +1316,20 @@
   function renderSpending(range) {
     const entries = appData.finance.spending.filter((entry) => dateInRange(entry.date, range));
     const total = sum(entries, (entry) => entry.amount);
+    const necessaryTotal = sum(entries.filter((entry) => entry.necessary !== false), (entry) => entry.amount);
+    const unnecessaryTotal = Math.max(0, total - necessaryTotal);
+    const cashDebitTotal = sum(entries.filter((entry) => !spendingUsesCredit(entry)), (entry) => entry.amount);
+    const creditTotal = sum(entries.filter(spendingUsesCredit), (entry) => entry.amount);
     const byCategory = groupTotals(entries, "category", (entry) => entry.amount);
     return `
       <div class="metric-grid">
         ${metric("Spending today", formatCurrency(sum(appData.finance.spending.filter((entry) => entry.date === today()), (entry) => entry.amount)), "")}
         ${metric("Spending this week", formatCurrency(sum(appData.finance.spending.filter((entry) => dateInRange(entry.date, calculateDateRange("week"))), (entry) => entry.amount)), "")}
         ${metric("Spending this month", formatCurrency(sum(appData.finance.spending.filter((entry) => dateInRange(entry.date, calculateDateRange("month"))), (entry) => entry.amount)), "")}
+        ${metric("Cash/debit spending", formatCurrency(cashDebitTotal), "Lowers current money")}
+        ${metric("Credit card spending", formatCurrency(creditTotal), "Raises linked card balance")}
+        ${metric("Unnecessary spending", formatCurrency(unnecessaryTotal), "Wants and leaks in this range")}
+        ${metric("Necessary spending", formatCurrency(necessaryTotal), "Needs in this range")}
         ${metric("Average daily", formatCurrency(total / daysBetween(range.start, range.end)), "Selected range")}
       </div>
       ${renderBarChart(byCategory, total)}
@@ -1295,14 +1341,16 @@
 
   function renderSpendingItem(entry) {
     const linkedDebt = entry.debtId ? findById(appData.finance.debts, entry.debtId) : null;
+    const method = normalizedPaymentMethod(entry.paymentMethod, entry.debtId);
     return itemCard({
       title: entry.note || entry.category || "Spending",
       meta: [
         formatCurrency(entry.amount),
         entry.category,
-        entry.necessary ? "Necessary" : "Optional",
+        entry.necessary !== false ? "Necessary" : "Unnecessary",
+        method,
         formatDate(entry.date),
-        linkedDebt ? `Charged to ${linkedDebt.name}` : entry.paymentMethod || ""
+        linkedDebt ? `Charged to ${linkedDebt.name}` : ""
       ],
       actions: `${actionButton("edit-spending", entry.id, "Edit", "edit")}${actionButton("delete-spending", entry.id, "Delete", "trash")}`
     });
@@ -1422,7 +1470,7 @@
   function renderForecast(finance, range, safeFinance = finance, safetyRange = range) {
     return `
       <div class="metric-grid">
-        ${metric("Projected balance", formatCurrency(finance.projectedBalance), "Current + income - bills - debt - spending - shopping")}
+        ${metric("Projected balance", formatCurrency(finance.projectedBalance), "Current + income - bills - debt - future cash/debit - shopping")}
         ${metric("Safe-to-spend", formatCurrency(safeFinance.safeToSpend), `Protected through ${formatDate(safetyRange.end)}`)}
         ${metric("Expected income", formatCurrency(finance.netIncome), "Selected range")}
         ${metric("Upcoming bills", formatCurrency(finance.billsDue), "Unpaid bills")}
@@ -1430,7 +1478,7 @@
         ${metric("Expected spending", formatCurrency(finance.spending), "Logged spending in range")}
         ${metric("Lowest balance", formatCurrency(safeFinance.lowestBalance), "Lowest protected balance")}
       </div>
-      <p class="tiny">Safe-to-spend reserves upcoming bills, debt payments, logged spending, and open shopping before calculating the daily limit.</p>
+      <p class="tiny">Cash and debit spending lowers current money. Credit card spending still counts in spending analytics, but it raises the linked card balance instead of lowering cash today.</p>
     `;
   }
 
@@ -1584,19 +1632,25 @@
 
   function renderMore() {
     const views = [
-      ["gym", "Gym"],
-      ["nutrition", "Nutrition"],
-      ["shopping", "Shopping List"],
-      ["reminders", "Calendar / Reminders"],
-      ["inbox", "Inbox / Quick Capture"],
-      ["review", "Weekly Review"],
-      ["settings", "Settings"]
+      { key: "gym", label: "Gym", icon: "target" },
+      { key: "nutrition", label: "Nutrition", icon: "spark" },
+      { key: "shopping", label: "Shopping List", icon: "wallet" },
+      { key: "reminders", label: "Calendar / Reminders", icon: "calendar" },
+      { key: "inbox", label: "Inbox / Quick Capture", icon: "plus" },
+      { key: "review", label: "Weekly Review", icon: "done" },
+      { key: "settings", label: "Settings", icon: "settings" }
     ];
     return `
       <div class="view">
         ${topbar("More", "Additional tools", actionButton("open-quick-add", "", "Quick capture", "plus", "primary"))}
-        <section class="subnav">
-          ${views.map(([key, label]) => `<button type="button" class="secondary ${ui.moreView === key ? "active" : ""}" data-action="set-more-view" data-view="${key}">${escapeHtml(label)}</button>`).join("")}
+        <section class="more-list" aria-label="More sections">
+          ${views.map((view) => `
+            <button type="button" class="more-row ${ui.moreView === view.key ? "active" : ""}" data-action="set-more-view" data-view="${escapeHtml(view.key)}">
+              <span class="more-row-icon">${icon(view.icon)}</span>
+              <span class="more-row-label">${escapeHtml(view.label)}</span>
+              <span class="more-row-arrow">${icon("chevron")}</span>
+            </button>
+          `).join("")}
         </section>
         ${renderMoreView()}
       </div>
@@ -2069,7 +2123,7 @@
   }
 
   function calculateFinance(range) {
-    const currentMoney = sum(appData.finance.accounts, (account) => account.balance);
+    const accountMoney = sum(appData.finance.accounts, (account) => account.balance);
     const incomeEntries = appData.finance.income.filter((entry) => dateInRange(incomeDate(entry), range));
     const grossIncome = sum(incomeEntries, entryGrossIncome);
     const netIncome = sum(incomeEntries, entryNetIncome);
@@ -2077,6 +2131,13 @@
     const workHours = sum(incomeEntries.filter((entry) => entry.type === "hourly"), (entry) => entry.hours);
     const spendingEntries = appData.finance.spending.filter((entry) => dateInRange(entry.date, range));
     const spending = sum(spendingEntries, (entry) => entry.amount);
+    const cashSpendingEntries = spendingEntries.filter((entry) => !spendingUsesCredit(entry));
+    const creditSpendingEntries = spendingEntries.filter(spendingUsesCredit);
+    const cashSpending = sum(cashSpendingEntries, (entry) => entry.amount);
+    const creditSpending = sum(creditSpendingEntries, (entry) => entry.amount);
+    const postedCashSpendingEntries = appData.finance.spending.filter((entry) => !spendingUsesCredit(entry) && entry.date && entry.date <= today());
+    const postedCashSpending = sum(postedCashSpendingEntries, (entry) => entry.amount);
+    const futureCashSpendingEntries = cashSpendingEntries.filter((entry) => entry.date > today());
     const billOccurrences = appData.finance.bills.flatMap((bill) => billOccurrencesInRange(bill, range)).sort((a, b) => a.date.localeCompare(b.date));
     const billsDue = sum(billOccurrences.filter((bill) => !bill.paid), (bill) => bill.amount);
     const debtPaymentOccurrences = appData.finance.debts.flatMap((debt) => debtPaymentOccurrencesInRange(debt, range)).sort((a, b) => a.date.localeCompare(b.date));
@@ -2086,13 +2147,16 @@
     const investmentValue = sum(appData.finance.investments, (investment) => investment.currentValue);
     const investmentGain = investmentValue - invested;
     const shopping = shoppingStats().remainingTotal;
-    const projectedBalance = currentMoney + netIncome - billsDue - debtPayments - spending - shopping;
+    const currentMoney = accountMoney - postedCashSpending;
+    const futureCashSpending = sum(futureCashSpendingEntries, (entry) => entry.amount);
+    const projectedBalance = currentMoney + netIncome - billsDue - debtPayments - futureCashSpending - shopping;
     const netWorth = currentMoney + investmentValue - totalDebt;
-    const lowestBalance = projectedLowestBalance(currentMoney, incomeEntries, billOccurrences, debtPaymentOccurrences, spendingEntries);
+    const lowestBalance = projectedLowestBalance(currentMoney, incomeEntries, billOccurrences, debtPaymentOccurrences, futureCashSpendingEntries);
     const safeToSpend = Math.max(0, Math.min(currentMoney, projectedBalance, lowestBalance));
     const dailyLimit = Math.max(0, safeToSpend / daysBetween(range.start, range.end));
     return {
       range,
+      accountMoney,
       currentMoney,
       incomeEntries,
       grossIncome,
@@ -2101,6 +2165,12 @@
       workHours,
       spendingEntries,
       spending,
+      cashSpendingEntries,
+      creditSpendingEntries,
+      cashSpending,
+      creditSpending,
+      postedCashSpending,
+      futureCashSpending,
       billOccurrences,
       billsDue,
       debtPaymentOccurrences,
@@ -2519,7 +2589,7 @@
       onSubmit(values);
       closeModal();
       saveData();
-      render();
+      render({ quiet: true });
     });
   }
 
@@ -2540,7 +2610,7 @@
       return `${label}<textarea ${common} ${placeholder}>${escapeHtml(value ?? field.default ?? "")}</textarea>${field.help ? `<span class="tiny">${escapeHtml(field.help)}</span>` : ""}</label>`;
     }
     if (field.type === "checkbox") {
-      return `<label class="checkbox-row"><input type="checkbox" name="${escapeHtml(field.name)}" ${value ?? field.default ? "checked" : ""}> ${escapeHtml(field.label)}</label>`;
+      return `<label class="checkbox-row"><input type="checkbox" name="${escapeHtml(field.name)}" ${value ?? field.default ? "checked" : ""}> <span>${escapeHtml(field.label)}${field.help ? `<small>${escapeHtml(field.help)}</small>` : ""}</span></label>`;
     }
     return `${label}<input type="${escapeHtml(field.type || "text")}" ${common} ${placeholder} ${step} ${min} ${max} value="${escapeHtml(value ?? field.default ?? "")}">${field.help ? `<span class="tiny">${escapeHtml(field.help)}</span>` : ""}</label>`;
   }
@@ -2651,10 +2721,17 @@
       { name: "category", label: "Category", type: "select", options: [{ value: "", label: "No category" }, ...appData.settings.spendingCategories.map((category) => ({ value: category, label: category }))] },
       { name: "date", label: "Date", type: "date", default: today(), required: true },
       { name: "note", label: "Note", type: "text" },
-      { name: "necessary", label: "Necessary", type: "checkbox", default: true },
+      {
+        name: "paymentMethod",
+        label: "Payment method",
+        type: "select",
+        options: ["Debit card", "Cash", "Credit card"],
+        default: "Debit card",
+        help: "Cash and debit lower current money. Credit raises the selected card balance."
+      },
       {
         name: "debtId",
-        label: "Charged to credit card",
+        label: "Credit card account",
         type: "select",
         options: [
           { value: "", label: cards.length ? "No linked card" : "No credit cards added" },
@@ -2662,7 +2739,7 @@
         ],
         help: cards.length ? "If selected, this spending increases that card balance." : "Add a credit card in Debt repayment to link spending."
       },
-      { name: "paymentMethod", label: "Payment method note", type: "text" }
+      { name: "necessary", label: "Necessary spending", type: "checkbox", default: true, help: "Used for needs vs wants analytics." }
     ];
   }
 
@@ -2774,7 +2851,7 @@
   }
 
   function spendingDebtAmount(entry) {
-    return Number(entry?.amount) || 0;
+    return spendingUsesCredit(entry) ? Number(entry?.amount) || 0 : 0;
   }
 
   function adjustDebtBalance(debtId, amount) {
@@ -2790,15 +2867,16 @@
   }
 
   function upsertSpending(id, values) {
+    const normalizedValues = normalizeSpendingValues(values);
     const previous = id ? { ...findById(appData.finance.spending, id) } : null;
-    const next = { ...(previous || {}), ...values };
+    const next = normalizeSpendingValues({ ...(previous || {}), ...normalizedValues });
     if (previous?.debtId && previous.debtId === next.debtId) {
-      const item = upsert(appData.finance.spending, id, values);
+      const item = upsert(appData.finance.spending, id, next);
       adjustDebtBalance(item.debtId, spendingDebtAmount(item) - spendingDebtAmount(previous));
       return item;
     }
     if (previous) applySpendingDebtImpact(previous, -1);
-    const item = upsert(appData.finance.spending, id, values);
+    const item = upsert(appData.finance.spending, id, next);
     applySpendingDebtImpact(item, 1);
     return item;
   }
@@ -2867,18 +2945,18 @@
     }
     if (action === "set-more-view") {
       ui.moreView = button.dataset.view;
-      return render();
+      return render({ quiet: true });
     }
     if (action === "set-school-class-filter") {
       ui.schoolClassFilter = button.dataset.classId || id || "all";
-      return render();
+      return render({ quiet: true });
     }
     if (action === "undo-finance-delete") return undoFinanceDelete();
     if (action === "open-quick-add") return openQuickAdd();
 
     const rerender = () => {
       saveData();
-      render();
+      render({ quiet: true });
     };
 
     const openEdit = (config) => openForm(config);
@@ -2893,8 +2971,11 @@
       case "toggle-daily-habit": {
         appData.habitCompletions[today()] = appData.habitCompletions[today()] || {};
         appData.habitCompletions[today()][id] = !appData.habitCompletions[today()][id];
-        saveData();
-        animateCompletionToggle(button, Boolean(appData.habitCompletions[today()][id]), "Uncheck", "Complete", "Complete today", "Open today");
+        recentCompletion = { id, complete: Boolean(appData.habitCompletions[today()][id]) };
+        rerender();
+        window.setTimeout(() => {
+          if (recentCompletion?.id === id) recentCompletion = null;
+        }, 700);
         break;
       }
       case "delete-daily-habit": {
@@ -2915,8 +2996,11 @@
         const item = findById(appData.tasks, id);
         if (!item) break;
         item.completed = !item.completed;
-        saveData();
-        animateCompletionToggle(button, Boolean(item.completed), "Uncomplete", "Complete");
+        recentCompletion = { id, complete: Boolean(item.completed) };
+        rerender();
+        window.setTimeout(() => {
+          if (recentCompletion?.id === id) recentCompletion = null;
+        }, 700);
         break;
       }
       case "delete-task":
@@ -2985,7 +3069,7 @@
         break;
       case "add-spending":
       case "edit-spending": {
-        const item = id ? findById(appData.finance.spending, id) : { necessary: true };
+        const item = id ? findById(appData.finance.spending, id) : { necessary: true, paymentMethod: "Debit card" };
         openEdit({ title: id ? "Edit spending" : "Add spending", fields: spendingFields(), initial: item, onSubmit: (values) => upsertSpending(id, values) });
         break;
       }
@@ -3346,7 +3430,7 @@
       if (item) {
         item.status = target.value;
         saveData();
-        render();
+        render({ quiet: true });
       }
       return;
     }
