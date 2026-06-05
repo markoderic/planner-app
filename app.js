@@ -315,7 +315,14 @@
     appData.finance.spending.forEach((entry) => {
       entry.paymentMethod = normalizedPaymentMethod(entry.paymentMethod, entry.debtId);
       if (entry.necessary === undefined) entry.necessary = true;
-      if (entry.paymentMethod !== "Credit card") entry.debtId = "";
+      if (entry.paymentMethod === "Credit card") {
+        entry.accountId = "";
+      } else {
+        entry.debtId = "";
+        if (!findById(appData.finance.accounts, entry.accountId)) {
+          entry.accountId = defaultSpendingAccountId(entry.paymentMethod);
+        }
+      }
     });
   }
 
@@ -512,6 +519,15 @@
     return appData.finance.debts.filter((debt) => normalizedDebtType(debt) === "credit-card");
   }
 
+  function defaultSpendingAccountId(method = "Debit card") {
+    const accounts = appData.finance?.accounts || [];
+    if (!accounts.length) return "";
+    const normalized = normalizedPaymentMethod(method);
+    const preferredType = normalized === "Cash" ? "cash" : "checking";
+    const preferred = accounts.find((account) => String(account.type || account.name || "").toLowerCase().includes(preferredType));
+    return (preferred || accounts[0]).id || "";
+  }
+
   function normalizedPaymentMethod(value = "", debtId = "") {
     if (debtId) return "Credit card";
     const method = String(value || "").toLowerCase();
@@ -532,7 +548,14 @@
       next.debtId = cards[0].id;
     }
     if (next.debtId) next.paymentMethod = "Credit card";
-    if (next.paymentMethod !== "Credit card") next.debtId = "";
+    if (next.paymentMethod === "Credit card") {
+      next.accountId = "";
+    } else {
+      next.debtId = "";
+      if (!findById(appData.finance.accounts, next.accountId)) {
+        next.accountId = defaultSpendingAccountId(next.paymentMethod);
+      }
+    }
     return next;
   }
 
@@ -1277,6 +1300,7 @@
     const todayTasks = filtered.filter((task) => task.dueDate === today() && !task.completed);
     const overdue = filtered.filter((task) => !task.completed && isBeforeToday(task.dueDate));
     const upcoming = sortByDate(filtered.filter((task) => !task.completed && task.dueDate > today())).slice(0, 20);
+    const completedTasks = filtered.filter((task) => task.completed);
 
     return `
       <div class="view">
@@ -1318,8 +1342,15 @@
             </div>
           <div class="details-stack">
             ${renderTaskGroup("Today", todayTasks)}
-            ${renderTaskGroup("Overdue", overdue)}
-            ${renderTaskGroup("Upcoming", upcoming)}
+            ${renderTaskGroup("Overdue", overdue, { open: overdue.length > 0 })}
+            ${renderTaskGroup("Upcoming", upcoming, { open: upcoming.length > 0 })}
+            ${renderTaskGroup("Task history", completedTasks, {
+              open: false,
+              countLabel: `${completedTasks.length} complete`,
+              emptyMessage: "Completed custom tasks will appear here.",
+              sortMode: "history",
+              className: "task-history-group"
+            })}
           </div>
         </section>
       </div>
@@ -1340,17 +1371,29 @@
     });
   }
 
-  function renderTaskGroup(title, tasks) {
+  function renderTaskGroup(title, tasks, options = {}) {
+    const open = options.open ?? true;
+    const countLabel = options.countLabel || String(tasks.length);
+    const emptyMessage = options.emptyMessage || `No ${title.toLowerCase()} tasks.`;
+    const sortedTasks = options.sortMode === "history" ? sortTaskHistory(tasks) : sortByDate(tasks);
     return `
-      <details class="card" open>
-        <summary><span>${escapeHtml(title)}</span><span class="tiny">${tasks.length}</span></summary>
+      <details class="card ${escapeHtml(options.className || "")}" ${open ? "open" : ""}>
+        <summary><span>${escapeHtml(title)}</span><span class="tiny">${escapeHtml(countLabel)}</span></summary>
         <div class="details-body">
           <div class="list">
-            ${tasks.length ? sortByDate(tasks).map(renderTaskItem).join("") : emptyState(`No ${title.toLowerCase()} tasks.`)}
+            ${tasks.length ? sortedTasks.map(renderTaskItem).join("") : emptyState(emptyMessage)}
           </div>
         </div>
       </details>
     `;
+  }
+
+  function sortTaskHistory(tasks) {
+    return [...tasks].sort((a, b) => taskHistoryDate(b).localeCompare(taskHistoryDate(a)));
+  }
+
+  function taskHistoryDate(task) {
+    return task.completedAt || task.dueDate || task.createdAt || "";
   }
 
   function renderTaskItem(task) {
@@ -1430,19 +1473,30 @@
   function renderAccounts(finance, safeFinance = finance, safetyRange = finance.range) {
     return `
       <div class="metric-grid">
-        ${metric("Account balances", formatCurrency(finance.accountMoney), "Checking, savings, cash, other")}
-        ${metric("Cash/debit spent", formatCurrency(finance.postedCashSpending), "Already removed from current money")}
-        ${metric("Total current money", formatCurrency(finance.currentMoney), "Balances minus cash/debit spending")}
+        ${metric("Account balances", formatCurrency(finance.accountMoney), "Available after posted cash/debit spending")}
+        ${metric("Entered balances", formatCurrency(finance.rawAccountMoney), "Manual account totals before spending")}
+        ${metric("Cash/debit spent", formatCurrency(finance.postedCashSpending), "Removed from available balances")}
         ${metric("Safe-to-spend", formatCurrency(safeFinance.safeToSpend), `After obligations through ${formatDate(safetyRange.end)}`)}
       </div>
       <div class="list">
-        ${appData.finance.accounts.length ? appData.finance.accounts.map((account) => itemCard({
-          title: account.name,
-          meta: [account.type || "Account", formatCurrency(account.balance)],
-          actions: `${actionButton("edit-account", account.id, "Edit", "edit")}${actionButton("delete-account", account.id, "Delete", "trash")}`
-        })).join("") : emptyState("Add checking, savings, cash, or other balances.")}
+        ${appData.finance.accounts.length ? appData.finance.accounts.map((account) => renderAccountItem(account, finance)).join("") : emptyState("Add checking, savings, cash, or other balances.")}
       </div>
     `;
+  }
+
+  function renderAccountItem(account, finance) {
+    const postedSpending = finance.accountSpendingById?.[account.id] || 0;
+    const available = (Number(account.balance) || 0) - postedSpending;
+    return itemCard({
+      title: account.name,
+      meta: [
+        account.type || "Account",
+        `Available ${formatCurrency(available)}`,
+        `Entered ${formatCurrency(account.balance)}`,
+        postedSpending ? `Posted spending ${formatCurrency(postedSpending)}` : ""
+      ],
+      actions: `${actionButton("edit-account", account.id, "Edit", "edit")}${actionButton("delete-account", account.id, "Delete", "trash")}`
+    });
   }
 
   function renderIncome(finance, range) {
@@ -1731,7 +1785,7 @@
         ${metric("Spending today", formatCurrency(sum(appData.finance.spending.filter((entry) => entry.date === today()), (entry) => entry.amount)), "")}
         ${metric("Spending this week", formatCurrency(sum(appData.finance.spending.filter((entry) => dateInRange(entry.date, calculateDateRange("week"))), (entry) => entry.amount)), "")}
         ${metric("Spending this month", formatCurrency(sum(appData.finance.spending.filter((entry) => dateInRange(entry.date, calculateDateRange("month"))), (entry) => entry.amount)), "")}
-        ${metric("Cash/debit spending", formatCurrency(cashDebitTotal), "Lowers current money")}
+        ${metric("Cash/debit spending", formatCurrency(cashDebitTotal), "Lowers account balances")}
         ${metric("Credit card spending", formatCurrency(creditTotal), "Raises linked card balance")}
         ${metric("Unnecessary spending", formatCurrency(unnecessaryTotal), "Wants and leaks in this range")}
         ${metric("Necessary spending", formatCurrency(necessaryTotal), "Needs in this range")}
@@ -1746,6 +1800,7 @@
 
   function renderSpendingItem(entry) {
     const linkedDebt = entry.debtId ? findById(appData.finance.debts, entry.debtId) : null;
+    const linkedAccount = entry.accountId && !spendingUsesCredit(entry) ? findById(appData.finance.accounts, entry.accountId) : null;
     const method = normalizedPaymentMethod(entry.paymentMethod, entry.debtId);
     return itemCard({
       title: entry.note || entry.category || "Spending",
@@ -1755,6 +1810,7 @@
         entry.necessary !== false ? "Necessary" : "Unnecessary",
         method,
         formatDate(entry.date),
+        linkedAccount ? `Paid from ${linkedAccount.name}` : "",
         linkedDebt ? `Charged to ${linkedDebt.name}` : ""
       ],
       actions: `${actionButton("edit-spending", entry.id, "Edit", "edit")}${actionButton("delete-spending", entry.id, "Delete", "trash")}`
@@ -2531,7 +2587,7 @@
   }
 
   function calculateFinance(range) {
-    const accountMoney = sum(appData.finance.accounts, (account) => account.balance);
+    const rawAccountMoney = sum(appData.finance.accounts, (account) => account.balance);
     const incomeEntries = appData.finance.income.filter((entry) => dateInRange(incomeDate(entry), range));
     const grossIncome = sum(incomeEntries, entryGrossIncome);
     const taxBreakdown = combineTaxEstimates(incomeEntries.map(entryTaxEstimate), grossIncome);
@@ -2546,6 +2602,12 @@
     const creditSpending = sum(creditSpendingEntries, (entry) => entry.amount);
     const postedCashSpendingEntries = appData.finance.spending.filter((entry) => !spendingUsesCredit(entry) && entry.date && entry.date <= today());
     const postedCashSpending = sum(postedCashSpendingEntries, (entry) => entry.amount);
+    const accountSpendingById = postedCashSpendingEntries.reduce((totals, entry) => {
+      if (entry.accountId) totals[entry.accountId] = (totals[entry.accountId] || 0) + (Number(entry.amount) || 0);
+      return totals;
+    }, {});
+    const linkedPostedCashSpending = sum(postedCashSpendingEntries.filter((entry) => entry.accountId), (entry) => entry.amount);
+    const unlinkedPostedCashSpending = Math.max(0, postedCashSpending - linkedPostedCashSpending);
     const futureCashSpendingEntries = cashSpendingEntries.filter((entry) => entry.date > today());
     const billOccurrences = appData.finance.bills.flatMap((bill) => billOccurrencesInRange(bill, range)).sort((a, b) => a.date.localeCompare(b.date));
     const billsDue = sum(billOccurrences.filter((bill) => !bill.paid), (bill) => bill.amount);
@@ -2556,7 +2618,8 @@
     const investmentValue = sum(appData.finance.investments, (investment) => investment.currentValue);
     const investmentGain = investmentValue - invested;
     const shopping = shoppingStats().remainingTotal;
-    const currentMoney = accountMoney - postedCashSpending;
+    const accountMoney = rawAccountMoney - postedCashSpending;
+    const currentMoney = accountMoney;
     const futureCashSpending = sum(futureCashSpendingEntries, (entry) => entry.amount);
     const projectedBalance = currentMoney + netIncome - billsDue - debtPayments - futureCashSpending - shopping;
     const netWorth = currentMoney + investmentValue - totalDebt;
@@ -2565,6 +2628,7 @@
     const dailyLimit = Math.max(0, safeToSpend / daysBetween(range.start, range.end));
     return {
       range,
+      rawAccountMoney,
       accountMoney,
       currentMoney,
       incomeEntries,
@@ -2580,6 +2644,9 @@
       cashSpending,
       creditSpending,
       postedCashSpending,
+      linkedPostedCashSpending,
+      unlinkedPostedCashSpending,
+      accountSpendingById,
       futureCashSpending,
       billOccurrences,
       billsDue,
@@ -3229,6 +3296,7 @@
 
   function spendingFields() {
     const cards = creditCardDebts();
+    const accounts = appData.finance.accounts || [];
     return [
       { name: "amount", label: "Amount", type: "number", step: "0.01", required: true },
       { name: "category", label: "Category", type: "select", options: [{ value: "", label: "No category" }, ...appData.settings.spendingCategories.map((category) => ({ value: category, label: category }))] },
@@ -3240,7 +3308,17 @@
         type: "select",
         options: ["Debit card", "Cash", "Credit card"],
         default: "Debit card",
-        help: "Cash and debit lower current money. Credit raises the selected card balance."
+        help: "Cash and debit lower available account balances. Credit raises the selected card balance."
+      },
+      {
+        name: "accountId",
+        label: "Paid from account",
+        type: "select",
+        options: [
+          { value: "", label: accounts.length ? "Auto-select account" : "No accounts added" },
+          ...accounts.map((account) => ({ value: account.id, label: account.name || "Account" }))
+        ],
+        help: "Cash and debit spending lowers this account's available balance. Credit card spending ignores this."
       },
       {
         name: "debtId",
@@ -3547,6 +3625,7 @@
         const item = findById(appData.tasks, id);
         if (!item) break;
         item.completed = !item.completed;
+        item.completedAt = item.completed ? nowIso() : "";
         recentCompletion = { id, complete: Boolean(item.completed) };
         rerender();
         window.setTimeout(() => {
@@ -3652,7 +3731,7 @@
         break;
       case "add-spending":
       case "edit-spending": {
-        const item = id ? findById(appData.finance.spending, id) : { necessary: true, paymentMethod: "Debit card" };
+        const item = id ? findById(appData.finance.spending, id) : { necessary: true, paymentMethod: "Debit card", accountId: defaultSpendingAccountId("Debit card") };
         openEdit({ title: id ? "Edit spending" : "Add spending", fields: spendingFields(), initial: item, onSubmit: (values) => upsertSpending(id, values) });
         break;
       }
