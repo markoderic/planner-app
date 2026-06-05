@@ -364,6 +364,12 @@
     return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", maximumFractionDigits: amount % 1 === 0 ? 0 : 2 }).format(amount);
   }
 
+  function formatCompactCurrency(value) {
+    const amount = Number(value) || 0;
+    if (Math.abs(amount) < 1000) return formatCurrency(amount);
+    return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", notation: "compact", maximumFractionDigits: 1 }).format(amount);
+  }
+
   function formatNumber(value, digits = 0) {
     return new Intl.NumberFormat(undefined, { maximumFractionDigits: digits }).format(Number(value) || 0);
   }
@@ -797,26 +803,20 @@
     const habit = habitStats(range);
     const task = taskStats(range);
     const school = schoolStats(range);
-    const gym = gymStats(range);
     const nutrition = nutritionStats(range);
-    const shopping = shoppingStats();
     const reminders = remindersInRange(range).filter((item) => !item.completed);
     const todayFocus = getTodayFocus();
     const weekly = weeklySummary();
+    const openBills = safeFinance.billOccurrences.filter((bill) => !bill.paid);
+    const obligationCount = openBills.length + safeFinance.debtPaymentOccurrences.length;
+    const obligationTotal = safeFinance.billsDue + safeFinance.debtPayments;
     const dashboardMetrics = `
       ${metric("Tasks completed", `${task.completed}/${task.total}`, `${task.percent}% complete`)}
-      ${metric("Daily habits completed", `${habit.completed}/${habit.total}`, `${habit.streak} day streak`)}
-      ${metric("Safe-to-spend money", formatCurrency(safeFinance.safeToSpend), `After ${safetyRange.label.toLowerCase()} bills, debt, spending, and shopping`)}
-      ${metric("Current balance", formatCurrency(finance.currentMoney), "All accounts")}
+      ${metric("Habits completed", `${habit.completed}/${habit.total}`, `${habit.streak} day streak`)}
+      ${metric("Safe-to-spend", formatCurrency(safeFinance.safeToSpend), `Protected through ${formatDate(safetyRange.end)}`)}
       ${metric("Projected balance", formatCurrency(finance.projectedBalance), range.label)}
-      ${metric("Income in range", formatCurrency(finance.netIncome), `${formatNumber(finance.workHours, 1)} work hours`)}
-      ${metric("Spending in range", formatCurrency(finance.spending), "Manual entries")}
-      ${metric("Bills due in range", formatCurrency(finance.billsDue), `${finance.billOccurrences.length} item${finance.billOccurrences.length === 1 ? "" : "s"}`)}
-      ${metric("Debt payments", formatCurrency(safeFinance.debtPayments), `${safeFinance.debtPaymentOccurrences.length} due in ${safetyRange.label.toLowerCase()}`)}
+      ${metric("Bills and debt", formatCurrency(obligationTotal), `${obligationCount} due`)}
       ${metric("Assignments due", String(school.openDue.length), `${school.overdue.length} overdue`)}
-      ${metric("Work hours logged", formatNumber(finance.workHours, 1), "Hourly income entries")}
-      ${metric("Gym sessions", String(gym.workouts.length), `${gym.streak} day streak`)}
-      ${metric("Shopping estimate", formatCurrency(shopping.remainingTotal), `${shopping.remainingCount} unpurchased`)}
     `;
     const ringMetrics = `
       ${ringMetric("Tasks", `${task.completed}/${task.total}`, task.percent, `${task.percent}% complete`)}
@@ -824,14 +824,7 @@
       ${ringMetric("Safe to spend", formatCurrency(safeFinance.safeToSpend), safeFinance.currentMoney ? (safeFinance.safeToSpend / safeFinance.currentMoney) * 100 : 0, safetyRange.label)}
       ${ringMetric("Projected", formatCurrency(finance.projectedBalance), finance.currentMoney ? (finance.projectedBalance / Math.max(finance.currentMoney, 1)) * 100 : 0, range.label)}
       ${ringMetric("School", String(school.openDue.length), school.total ? 100 - school.percent : 0, `${school.overdue.length} overdue`)}
-      ${ringMetric("Gym", String(gym.workouts.length), Math.min(100, gym.workouts.length * 34), `${gym.streak} day streak`)}
-      ${ringMetric("Income", formatCurrency(finance.netIncome), finance.netIncome ? 100 : 0, `${formatNumber(finance.workHours, 1)} hours`)}
-      ${ringMetric("Spending", formatCurrency(finance.spending), finance.currentMoney ? (finance.spending / Math.max(finance.currentMoney, 1)) * 100 : 0, "Selected range")}
-      ${ringMetric("Bills", formatCurrency(finance.billsDue), finance.currentMoney ? (finance.billsDue / Math.max(finance.currentMoney, 1)) * 100 : 0, `${finance.billOccurrences.length} due`)}
-      ${ringMetric("Debt", formatCurrency(safeFinance.debtPayments), safeFinance.currentMoney ? (safeFinance.debtPayments / Math.max(safeFinance.currentMoney, 1)) * 100 : 0, `${safeFinance.debtPaymentOccurrences.length} payments`)}
-      ${ringMetric("Shopping", formatCurrency(shopping.remainingTotal), safeFinance.safeToSpend ? (shopping.remainingTotal / Math.max(safeFinance.safeToSpend, 1)) * 100 : 0, `${shopping.remainingCount} items`)}
-      ${ringMetric("Work hours", formatNumber(finance.workHours, 1), Math.min(100, finance.workHours * 5), "Logged")}
-      ${ringMetric("Nutrition", appData.settings.nutrition ? `${nutrition.caloriePercent}%` : "Off", appData.settings.nutrition ? nutrition.caloriePercent : 0, appData.settings.nutrition ? `${formatNumber(nutrition.calories)} cal` : "Hidden")}
+      ${ringMetric("Bills + debt", formatCurrency(obligationTotal), finance.currentMoney ? (obligationTotal / Math.max(finance.currentMoney, 1)) * 100 : 0, `${obligationCount} due`)}
     `;
 
     return `
@@ -853,9 +846,56 @@
             <div class="stat-strip">
               <div class="strip-item"><span class="strip-value">${task.completed}/${task.total}</span><span class="strip-label">Tasks</span></div>
               <div class="strip-item"><span class="strip-value">${habit.percent}%</span><span class="strip-label">Habits</span></div>
-              <div class="strip-item"><span class="strip-value">${formatCurrency(safeFinance.safeToSpend)}</span><span class="strip-label">Safe to spend</span></div>
+              <div class="strip-item"><span class="strip-value">${formatCompactCurrency(safeFinance.safeToSpend)}</span><span class="strip-label">Safe to spend</span></div>
             </div>
           </div>
+        </section>
+
+        <section class="dashboard-overview" aria-label="Dashboard overview">
+          <article class="card overview-card overview-card-primary">
+            <div>
+              <p class="eyebrow">Today focus</p>
+              <h2 class="overview-value">${todayFocus.length}</h2>
+              <p class="muted">${todayFocus.length === 1 ? "open item" : "open items"} due today</p>
+            </div>
+            <div class="overview-pairs">
+              <span><b>${task.completed}/${task.total}</b> tasks</span>
+              <span><b>${habit.percent}%</b> habits</span>
+            </div>
+          </article>
+          <article class="card overview-card">
+            <div>
+              <p class="eyebrow">Money</p>
+              <h2 class="overview-value">${formatCurrency(safeFinance.safeToSpend)}</h2>
+              <p class="muted">safe through ${escapeHtml(formatDate(safetyRange.end))}</p>
+            </div>
+            <div class="overview-pairs">
+              <span><b>${formatCompactCurrency(finance.currentMoney)}</b> current</span>
+              <span><b>${formatCompactCurrency(finance.projectedBalance)}</b> projected</span>
+            </div>
+          </article>
+          <article class="card overview-card">
+            <div>
+              <p class="eyebrow">School</p>
+              <h2 class="overview-value">${school.openDue.length}</h2>
+              <p class="muted">assignments in ${escapeHtml(range.label.toLowerCase())}</p>
+            </div>
+            <div class="overview-pairs">
+              <span><b>${school.completed.length}/${school.total}</b> completed</span>
+              <span><b>${school.overdue.length}</b> overdue</span>
+            </div>
+          </article>
+          <article class="card overview-card">
+            <div>
+              <p class="eyebrow">Bills + debt</p>
+              <h2 class="overview-value">${formatCompactCurrency(obligationTotal)}</h2>
+              <p class="muted">${obligationCount} upcoming ${obligationCount === 1 ? "obligation" : "obligations"}</p>
+            </div>
+            <div class="overview-pairs">
+              <span><b>${openBills.length}</b> bills</span>
+              <span><b>${safeFinance.debtPaymentOccurrences.length}</b> debt payments</span>
+            </div>
+          </article>
         </section>
 
         <section class="${ui.dashboardStyle === "rings" ? "ring-grid" : "metric-grid"}">
@@ -891,7 +931,7 @@
           </div>
           ${progressRow("Tasks", weekly.tasks.percent, `${weekly.tasks.completed}/${weekly.tasks.total}`)}
           ${progressRow("Habits", weekly.habits.percent, `${weekly.habits.completed}/${weekly.habits.total}`)}
-          ${progressRow("School", weekly.school.percent, `${weekly.school.completed}/${weekly.school.total}`)}
+          ${progressRow("School", weekly.school.percent, `${weekly.school.completed.length}/${weekly.school.total}`)}
           ${progressRow("Nutrition", appData.settings.nutrition ? nutrition.caloriePercent : 0, appData.settings.nutrition ? `${formatNumber(nutrition.calories)} cal` : "Off")}
         </section>
       </div>
@@ -1065,7 +1105,7 @@
     const finance = calculateFinance(range);
     const safetyRange = safetyForecastRange(range);
     const safeFinance = calculateFinance(safetyRange);
-    const financeActions = `${undoState?.scope === "finance" ? actionButton("undo-finance-delete", "", `Undo ${undoState.label}`, "undo", "secondary") : ""}${actionButton("add-spending", "", "Add spending", "plus", "primary")}`;
+    const financeActions = actionButton("add-spending", "", "Add spending", "plus", "primary");
 
     return `
       <div class="view">
@@ -1081,9 +1121,9 @@
             ${rangeToggle("finance", ui.financeSpan)}
             ${customRangeControls("finance", range)}
             <div class="stat-strip">
-              <div class="strip-item"><span class="strip-value">${formatCurrency(finance.currentMoney)}</span><span class="strip-label">Current</span></div>
-              <div class="strip-item"><span class="strip-value">${formatCurrency(finance.projectedBalance)}</span><span class="strip-label">Projected</span></div>
-              <div class="strip-item"><span class="strip-value">${formatCurrency(safeFinance.safeToSpend)}</span><span class="strip-label">Safe to spend</span></div>
+              <div class="strip-item"><span class="strip-value">${formatCompactCurrency(finance.currentMoney)}</span><span class="strip-label">Current</span></div>
+              <div class="strip-item"><span class="strip-value">${formatCompactCurrency(finance.projectedBalance)}</span><span class="strip-label">Projected</span></div>
+              <div class="strip-item"><span class="strip-value">${formatCompactCurrency(safeFinance.safeToSpend)}</span><span class="strip-label">Safe to spend</span></div>
             </div>
           </div>
         </section>
@@ -1246,20 +1286,48 @@
 
   function renderDebtItem(debt) {
     const original = Number(debt.originalBalance) || Number(debt.balance) || 0;
-    const progress = original ? pct(original - Number(debt.balance), original) : 0;
+    const balance = Number(debt.balance) || 0;
+    const progress = original ? pct(original - balance, original) : 0;
     const targetPay = monthlyDebtTarget(debt);
     const reservedPayment = debtPaymentAmount(debt);
     return `
-      <article class="item-card">
-        <div class="item-main">
+      <article class="item-card debt-card">
+        <div class="item-main debt-main">
           <p class="item-title">${escapeHtml(debt.name)}</p>
-          <div class="item-meta">
-            <span>${formatCurrency(debt.balance)} remaining</span>
-            <span>${formatCurrency(debt.minimumPayment)} minimum</span>
-            <span>${formatCurrency(reservedPayment)} reserved</span>
-            <span>${debt.dueDate ? `Due ${formatDate(debt.dueDate)}` : "No due date set"}</span>
-            <span>${debt.interestRate || 0}% APR</span>
-            ${debt.targetPayoffDate ? `<span>${formatCurrency(targetPay)} monthly target</span>` : ""}
+          <div class="debt-overview">
+            <div class="debt-balance">
+              <span>Main balance</span>
+              <strong>${formatCurrency(balance)}</strong>
+              <small>remaining</small>
+            </div>
+            <div class="debt-info-grid">
+              <div class="debt-info">
+                <span>Due date</span>
+                <strong>${debt.dueDate ? formatDate(debt.dueDate) : "Not set"}</strong>
+              </div>
+              <div class="debt-info">
+                <span>Minimum</span>
+                <strong>${formatCurrency(debt.minimumPayment)}</strong>
+              </div>
+              <div class="debt-info">
+                <span>Reserved</span>
+                <strong>${formatCurrency(reservedPayment)}</strong>
+              </div>
+              <div class="debt-info">
+                <span>APR</span>
+                <strong>${debt.interestRate || 0}%</strong>
+              </div>
+              ${debt.targetPayoffDate ? `
+                <div class="debt-info debt-info-wide">
+                  <span>Monthly target</span>
+                  <strong>${formatCurrency(targetPay)}</strong>
+                </div>
+              ` : ""}
+            </div>
+          </div>
+          <div class="debt-progress-label">
+            <span>Paid down</span>
+            <strong>${clamp(progress)}%</strong>
           </div>
           <div class="progress" aria-label="Debt payoff progress"><span style="width:${clamp(progress)}%"></span></div>
         </div>
@@ -1388,7 +1456,6 @@
           const color = safeHexColor(filter.color);
           return `
             <button type="button" class="class-chip ${ui.schoolClassFilter === filter.id ? "active" : ""}" data-action="set-school-class-filter" data-class-id="${escapeHtml(filter.id)}" style="--class-color:${escapeHtml(color)}; --class-color-rgb:${rgbText(color)}">
-              <span class="color-dot"></span>
               <span>${escapeHtml(filter.name)}</span>
             </button>
           `;
@@ -1400,9 +1467,9 @@
   function renderClassCard(stats) {
     const color = safeHexColor(stats.color);
     return `
-      <article class="item-card">
+      <article class="item-card class-card" style="--class-color:${escapeHtml(color)}; --class-color-rgb:${rgbText(color)}">
         <div class="item-main">
-          <p class="item-title"><span class="color-dot" style="background:${escapeHtml(color)}"></span> ${escapeHtml(stats.name)}</p>
+          <p class="item-title">${escapeHtml(stats.name)}</p>
           <div class="item-meta">
             <span>${stats.completed}/${stats.total} complete</span>
             <span>${stats.percent}% completion</span>
@@ -1424,18 +1491,20 @@
     const klass = findById(appData.school.classes, assignment.classId);
     const color = safeHexColor(klass?.accentColor, "#6f7685");
     const dueLabel = `${formatDate(assignment.dueDate)}${assignment.dueTime ? ` ${assignment.dueTime}` : ""}`;
+    const classLabel = assignment.classId ? className(assignment.classId) : "No class";
     const meta = [
-      assignment.classId ? className(assignment.classId) : "",
-      assignment.type,
-      assignment.dueDate ? dueLabel : "No due date",
-      assignment.priority
+      `<span class="assignment-class-tag ${complete ? "complete" : ""}">${escapeHtml(classLabel)}</span>`,
+      assignment.type ? `<span>${escapeHtml(assignment.type)}</span>` : "",
+      assignment.dueDate ? `<span>${escapeHtml(dueLabel)}</span>` : "<span>No due date</span>",
+      assignment.priority ? `<span>${escapeHtml(assignment.priority)}</span>` : "",
+      complete ? `<span class="assignment-status-tag">${escapeHtml(assignment.status)}</span>` : ""
     ];
     return `
       <article class="item-card assignment-card ${complete ? "complete" : ""} ${!complete && isBeforeToday(assignment.dueDate) ? "overdue" : ""}" style="--class-color:${escapeHtml(color)}; --class-color-rgb:${rgbText(color)}">
         <div class="item-main">
-          <p class="item-title assignment-title"><span class="color-dot"></span>${escapeHtml(assignment.title)}</p>
+          <p class="item-title assignment-title">${escapeHtml(assignment.title)}</p>
           <div class="item-meta">
-            ${meta.filter(Boolean).map((item) => `<span>${escapeHtml(item)}</span>`).join("")}
+            ${meta.filter(Boolean).join("")}
           </div>
           <label class="field">
             <span class="tiny">Status</span>
@@ -1960,7 +2029,7 @@
     const projectedBalance = currentMoney + netIncome - billsDue - debtPayments - spending - shopping;
     const netWorth = currentMoney + investmentValue - totalDebt;
     const lowestBalance = projectedLowestBalance(currentMoney, incomeEntries, billOccurrences, debtPaymentOccurrences, spendingEntries);
-    const safeToSpend = Math.min(currentMoney, projectedBalance, lowestBalance);
+    const safeToSpend = Math.max(0, Math.min(currentMoney, projectedBalance, lowestBalance));
     const dailyLimit = Math.max(0, safeToSpend / daysBetween(range.start, range.end));
     return {
       range,
@@ -2766,7 +2835,7 @@
         if (confirm("Delete this account?")) {
           deleteFinanceItem(appData.finance.accounts, id, "account");
           rerender();
-          showToast("Account deleted. Undo is available.");
+          showToast("Account deleted.");
         }
         break;
       case "add-income":
@@ -2779,7 +2848,7 @@
         if (confirm("Delete this income entry?")) {
           deleteFinanceItem(appData.finance.income, id, "income entry");
           rerender();
-          showToast("Income deleted. Undo is available.");
+          showToast("Income deleted.");
         }
         break;
       case "add-bill":
@@ -2798,7 +2867,7 @@
         if (confirm("Delete this bill?")) {
           deleteFinanceItem(appData.finance.bills, id, "bill");
           rerender();
-          showToast("Bill deleted. Undo is available.");
+          showToast("Bill deleted.");
         }
         break;
       case "add-spending":
@@ -2811,7 +2880,7 @@
         if (confirm("Delete this spending entry?")) {
           deleteFinanceItem(appData.finance.spending, id, "spending entry");
           rerender();
-          showToast("Spending deleted. Undo is available.");
+          showToast("Spending deleted.");
         }
         break;
       case "add-debt":
@@ -2849,7 +2918,7 @@
         if (confirm("Delete this debt?")) {
           deleteFinanceItem(appData.finance.debts, id, "debt");
           rerender();
-          showToast("Debt deleted. Undo is available.");
+          showToast("Debt deleted.");
         }
         break;
       case "add-investment":
@@ -2862,7 +2931,7 @@
         if (confirm("Delete this investment?")) {
           deleteFinanceItem(appData.finance.investments, id, "investment");
           rerender();
-          showToast("Investment deleted. Undo is available.");
+          showToast("Investment deleted.");
         }
         break;
       case "add-class":
