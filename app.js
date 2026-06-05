@@ -11,6 +11,36 @@
 
   const today = () => dateString(new Date());
   const nowIso = () => new Date().toISOString();
+  const taxConfig = {
+    federal: {
+      standardDeductionSingle: 16100,
+      bracketsSingle: [
+        { min: 0, max: 12400, rate: 0.1 },
+        { min: 12400, max: 50400, rate: 0.12 },
+        { min: 50400, max: 105700, rate: 0.22 },
+        { min: 105700, max: 201775, rate: 0.24 },
+        { min: 201775, max: 256225, rate: 0.32 },
+        { min: 256225, max: 640600, rate: 0.35 },
+        { min: 640600, max: Infinity, rate: 0.37 }
+      ]
+    },
+    fica: {
+      socialSecurityRate: 0.062,
+      socialSecurityCap: 184500,
+      medicareRate: 0.0145
+    },
+    ohio: {
+      exemptionThreshold: 26050,
+      flatRateAboveThreshold: 0.0275
+    },
+    paycheckFrequencies: {
+      weekly: 52,
+      biweekly: 26,
+      semimonthly: 24,
+      monthly: 12,
+      annual: 1
+    }
+  };
 
   const defaultSettings = () => ({
     accent: "#f7f7ff",
@@ -19,7 +49,13 @@
     gymDetails: true,
     tax: {
       autoOhio: true,
+      annualGrossIncome: 0,
+      filingStatus: "single",
+      paycheckFrequency: "biweekly",
       payPeriodsPerYear: 26,
+      w2Income: true,
+      municipalTaxRate: 0,
+      schoolDistrictTaxRate: 0,
       ohioExemptions: 1,
       ohioLocalRate: 0
     },
@@ -142,6 +178,7 @@
   let syncInFlight = false;
   let undoState = null;
   let recentCompletion = null;
+  let moreSwitchTimer = null;
   let appData = loadData();
   normalizeData();
   saveData({ skipSync: true, touch: false });
@@ -244,7 +281,17 @@
     };
     appData.settings = { ...defaultSettings(), ...(appData.settings || {}) };
     if (appData.settings.accent === "#7c5cff") appData.settings.accent = defaultSettings().accent;
-    appData.settings.tax = { ...defaultSettings().tax, ...(appData.settings.tax || {}) };
+    const incomingTax = appData.settings.tax || {};
+    appData.settings.tax = { ...defaultSettings().tax, ...incomingTax };
+    if (incomingTax.municipalTaxRate === undefined && incomingTax.ohioLocalRate !== undefined) {
+      appData.settings.tax.municipalTaxRate = incomingTax.ohioLocalRate;
+    }
+    appData.settings.tax.paycheckFrequency = normalizePaycheckFrequency(appData.settings.tax.paycheckFrequency, appData.settings.tax.payPeriodsPerYear);
+    appData.settings.tax.payPeriodsPerYear = payPeriodsForFrequency(appData.settings.tax.paycheckFrequency);
+    appData.settings.tax.annualGrossIncome = Math.max(0, Number(appData.settings.tax.annualGrossIncome) || 0);
+    appData.settings.tax.municipalTaxRate = normalizePercentInput(appData.settings.tax.municipalTaxRate);
+    appData.settings.tax.schoolDistrictTaxRate = normalizePercentInput(appData.settings.tax.schoolDistrictTaxRate);
+    appData.settings.tax.ohioLocalRate = appData.settings.tax.municipalTaxRate;
     appData.finance = deepMerge(fresh.finance, appData.finance || {});
     appData.school = deepMerge(fresh.school, appData.school || {});
     appData.gym = deepMerge(fresh.gym, appData.gym || {});
@@ -477,6 +524,39 @@
     if (next.debtId) next.paymentMethod = "Credit card";
     if (next.paymentMethod !== "Credit card") next.debtId = "";
     return next;
+  }
+
+  function normalizePercentInput(value) {
+    if (value === "" || value === null || value === undefined) return 0;
+    return clamp(Number(value) || 0, 0, 100);
+  }
+
+  function percentToRate(value) {
+    return normalizePercentInput(value) / 100;
+  }
+
+  function normalizePaycheckFrequency(value, legacyPeriods = 26) {
+    if (taxConfig.paycheckFrequencies[value]) return value;
+    const periods = Number(legacyPeriods) || 26;
+    if (periods >= 50) return "weekly";
+    if (periods === 24) return "semimonthly";
+    if (periods <= 12) return "monthly";
+    return "biweekly";
+  }
+
+  function payPeriodsForFrequency(value) {
+    return taxConfig.paycheckFrequencies[normalizePaycheckFrequency(value)] || 26;
+  }
+
+  function taxSettings() {
+    return { ...defaultSettings().tax, ...(appData.settings.tax || {}) };
+  }
+
+  function localTaxRates(settings = taxSettings()) {
+    return {
+      municipalRate: percentToRate(settings.municipalTaxRate),
+      schoolDistrictRate: percentToRate(settings.schoolDistrictTaxRate)
+    };
   }
 
   function icon(name) {
@@ -1248,14 +1328,24 @@
     const incomeInRange = appData.finance.income.filter((entry) => dateInRange(incomeDate(entry), range));
     const outsideRange = appData.finance.income.filter((entry) => !dateInRange(incomeDate(entry), range));
     const bySource = groupTotals(incomeInRange, "source", entryNetIncome);
+    const tax = finance.taxBreakdown || emptyTaxEstimate();
     return `
       <div class="metric-grid">
         ${metric("Gross earnings", formatCurrency(finance.grossIncome), "")}
-        ${metric("Estimated taxes", formatCurrency(finance.taxTotal), "Federal, FICA, Ohio, local")}
+        ${metric("Federal income tax", formatCurrency(tax.federal), "Progressive brackets")}
+        ${metric("Social Security tax", formatCurrency(tax.socialSecurity), "6.2% up to wage cap")}
+        ${metric("Medicare tax", formatCurrency(tax.medicare), "1.45% of gross wages")}
+        ${metric("Total FICA tax", formatCurrency(tax.fica), "")}
+        ${metric("Ohio state tax", formatCurrency(tax.ohio), "Only income above threshold")}
+        ${metric("Municipal tax", formatCurrency(tax.municipal), `${formatNumber(taxSettings().municipalTaxRate, 2)}% local rate`)}
+        ${metric("School district tax", formatCurrency(tax.schoolDistrict), `${formatNumber(taxSettings().schoolDistrictTaxRate, 2)}% school rate`)}
+        ${metric("Total estimated taxes", formatCurrency(finance.taxTotal), "Federal, FICA, Ohio, local")}
         ${metric("Estimated net", formatCurrency(finance.netIncome), "")}
+        ${metric("Effective tax rate", `${formatNumber(tax.effectiveRate, 1)}%`, "")}
         ${metric("Weekly income", formatCurrency(calculateFinance(calculateDateRange("week")).netIncome), "")}
         ${metric("Monthly income", formatCurrency(calculateFinance(calculateDateRange("month")).netIncome), "")}
       </div>
+      ${renderTaxControlPanel("income")}
       ${renderBarChart(bySource, finance.netIncome)}
       <div class="list">
         ${incomeInRange.length ? sortIncomeEntries(incomeInRange).map((entry) => renderIncomeItem(entry, range)).join("") : emptyState("No income logged in this range.")}
@@ -1278,12 +1368,165 @@
     const outsideRange = range && !dateInRange(incomeDate(entry), range);
     const taxNote = entry.taxMode === "manual"
       ? `Manual tax: ${formatCurrency(tax.total)} (${formatNumber(tax.effectiveRate, 1)}%)`
-      : `Tax estimate: ${formatCurrency(tax.total)} (${formatNumber(tax.effectiveRate, 1)}%) · Fed ${formatCurrency(tax.federal)}, FICA ${formatCurrency(tax.socialSecurity + tax.medicare)}, OH ${formatCurrency(tax.ohio)}${tax.local ? `, local ${formatCurrency(tax.local)}` : ""}`;
+      : `Tax estimate: ${formatCurrency(tax.total)} (${formatNumber(tax.effectiveRate, 1)}%) · Fed ${formatCurrency(tax.federal)}, SS ${formatCurrency(tax.socialSecurity)}, Medicare ${formatCurrency(tax.medicare)}, OH ${formatCurrency(tax.ohio)}, municipal ${formatCurrency(tax.municipal)}${tax.schoolDistrict ? `, school ${formatCurrency(tax.schoolDistrict)}` : ""}`;
     return itemCard({
       title: entry.source || "Income",
-      meta: [entry.type === "hourly" ? "Hourly" : "Manual", entry.taxMode === "manual" ? "Manual tax" : "Auto Ohio tax", `Gross ${formatCurrency(gross)}`, `Net ${formatCurrency(net)}`, formatDate(incomeDate(entry)), outsideRange ? "Outside selected range" : ""],
+      meta: [entry.type === "hourly" ? "Hourly" : "Manual", entry.taxMode === "manual" ? "Manual tax" : "Auto tax estimate", `Gross ${formatCurrency(gross)}`, `Net ${formatCurrency(net)}`, formatDate(incomeDate(entry)), outsideRange ? "Outside selected range" : ""],
       note: [taxNote, entry.notes].filter(Boolean).join(" · "),
       actions: `${actionButton("edit-income", entry.id, "Edit", "edit")}${actionButton("delete-income", entry.id, "Delete", "trash")}`
+    });
+  }
+
+  function renderTaxControlPanel(context = "income") {
+    const settings = taxSettings();
+    return `
+      <div class="tax-panel section" data-tax-panel="${escapeHtml(context)}">
+        <div class="section-header">
+          <h3>Annual tax calculator</h3>
+          <span class="tiny">${escapeHtml(paycheckFrequencyLabel(settings.paycheckFrequency))}</span>
+        </div>
+        <div class="tax-controls">
+          <label class="field">
+            <span>Gross annual income</span>
+            <input type="number" min="0" step="0.01" data-tax-input="annualGrossIncome" value="${escapeHtml(settings.annualGrossIncome)}">
+          </label>
+          <label class="field">
+            <span>Filing status</span>
+            <select data-tax-input="filingStatus">
+              <option value="single" ${settings.filingStatus === "single" ? "selected" : ""}>Single</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Municipal tax rate (%)</span>
+            <input type="number" min="0" max="100" step="0.01" data-tax-input="municipalTaxRate" value="${escapeHtml(settings.municipalTaxRate)}">
+          </label>
+          <label class="field">
+            <span>School district tax rate (%)</span>
+            <input type="number" min="0" max="100" step="0.01" data-tax-input="schoolDistrictTaxRate" value="${escapeHtml(settings.schoolDistrictTaxRate)}">
+          </label>
+          <label class="field">
+            <span>Paycheck frequency</span>
+            <select data-tax-input="paycheckFrequency">
+              ${[
+                ["weekly", "Weekly"],
+                ["biweekly", "Biweekly"],
+                ["semimonthly", "Twice monthly"],
+                ["monthly", "Monthly"],
+                ["annual", "Annual"]
+              ].map(([value, label]) => `<option value="${value}" ${settings.paycheckFrequency === value ? "selected" : ""}>${label}</option>`).join("")}
+            </select>
+          </label>
+          <label class="checkbox-row tax-checkbox">
+            <input type="checkbox" data-tax-input="w2Income" ${settings.w2Income ? "checked" : ""}>
+            <span>W-2 wage income<small>Includes Social Security and Medicare estimates.</small></span>
+          </label>
+        </div>
+        <div class="metric-grid tax-live-summary" data-tax-live-summary>
+          ${renderTaxSummaryMetrics(annualTaxEstimate())}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderTaxSummaryMetrics(estimate) {
+    return [
+      metric("Gross income", formatCurrency(estimate.grossIncome), "Annual"),
+      metric("Federal income tax", formatCurrency(estimate.federal), `Taxable ${formatCurrency(estimate.federalTaxableIncome)}`),
+      metric("Social Security tax", formatCurrency(estimate.socialSecurity), "6.2% up to cap"),
+      metric("Medicare tax", formatCurrency(estimate.medicare), "1.45% no cap"),
+      metric("Total FICA tax", formatCurrency(estimate.fica), ""),
+      metric("Ohio state tax", formatCurrency(estimate.ohio), "2.75% above threshold"),
+      metric("Municipal tax", formatCurrency(estimate.municipal), "Local city rate"),
+      metric("School district tax", formatCurrency(estimate.schoolDistrict), "Optional local school rate"),
+      metric("Total estimated taxes", formatCurrency(estimate.total), ""),
+      metric("Estimated take-home", formatCurrency(estimate.netIncome), "Annual net"),
+      metric("Effective tax rate", `${formatNumber(estimate.effectiveRate, 1)}%`, ""),
+      metric("Net monthly income", formatCurrency(estimate.monthly), ""),
+      metric("Net biweekly income", formatCurrency(estimate.biweekly), ""),
+      metric("Net weekly income", formatCurrency(estimate.weekly), "")
+    ].join("");
+  }
+
+  function annualTaxEstimate() {
+    const settings = taxSettings();
+    return calculateTotalTaxes(settings.annualGrossIncome, localTaxRates(settings), {
+      filingStatus: settings.filingStatus || "single",
+      w2Income: settings.w2Income
+    });
+  }
+
+  function paycheckFrequencyLabel(value) {
+    const periods = payPeriodsForFrequency(value);
+    const labels = {
+      weekly: "52 paychecks/year",
+      biweekly: "26 paychecks/year",
+      semimonthly: "24 paychecks/year",
+      monthly: "12 paychecks/year",
+      annual: "1 paycheck/year"
+    };
+    return labels[normalizePaycheckFrequency(value)] || `${periods} paychecks/year`;
+  }
+
+  function renderIncomeFormPreview(values = {}) {
+    const tax = entryTaxEstimate(values);
+    return `
+      <div class="tax-preview">
+        <p class="tiny">Live tax preview</p>
+        <div class="tax-preview-grid">
+          <span><b>${formatCurrency(tax.grossIncome)}</b><small>Gross</small></span>
+          <span><b>${formatCurrency(tax.federal)}</b><small>Federal</small></span>
+          <span><b>${formatCurrency(tax.fica)}</b><small>FICA</small></span>
+          <span><b>${formatCurrency(tax.ohio)}</b><small>Ohio</small></span>
+          <span><b>${formatCurrency(tax.local)}</b><small>Local</small></span>
+          <span><b>${formatCurrency(tax.total)}</b><small>Total tax</small></span>
+          <span><b>${formatCurrency(tax.netIncome)}</b><small>Take-home</small></span>
+          <span><b>${formatNumber(tax.effectiveRate, 1)}%</b><small>Effective</small></span>
+        </div>
+      </div>
+    `;
+  }
+
+  function normalizeIncomeValues(values = {}) {
+    return {
+      ...values,
+      hourlyWage: Math.max(0, Number(values.hourlyWage) || 0),
+      hours: Math.max(0, Number(values.hours) || 0),
+      amount: Math.max(0, Number(values.amount) || 0),
+      annualGrossIncome: values.annualGrossIncome === "" ? "" : Math.max(0, Number(values.annualGrossIncome) || 0),
+      deductionPercent: values.deductionPercent === "" ? "" : clamp(values.deductionPercent || 0, 0, 100),
+      w2Income: values.w2Income !== false
+    };
+  }
+
+  function updateTaxSettingFromControl(target) {
+    const key = target.dataset.taxInput;
+    if (!key) return false;
+    const settings = appData.settings.tax;
+    if (key === "w2Income") {
+      settings.w2Income = target.checked;
+    } else if (key === "filingStatus") {
+      settings.filingStatus = target.value || "single";
+    } else if (key === "paycheckFrequency") {
+      settings.paycheckFrequency = normalizePaycheckFrequency(target.value);
+      settings.payPeriodsPerYear = payPeriodsForFrequency(settings.paycheckFrequency);
+    } else {
+      const value = key === "annualGrossIncome"
+        ? Math.max(0, Number(target.value) || 0)
+        : normalizePercentInput(target.value);
+      settings[key] = value;
+      if (Number(target.value) < 0) target.value = "0";
+      if (key === "municipalTaxRate") settings.ohioLocalRate = value;
+    }
+    return true;
+  }
+
+  function updateTaxLiveSummaries() {
+    const html = renderTaxSummaryMetrics(annualTaxEstimate());
+    document.querySelectorAll("[data-tax-live-summary]").forEach((summary) => {
+      summary.innerHTML = html;
+    });
+    document.querySelectorAll("[data-tax-panel] .section-header .tiny").forEach((label) => {
+      label.textContent = paycheckFrequencyLabel(taxSettings().paycheckFrequency);
     });
   }
 
@@ -1652,7 +1895,9 @@
             </button>
           `).join("")}
         </section>
-        ${renderMoreView()}
+        <div class="more-content" data-more-content="${escapeHtml(ui.moreView)}">
+          ${renderMoreView()}
+        </div>
       </div>
     `;
   }
@@ -1976,22 +2221,8 @@
 
         <div class="card panel section">
           <h3>Tax estimate</h3>
-          <label class="checkbox-row"><input type="checkbox" data-tax-setting="autoOhio" ${appData.settings.tax.autoOhio ? "checked" : ""}> Automatic Ohio tax estimate</label>
-          <div class="custom-range">
-            <label class="field">
-              <span>Pay periods per year</span>
-              <input type="number" id="tax-pay-periods" min="1" step="1" value="${escapeHtml(appData.settings.tax.payPeriodsPerYear)}">
-            </label>
-            <label class="field">
-              <span>Ohio exemptions</span>
-              <input type="number" id="tax-ohio-exemptions" min="0" step="1" value="${escapeHtml(appData.settings.tax.ohioExemptions)}">
-            </label>
-          </div>
-          <label class="field">
-            <span>Ohio local tax rate</span>
-            <input type="number" id="tax-local-rate" min="0" max="10" step="0.01" value="${escapeHtml(appData.settings.tax.ohioLocalRate)}">
-          </label>
-          <button type="button" class="primary" data-action="save-tax-settings">${icon("check")}<span>Save tax settings</span></button>
+          <label class="checkbox-row"><input type="checkbox" data-tax-setting="autoOhio" ${appData.settings.tax.autoOhio ? "checked" : ""}> <span>Use automatic tax estimate<small>Federal, FICA, Ohio state, municipal, and optional school district.</small></span></label>
+          ${renderTaxControlPanel("settings")}
         </div>
 
         <div class="card panel section">
@@ -2126,8 +2357,9 @@
     const accountMoney = sum(appData.finance.accounts, (account) => account.balance);
     const incomeEntries = appData.finance.income.filter((entry) => dateInRange(incomeDate(entry), range));
     const grossIncome = sum(incomeEntries, entryGrossIncome);
-    const netIncome = sum(incomeEntries, entryNetIncome);
-    const taxTotal = sum(incomeEntries, (entry) => entryTaxEstimate(entry).total);
+    const taxBreakdown = combineTaxEstimates(incomeEntries.map(entryTaxEstimate), grossIncome);
+    const netIncome = Math.max(0, grossIncome - taxBreakdown.total);
+    const taxTotal = taxBreakdown.total;
     const workHours = sum(incomeEntries.filter((entry) => entry.type === "hourly"), (entry) => entry.hours);
     const spendingEntries = appData.finance.spending.filter((entry) => dateInRange(entry.date, range));
     const spending = sum(spendingEntries, (entry) => entry.amount);
@@ -2162,6 +2394,7 @@
       grossIncome,
       netIncome,
       taxTotal,
+      taxBreakdown,
       workHours,
       spendingEntries,
       spending,
@@ -2205,80 +2438,157 @@
     if (mode === "manual" || !appData.settings.tax?.autoOhio) {
       const deduction = clamp(entry.deductionPercent || 0, 0, 100);
       const total = gross * (deduction / 100);
-      return { ...emptyTaxEstimate(), manual: total, total, effectiveRate: deduction };
+      return {
+        ...emptyTaxEstimate(),
+        grossIncome: gross,
+        manual: total,
+        total,
+        netIncome: Math.max(0, gross - total),
+        effectiveRate: deduction
+      };
     }
 
-    const settings = appData.settings.tax || defaultSettings().tax;
-    const periods = Math.max(1, Number(settings.payPeriodsPerYear) || 26);
-    const annualGross = gross * periods;
-    const federal = calculateFederalIncomeTax(annualGross) / periods;
-    const fica = calculateFicaTax(gross, annualGross, periods);
-    const exemptionCount = Number.isFinite(Number(settings.ohioExemptions)) ? Number(settings.ohioExemptions) : 1;
-    const ohio = calculateOhioIncomeTax(annualGross, exemptionCount) / periods;
-    const local = gross * (clamp(settings.ohioLocalRate || 0, 0, 10) / 100);
-    const total = federal + fica.socialSecurity + fica.medicare + ohio + local;
-    return {
-      federal,
-      socialSecurity: fica.socialSecurity,
-      medicare: fica.medicare,
-      ohio,
-      local,
-      manual: 0,
-      total,
-      effectiveRate: gross ? (total / gross) * 100 : 0
-    };
+    const settings = taxSettings();
+    const periods = payPeriodsForFrequency(settings.paycheckFrequency);
+    const annualGross = Math.max(0, Number(entry.annualGrossIncome) || gross * periods);
+    const annualEstimate = calculateTotalTaxes(annualGross, localTaxRates(settings), {
+      filingStatus: entry.filingStatus || settings.filingStatus || "single",
+      w2Income: entry.w2Income ?? settings.w2Income
+    });
+    return scaleTaxEstimate(annualEstimate, 1 / periods, gross);
   }
 
   function emptyTaxEstimate() {
     return {
+      grossIncome: 0,
+      federalTaxableIncome: 0,
       federal: 0,
       socialSecurity: 0,
       medicare: 0,
+      fica: 0,
       ohio: 0,
+      municipal: 0,
+      schoolDistrict: 0,
       local: 0,
       manual: 0,
       total: 0,
+      netIncome: 0,
       effectiveRate: 0
     };
   }
 
-  function calculateFederalIncomeTax(annualGross) {
-    const taxable = Math.max(0, (Number(annualGross) || 0) - 16100);
-    const brackets = [
-      { over: 0, upto: 12400, rate: 0.1 },
-      { over: 12400, upto: 50400, rate: 0.12 },
-      { over: 50400, upto: 105700, rate: 0.22 },
-      { over: 105700, upto: 201775, rate: 0.24 },
-      { over: 201775, upto: 256225, rate: 0.32 },
-      { over: 256225, upto: 640600, rate: 0.35 },
-      { over: 640600, upto: Infinity, rate: 0.37 }
-    ];
-    return marginalTax(taxable, brackets);
+  function calculateFederalTax(grossIncome, filingStatus = "single") {
+    const gross = Math.max(0, Number(grossIncome) || 0);
+    const deduction = filingStatus === "single" ? taxConfig.federal.standardDeductionSingle : taxConfig.federal.standardDeductionSingle;
+    const taxableIncome = Math.max(0, gross - deduction);
+    return {
+      taxableIncome,
+      tax: calculateProgressiveTax(taxableIncome, taxConfig.federal.bracketsSingle)
+    };
   }
 
-  function calculateFicaTax(gross, annualGross, periods) {
-    const socialSecurityWageBase = 184500;
-    const socialSecurityTaxableThisPeriod = Math.min(Number(gross) || 0, socialSecurityWageBase / periods);
-    const socialSecurity = socialSecurityTaxableThisPeriod * 0.062;
-    const medicareBase = (Number(gross) || 0) * 0.0145;
-    const additionalMedicare = Math.max(0, (Number(annualGross) || 0) - 200000) * 0.009 / periods;
-    return { socialSecurity, medicare: medicareBase + additionalMedicare };
-  }
-
-  function calculateOhioIncomeTax(annualGross, exemptions) {
-    const exemptionAmount = Number(annualGross) >= 500000 ? 0 : Math.max(0, exemptions) * 1900;
-    const taxable = Math.max(0, (Number(annualGross) || 0) - exemptionAmount);
-    if (taxable <= 26050) return 0;
-    if (taxable <= 100000) return 342 + (taxable - 26050) * 0.0275;
-    return 2394.32 + (taxable - 100000) * 0.03125;
-  }
-
-  function marginalTax(taxable, brackets) {
+  function calculateProgressiveTax(taxableIncome, brackets) {
+    const taxable = Math.max(0, Number(taxableIncome) || 0);
     return brackets.reduce((total, bracket) => {
-      if (taxable <= bracket.over) return total;
-      const amount = Math.min(taxable, bracket.upto) - bracket.over;
-      return total + amount * bracket.rate;
+      if (taxable <= bracket.min) return total;
+      const amount = Math.min(taxable, bracket.max) - bracket.min;
+      return total + Math.max(0, amount) * bracket.rate;
     }, 0);
+  }
+
+  function calculateFicaTax(grossIncome, w2Income = true) {
+    const gross = Math.max(0, Number(grossIncome) || 0);
+    if (!w2Income) return { socialSecurity: 0, medicare: 0, total: 0 };
+    const socialSecurity = Math.min(gross, taxConfig.fica.socialSecurityCap) * taxConfig.fica.socialSecurityRate;
+    const medicare = gross * taxConfig.fica.medicareRate;
+    return { socialSecurity, medicare, total: socialSecurity + medicare };
+  }
+
+  function calculateOhioTax(grossIncome) {
+    const gross = Math.max(0, Number(grossIncome) || 0);
+    if (gross <= taxConfig.ohio.exemptionThreshold) return 0;
+    return (gross - taxConfig.ohio.exemptionThreshold) * taxConfig.ohio.flatRateAboveThreshold;
+  }
+
+  function calculateLocalTax(grossIncome, municipalRate = 0, schoolDistrictRate = 0) {
+    const gross = Math.max(0, Number(grossIncome) || 0);
+    const municipal = gross * Math.max(0, Number(municipalRate) || 0);
+    const schoolDistrict = gross * Math.max(0, Number(schoolDistrictRate) || 0);
+    return { municipal, schoolDistrict, total: municipal + schoolDistrict };
+  }
+
+  function calculateTotalTaxes(grossIncome, localRates = {}, options = {}) {
+    const gross = Math.max(0, Number(grossIncome) || 0);
+    const federal = calculateFederalTax(gross, options.filingStatus || "single");
+    const fica = calculateFicaTax(gross, options.w2Income !== false);
+    const ohio = calculateOhioTax(gross);
+    const local = calculateLocalTax(gross, localRates.municipalRate, localRates.schoolDistrictRate);
+    const total = federal.tax + fica.total + ohio + local.total;
+    const netIncome = calculateNetIncome(gross, total);
+    return {
+      ...emptyTaxEstimate(),
+      grossIncome: gross,
+      federalTaxableIncome: federal.taxableIncome,
+      federal: federal.tax,
+      socialSecurity: fica.socialSecurity,
+      medicare: fica.medicare,
+      fica: fica.total,
+      ohio,
+      municipal: local.municipal,
+      schoolDistrict: local.schoolDistrict,
+      local: local.total,
+      total,
+      netIncome,
+      effectiveRate: gross ? (total / gross) * 100 : 0,
+      ...calculateIncomeBreakdown(netIncome)
+    };
+  }
+
+  function calculateNetIncome(grossIncome, totalTaxes) {
+    return Math.max(0, (Number(grossIncome) || 0) - (Number(totalTaxes) || 0));
+  }
+
+  function calculateIncomeBreakdown(netIncome) {
+    const net = Math.max(0, Number(netIncome) || 0);
+    return {
+      monthly: net / 12,
+      biweekly: net / 26,
+      weekly: net / 52
+    };
+  }
+
+  function scaleTaxEstimate(estimate, scale, grossOverride = null) {
+    const grossIncome = grossOverride === null ? estimate.grossIncome * scale : Math.max(0, Number(grossOverride) || 0);
+    const scaled = {
+      ...estimate,
+      grossIncome,
+      federalTaxableIncome: estimate.federalTaxableIncome * scale,
+      federal: estimate.federal * scale,
+      socialSecurity: estimate.socialSecurity * scale,
+      medicare: estimate.medicare * scale,
+      fica: estimate.fica * scale,
+      ohio: estimate.ohio * scale,
+      municipal: estimate.municipal * scale,
+      schoolDistrict: estimate.schoolDistrict * scale,
+      local: estimate.local * scale,
+      total: estimate.total * scale
+    };
+    scaled.netIncome = calculateNetIncome(grossIncome, scaled.total);
+    scaled.effectiveRate = grossIncome ? (scaled.total / grossIncome) * 100 : 0;
+    return scaled;
+  }
+
+  function combineTaxEstimates(estimates, grossIncome) {
+    const combined = estimates.reduce((total, estimate) => {
+      ["federal", "socialSecurity", "medicare", "fica", "ohio", "municipal", "schoolDistrict", "local", "manual", "total"].forEach((key) => {
+        total[key] += Number(estimate[key]) || 0;
+      });
+      return total;
+    }, emptyTaxEstimate());
+    combined.grossIncome = Number(grossIncome) || 0;
+    combined.netIncome = calculateNetIncome(combined.grossIncome, combined.total);
+    combined.effectiveRate = combined.grossIncome ? (combined.total / combined.grossIncome) * 100 : 0;
+    return combined;
   }
 
   function incomeDate(entry) {
@@ -2562,7 +2872,7 @@
     return (exercises || []).map((ex) => `${ex.name}, ${ex.sets}, ${ex.reps}, ${ex.weight}`).join("\n");
   }
 
-  function openForm({ title, fields, initial = {}, submitLabel = "Save", onSubmit }) {
+  function openForm({ title, fields, initial = {}, submitLabel = "Save", onSubmit, livePreview = null }) {
     modalRoot.innerHTML = `
       <div class="modal-backdrop">
         <form class="modal" id="active-form">
@@ -2574,6 +2884,7 @@
             <div class="form-grid">
               ${fields.map((field) => renderField(field, initial[field.name])).join("")}
             </div>
+            ${livePreview ? `<div class="form-live-preview" data-form-live-preview>${livePreview(initial)}</div>` : ""}
           </div>
           <div class="modal-footer">
             <button type="button" class="secondary" data-action="close-modal">Cancel</button>
@@ -2583,6 +2894,15 @@
       </div>
     `;
     const form = document.getElementById("active-form");
+    if (livePreview) {
+      const updatePreview = () => {
+        const preview = form.querySelector("[data-form-live-preview]");
+        if (!preview) return;
+        preview.innerHTML = livePreview({ ...initial, ...collectFormValues(form, fields) });
+      };
+      form.addEventListener("input", updatePreview);
+      form.addEventListener("change", updatePreview);
+    }
     form.addEventListener("submit", (event) => {
       event.preventDefault();
       const values = collectFormValues(form, fields);
@@ -2690,10 +3010,12 @@
     return [
       { name: "type", label: "Entry type", type: "select", options: [{ value: "hourly", label: "Hourly work" }, { value: "manual", label: "Manual income" }] },
       { name: "source", label: "Job/source", type: "select", options: appData.settings.incomeSources },
-      { name: "taxMode", label: "Tax calculation", type: "select", options: [{ value: "auto", label: "Automatic Ohio estimate" }, { value: "manual", label: "Manual percentage" }] },
+      { name: "taxMode", label: "Tax calculation", type: "select", options: [{ value: "auto", label: "Automatic full estimate" }, { value: "manual", label: "Manual percentage" }] },
       { name: "hourlyWage", label: "Hourly wage", type: "number", step: "0.01" },
       { name: "hours", label: "Hours worked", type: "number", step: "0.1" },
       { name: "amount", label: "Manual amount", type: "number", step: "0.01" },
+      { name: "annualGrossIncome", label: "Gross annual income override", type: "number", min: 0, step: "0.01", help: "Optional. Leave blank to annualize this entry by paycheck frequency." },
+      { name: "w2Income", label: "W-2 wage income", type: "checkbox", default: taxSettings().w2Income, help: "Includes Social Security and Medicare in the automatic estimate." },
       { name: "date", label: "Date", type: "date", default: today(), required: true },
       { name: "payDate", label: "Pay date", type: "date" },
       { name: "deductionPercent", label: "Manual deduction/tax percentage", type: "number", step: "0.1", min: 0, max: 100 },
@@ -2944,8 +3266,21 @@
       return render({ quiet: true });
     }
     if (action === "set-more-view") {
-      ui.moreView = button.dataset.view;
-      return render({ quiet: true });
+      const nextView = button.dataset.view;
+      if (!nextView || nextView === ui.moreView) return;
+      const content = app.querySelector(".more-content");
+      clearTimeout(moreSwitchTimer);
+      if (content) {
+        content.classList.add("is-leaving");
+        moreSwitchTimer = window.setTimeout(() => {
+          ui.moreView = nextView;
+          render({ quiet: true });
+        }, 115);
+      } else {
+        ui.moreView = nextView;
+        render({ quiet: true });
+      }
+      return;
     }
     if (action === "set-school-class-filter") {
       ui.schoolClassFilter = button.dataset.classId || id || "all";
@@ -3037,8 +3372,14 @@
         break;
       case "add-income":
       case "edit-income": {
-        const item = id ? findById(appData.finance.income, id) : { type: "hourly", source: "Job", taxMode: "auto", deductionPercent: "" };
-        openEdit({ title: id ? "Edit income" : "Add income", fields: incomeFields(), initial: item, onSubmit: (values) => upsert(appData.finance.income, id, values) });
+        const item = id ? findById(appData.finance.income, id) : { type: "hourly", source: "Job", taxMode: "auto", deductionPercent: "", w2Income: taxSettings().w2Income };
+        openEdit({
+          title: id ? "Edit income" : "Add income",
+          fields: incomeFields(),
+          initial: item,
+          livePreview: renderIncomeFormPreview,
+          onSubmit: (values) => upsert(appData.finance.income, id, normalizeIncomeValues(values))
+        });
         break;
       }
       case "delete-income":
@@ -3297,9 +3638,11 @@
         break;
       }
       case "save-tax-settings": {
-        appData.settings.tax.payPeriodsPerYear = Math.max(1, Number(document.getElementById("tax-pay-periods").value) || 26);
-        appData.settings.tax.ohioExemptions = Math.max(0, Number(document.getElementById("tax-ohio-exemptions").value) || 0);
-        appData.settings.tax.ohioLocalRate = clamp(document.getElementById("tax-local-rate").value || 0, 0, 10);
+        appData.settings.tax.paycheckFrequency = normalizePaycheckFrequency(appData.settings.tax.paycheckFrequency);
+        appData.settings.tax.payPeriodsPerYear = payPeriodsForFrequency(appData.settings.tax.paycheckFrequency);
+        appData.settings.tax.municipalTaxRate = normalizePercentInput(appData.settings.tax.municipalTaxRate);
+        appData.settings.tax.schoolDistrictTaxRate = normalizePercentInput(appData.settings.tax.schoolDistrictTaxRate);
+        appData.settings.tax.ohioLocalRate = appData.settings.tax.municipalTaxRate;
         rerender();
         showToast("Tax settings saved.");
         break;
@@ -3408,8 +3751,24 @@
     handleAction(button.dataset.action, button);
   });
 
+  document.addEventListener("input", (event) => {
+    const target = event.target;
+    if (target.dataset?.taxInput) {
+      updateTaxSettingFromControl(target);
+      saveData();
+      updateTaxLiveSummaries();
+    }
+  });
+
   document.addEventListener("change", (event) => {
     const target = event.target;
+    if (target.dataset.taxInput) {
+      updateTaxSettingFromControl(target);
+      saveData();
+      updateTaxLiveSummaries();
+      render({ quiet: true });
+      return;
+    }
     if (target.id === "task-filter") {
       ui.taskFilter = target.value;
       render();
