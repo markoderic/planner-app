@@ -257,6 +257,9 @@
     appData.finance.income.forEach((entry) => {
       if (!entry.taxMode) entry.taxMode = Number(entry.deductionPercent) > 0 ? "manual" : "auto";
     });
+    appData.finance.debts.forEach((debt) => {
+      debt.debtType = normalizedDebtType(debt);
+    });
   }
 
   function deepMerge(base, incoming) {
@@ -431,6 +434,19 @@
 
   function sortIncomeEntries(list) {
     return [...list].sort((a, b) => String(incomeDate(b) || "").localeCompare(String(incomeDate(a) || "")));
+  }
+
+  function normalizedDebtType(debt = {}) {
+    const value = String(debt.debtType || "").toLowerCase();
+    if (["credit-card", "loan", "other"].includes(value)) return value;
+    const name = String(debt.name || "").toLowerCase();
+    if (/\b(loan|student|auto|car|personal)\b/.test(name)) return "loan";
+    if (/\b(card|credit|visa|mastercard|amex|discover)\b/.test(name)) return "credit-card";
+    return "credit-card";
+  }
+
+  function creditCardDebts() {
+    return appData.finance.debts.filter((debt) => normalizedDebtType(debt) === "credit-card");
   }
 
   function icon(name) {
@@ -1278,22 +1294,50 @@
   }
 
   function renderSpendingItem(entry) {
+    const linkedDebt = entry.debtId ? findById(appData.finance.debts, entry.debtId) : null;
     return itemCard({
       title: entry.note || entry.category || "Spending",
-      meta: [formatCurrency(entry.amount), entry.category, entry.necessary ? "Necessary" : "Optional", formatDate(entry.date), entry.paymentMethod || ""],
+      meta: [
+        formatCurrency(entry.amount),
+        entry.category,
+        entry.necessary ? "Necessary" : "Optional",
+        formatDate(entry.date),
+        linkedDebt ? `Charged to ${linkedDebt.name}` : entry.paymentMethod || ""
+      ],
       actions: `${actionButton("edit-spending", entry.id, "Edit", "edit")}${actionButton("delete-spending", entry.id, "Delete", "trash")}`
     });
   }
 
   function renderDebts(finance) {
+    const creditCards = appData.finance.debts.filter((debt) => normalizedDebtType(debt) === "credit-card");
+    const loans = appData.finance.debts.filter((debt) => normalizedDebtType(debt) === "loan");
+    const otherDebts = appData.finance.debts.filter((debt) => normalizedDebtType(debt) === "other");
     return `
       <div class="metric-grid">
         ${metric("Total debt", formatCurrency(finance.totalDebt), "")}
+        ${metric("Credit cards", formatCurrency(sum(creditCards, (debt) => debt.balance)), `${creditCards.length} card${creditCards.length === 1 ? "" : "s"}`)}
+        ${metric("Loans", formatCurrency(sum(loans, (debt) => debt.balance)), `${loans.length} loan${loans.length === 1 ? "" : "s"}`)}
         ${metric("Debt payments due", formatCurrency(finance.debtPayments), `${finance.debtPaymentOccurrences.length} in selected range`)}
         ${metric("Monthly minimums", formatCurrency(sum(appData.finance.debts, (debt) => debt.minimumPayment)), "")}
       </div>
-      <div class="list">
-        ${appData.finance.debts.length ? appData.finance.debts.map(renderDebtItem).join("") : emptyState("Add debts to track payoff progress.")}
+      <div class="debt-groups">
+        ${renderDebtGroup("Credit cards", creditCards, "Spending can be charged to these cards and raise the balance automatically.")}
+        ${renderDebtGroup("Loans", loans, "Student, auto, personal, or other installment debt.")}
+        ${otherDebts.length ? renderDebtGroup("Other debts", otherDebts, "") : ""}
+      </div>
+    `;
+  }
+
+  function renderDebtGroup(title, debts, note = "") {
+    return `
+      <div class="mini-section debt-group">
+        <div>
+          <h3>${escapeHtml(title)}</h3>
+          ${note ? `<p class="tiny">${escapeHtml(note)}</p>` : ""}
+        </div>
+        <div class="list">
+          ${debts.length ? debts.map(renderDebtItem).join("") : emptyState(`No ${title.toLowerCase()} added.`)}
+        </div>
       </div>
     `;
   }
@@ -2601,19 +2645,31 @@
   }
 
   function spendingFields() {
+    const cards = creditCardDebts();
     return [
       { name: "amount", label: "Amount", type: "number", step: "0.01", required: true },
       { name: "category", label: "Category", type: "select", options: [{ value: "", label: "No category" }, ...appData.settings.spendingCategories.map((category) => ({ value: category, label: category }))] },
       { name: "date", label: "Date", type: "date", default: today(), required: true },
       { name: "note", label: "Note", type: "text" },
       { name: "necessary", label: "Necessary", type: "checkbox", default: true },
-      { name: "paymentMethod", label: "Payment method", type: "text" }
+      {
+        name: "debtId",
+        label: "Charged to credit card",
+        type: "select",
+        options: [
+          { value: "", label: cards.length ? "No linked card" : "No credit cards added" },
+          ...cards.map((debt) => ({ value: debt.id, label: debt.name || "Credit card" }))
+        ],
+        help: cards.length ? "If selected, this spending increases that card balance." : "Add a credit card in Debt repayment to link spending."
+      },
+      { name: "paymentMethod", label: "Payment method note", type: "text" }
     ];
   }
 
   function debtFields() {
     return [
       { name: "name", label: "Debt name", required: true },
+      { name: "debtType", label: "Debt type", type: "select", options: [{ value: "credit-card", label: "Credit card" }, { value: "loan", label: "Loan" }, { value: "other", label: "Other debt" }], default: "credit-card" },
       { name: "balance", label: "Total balance", type: "number", step: "0.01", required: true },
       { name: "originalBalance", label: "Original balance", type: "number", step: "0.01", help: "Used for payoff progress. If blank, current balance is used." },
       { name: "interestRate", label: "Interest rate", type: "number", step: "0.01" },
@@ -2715,6 +2771,47 @@
     const item = makeItem({ ...values, ...extra });
     list.push(item);
     return item;
+  }
+
+  function spendingDebtAmount(entry) {
+    return Number(entry?.amount) || 0;
+  }
+
+  function adjustDebtBalance(debtId, amount) {
+    if (!debtId || !amount) return;
+    const debt = findById(appData.finance.debts, debtId);
+    if (!debt) return;
+    debt.balance = Math.max(0, (Number(debt.balance) || 0) + amount);
+  }
+
+  function applySpendingDebtImpact(entry, direction = 1) {
+    if (!entry?.debtId) return;
+    adjustDebtBalance(entry.debtId, spendingDebtAmount(entry) * direction);
+  }
+
+  function upsertSpending(id, values) {
+    const previous = id ? { ...findById(appData.finance.spending, id) } : null;
+    const next = { ...(previous || {}), ...values };
+    if (previous?.debtId && previous.debtId === next.debtId) {
+      const item = upsert(appData.finance.spending, id, values);
+      adjustDebtBalance(item.debtId, spendingDebtAmount(item) - spendingDebtAmount(previous));
+      return item;
+    }
+    if (previous) applySpendingDebtImpact(previous, -1);
+    const item = upsert(appData.finance.spending, id, values);
+    applySpendingDebtImpact(item, 1);
+    return item;
+  }
+
+  function deleteSpendingItem(id) {
+    const removed = removeById(appData.finance.spending, id);
+    if (!removed) return false;
+    applySpendingDebtImpact(removed.item, -1);
+    setUndo("spending entry", () => {
+      appData.finance.spending.splice(Math.min(removed.index, appData.finance.spending.length), 0, removed.item);
+      applySpendingDebtImpact(removed.item, 1);
+    });
+    return true;
   }
 
   function openQuickAdd(initialText = "") {
@@ -2889,12 +2986,12 @@
       case "add-spending":
       case "edit-spending": {
         const item = id ? findById(appData.finance.spending, id) : { necessary: true };
-        openEdit({ title: id ? "Edit spending" : "Add spending", fields: spendingFields(), initial: item, onSubmit: (values) => upsert(appData.finance.spending, id, values) });
+        openEdit({ title: id ? "Edit spending" : "Add spending", fields: spendingFields(), initial: item, onSubmit: (values) => upsertSpending(id, values) });
         break;
       }
       case "delete-spending":
         if (confirm("Delete this spending entry?")) {
-          deleteFinanceItem(appData.finance.spending, id, "spending entry");
+          deleteSpendingItem(id);
           rerender();
           showToast("Spending deleted.");
         }
@@ -2908,7 +3005,7 @@
           initial: item,
           onSubmit(values) {
             const originalBalance = values.originalBalance || values.balance;
-            upsert(appData.finance.debts, id, { ...values, originalBalance, paymentHistory: item.paymentHistory || [] });
+            upsert(appData.finance.debts, id, { ...values, debtType: normalizedDebtType(values), originalBalance, paymentHistory: item.paymentHistory || [] });
           }
         });
         break;

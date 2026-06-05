@@ -736,6 +736,15 @@ h3 {
   padding: 14px;
 }
 
+.debt-groups {
+  display: grid;
+  gap: 14px;
+}
+
+.debt-group h3 {
+  margin-bottom: 4px;
+}
+
 .debt-header {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
