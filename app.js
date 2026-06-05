@@ -665,7 +665,9 @@
     return true;
   }
 
-  function render() {
+  function render(options = {}) {
+    const quiet = Boolean(options.quiet);
+    app.classList.toggle("is-soft-render", quiet);
     saveUi();
     document.querySelectorAll(".nav-item").forEach((button) => {
       button.classList.toggle("active", button.dataset.tab === ui.activeTab);
@@ -2756,15 +2758,15 @@
     if (action === "close-modal") return closeModal();
     if (action === "set-dashboard-span") {
       ui.dashboardSpan = button.dataset.span;
-      return render();
+      return render({ quiet: true });
     }
     if (action === "set-dashboard-style") {
       ui.dashboardStyle = button.dataset.style;
-      return render();
+      return render({ quiet: true });
     }
     if (action === "set-finance-span") {
       ui.financeSpan = button.dataset.span;
-      return render();
+      return render({ quiet: true });
     }
     if (action === "set-more-view") {
       ui.moreView = button.dataset.view;
@@ -3234,12 +3236,12 @@
     }
     if (target.dataset.dashboardCustom) {
       ui.dashboardCustom[target.dataset.dashboardCustom] = target.value;
-      render();
+      render({ quiet: true });
       return;
     }
     if (target.dataset.financeCustom) {
       ui.financeCustom[target.dataset.financeCustom] = target.value;
-      render();
+      render({ quiet: true });
       return;
     }
     if (target.dataset.assignmentStatus) {

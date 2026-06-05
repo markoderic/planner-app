@@ -154,6 +154,10 @@ body.app-ready .app-main {
   animation: rise 180ms ease-out;
 }
 
+.app-main.is-soft-render .view {
+  animation: none;
+}
+
 @keyframes rise {
   from {
     opacity: 0;
