@@ -442,6 +442,30 @@ h3 {
   box-shadow: 0 0 0 1px rgba(50, 217, 143, 0.08) inset;
 }
 
+.assignment-card {
+  border-left: 4px solid var(--class-color, var(--accent));
+  background:
+    linear-gradient(90deg, rgba(var(--class-color-rgb, var(--accent-rgb)), 0.13), transparent 42%),
+    rgba(255, 255, 255, 0.035);
+}
+
+.assignment-card.overdue {
+  border-top-color: rgba(255, 107, 138, 0.34);
+  border-right-color: rgba(255, 107, 138, 0.28);
+  border-bottom-color: rgba(255, 107, 138, 0.28);
+}
+
+.assignment-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.assignment-title .color-dot,
+.class-chip .color-dot {
+  background: var(--class-color, var(--accent));
+}
+
 .item-card.complete .item-title {
   color: rgba(247, 247, 255, 0.84);
 }
@@ -593,6 +617,49 @@ h3 {
 .details-stack {
   display: grid;
   gap: 10px;
+}
+
+.mini-section,
+.assignment-tools {
+  display: grid;
+  gap: 9px;
+}
+
+.mini-section h3 {
+  margin: 2px 0 0;
+}
+
+.class-filter {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: none;
+}
+
+.class-filter::-webkit-scrollbar {
+  display: none;
+}
+
+.class-chip {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 11px;
+  border: 1px solid rgba(var(--class-color-rgb, var(--accent-rgb)), 0.34);
+  border-radius: 999px;
+  background: rgba(var(--class-color-rgb, var(--accent-rgb)), 0.08);
+  color: var(--muted);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease, color 160ms ease, transform 160ms ease;
+}
+
+.class-chip.active {
+  border-color: rgba(var(--class-color-rgb, var(--accent-rgb)), 0.78);
+  background: rgba(var(--class-color-rgb, var(--accent-rgb)), 0.18);
+  color: var(--text);
 }
 
 details.card {
@@ -986,6 +1053,32 @@ textarea:focus {
   gap: 7px;
 }
 
+.sync-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.sync-badge {
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.sync-badge.active {
+  border-color: rgba(50, 217, 143, 0.36);
+  background: rgba(50, 217, 143, 0.1);
+  color: #9ff3c7;
+}
+
 .subnav {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1085,6 +1178,7 @@ textarea:focus {
   .danger-btn:hover,
   .icon-btn:hover,
   .segmented button:hover,
+  .class-chip:hover,
   .swatch:hover {
     transform: translateY(-1px);
   }

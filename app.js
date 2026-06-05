@@ -3,6 +3,7 @@
 
   const STORAGE_KEY = "personalPlannerData.v1";
   const UI_KEY = "personalPlannerUi.v1";
+  const SYNC_KEY = "personalPlannerSync.v1";
   const app = document.getElementById("app");
   const modalRoot = document.getElementById("modal-root");
   const toast = document.getElementById("toast");
@@ -28,6 +29,9 @@
   });
 
   const emptyData = (includeDefaultHabits = true) => ({
+    _meta: {
+      updatedAt: nowIso()
+    },
     settings: defaultSettings(),
     dailyHabits: includeDefaultHabits
       ? [
@@ -132,9 +136,13 @@
   };
 
   let ui = loadUi();
+  let syncState = loadSync();
+  let syncPushTimer = null;
+  let syncInFlight = false;
+  let undoState = null;
   let appData = loadData();
   normalizeData();
-  saveData();
+  saveData({ skipSync: true, touch: false });
   applyAccent();
 
   function uid() {
@@ -154,6 +162,7 @@
         dashboardStyle: "cards",
         financeSpan: "30",
         taskFilter: "All",
+        schoolClassFilter: "all",
         dashboardCustom: { start: today(), end: today() },
         financeCustom: { start: today(), end: dateString(addDays(new Date(), 30)) },
         ...JSON.parse(localStorage.getItem(UI_KEY) || "{}")
@@ -166,6 +175,7 @@
         dashboardStyle: "cards",
         financeSpan: "30",
         taskFilter: "All",
+        schoolClassFilter: "all",
         dashboardCustom: { start: today(), end: today() },
         financeCustom: { start: today(), end: dateString(addDays(new Date(), 30)) }
       };
@@ -185,13 +195,51 @@
     }
   }
 
-  function saveData() {
+  function defaultSyncEndpoint() {
+    return ["http:", "https:"].includes(location.protocol) ? `${location.origin}/api/sync` : "";
+  }
+
+  function loadSync() {
+    const fallback = {
+      enabled: false,
+      endpoint: defaultSyncEndpoint(),
+      account: "",
+      key: "",
+      clientId: uid(),
+      lastSync: "",
+      status: "Not signed in"
+    };
+    try {
+      return { ...fallback, ...JSON.parse(localStorage.getItem(SYNC_KEY) || "{}") };
+    } catch {
+      return fallback;
+    }
+  }
+
+  function saveSync() {
+    localStorage.setItem(SYNC_KEY, JSON.stringify(syncState));
+  }
+
+  function saveData(options = {}) {
+    const { skipSync = false, touch = true } = options;
+    if (touch) {
+      appData._meta = {
+        ...(appData._meta || {}),
+        updatedAt: nowIso(),
+        clientId: syncState?.clientId || appData._meta?.clientId || ""
+      };
+    }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(appData));
+    if (!skipSync) queueSyncPush();
   }
 
   function normalizeData() {
     const fresh = emptyData(false);
     appData = deepMerge(fresh, appData || {});
+    appData._meta = {
+      updatedAt: appData._meta?.updatedAt || nowIso(),
+      clientId: appData._meta?.clientId || syncState?.clientId || ""
+    };
     appData.settings = { ...defaultSettings(), ...(appData.settings || {}) };
     if (appData.settings.accent === "#7c5cff") appData.settings.accent = defaultSettings().accent;
     appData.settings.tax = { ...defaultSettings().tax, ...(appData.settings.tax || {}) };
@@ -295,6 +343,13 @@
     return start <= end ? { start, end, label: "Custom range" } : { start: end, end: start, label: "Custom range" };
   }
 
+  function safetyForecastRange(selectedRange) {
+    const start = today();
+    const thirtyDayEnd = dateString(addDays(new Date(), 29));
+    const end = selectedRange?.end && selectedRange.end > thirtyDayEnd ? selectedRange.end : thirtyDayEnd;
+    return { start, end, label: selectedRange?.end && selectedRange.end > thirtyDayEnd ? "Selected future range" : "Next 30 days" };
+  }
+
   function dateInRange(value, range) {
     if (!value) return false;
     return value >= range.start && value <= range.end;
@@ -356,8 +411,19 @@
     if (index >= 0) list.splice(index, 1);
   }
 
+  function removeById(list, id) {
+    const index = list.findIndex((item) => item.id === id);
+    if (index < 0) return null;
+    const [item] = list.splice(index, 1);
+    return { item, index };
+  }
+
   function sortByDate(list, key = "dueDate") {
     return [...list].sort((a, b) => String(a[key] || "9999-12-31").localeCompare(String(b[key] || "9999-12-31")));
+  }
+
+  function sortIncomeEntries(list) {
+    return [...list].sort((a, b) => String(incomeDate(b) || "").localeCompare(String(incomeDate(a) || "")));
   }
 
   function icon(name) {
@@ -406,6 +472,16 @@
     };
   }
 
+  function safeHexColor(value, fallback = "#6f7685") {
+    const color = String(value || "").trim();
+    return /^#[0-9a-f]{6}$/i.test(color) ? color : fallback;
+  }
+
+  function rgbText(hex) {
+    const rgb = hexToRgb(safeHexColor(hex));
+    return `${rgb.r}, ${rgb.g}, ${rgb.b}`;
+  }
+
   function accentPair(hex) {
     const pairs = {
       "#f7f7ff": "#aeb3c2",
@@ -439,6 +515,147 @@
     toast.classList.add("show");
     clearTimeout(showToast.timer);
     showToast.timer = setTimeout(() => toast.classList.remove("show"), 2200);
+  }
+
+  function syncConfigured() {
+    return Boolean(syncState.enabled && syncState.endpoint && syncState.account && syncState.key);
+  }
+
+  function syncAuthHeaders(json = false) {
+    return {
+      ...(json ? { "Content-Type": "application/json" } : {}),
+      "X-Planner-Account": syncState.account,
+      "X-Planner-Key": syncState.key,
+      "X-Planner-Client": syncState.clientId
+    };
+  }
+
+  function setSyncStatus(status, shouldRender = false) {
+    syncState.status = status;
+    saveSync();
+    if (shouldRender && ui.activeTab === "more" && ui.moreView === "settings") render();
+  }
+
+  function queueSyncPush() {
+    if (!syncConfigured()) return;
+    clearTimeout(syncPushTimer);
+    syncPushTimer = window.setTimeout(() => {
+      pushSyncData(false);
+    }, 900);
+  }
+
+  async function connectSync() {
+    if (!syncConfigured()) {
+      showToast("Enter sync endpoint, account, and sync key.");
+      return;
+    }
+    const result = await pullSyncData(false);
+    if (result === "empty" || result === "local-newer") await pushSyncData(true);
+  }
+
+  async function pullSyncData(manual = true) {
+    if (!syncConfigured()) {
+      showToast("Sign in to sync first.");
+      return "missing";
+    }
+    try {
+      setSyncStatus("Syncing...", true);
+      const response = await fetch(syncState.endpoint, {
+        method: "GET",
+        headers: syncAuthHeaders()
+      });
+      if (!response.ok) throw new Error(`Sync pull failed (${response.status})`);
+      const payload = await response.json();
+      const remoteData = payload.data || null;
+      if (!remoteData) {
+        setSyncStatus("Signed in. No cloud data yet.", true);
+        if (manual) showToast("No cloud data yet. Push this device to start.");
+        return "empty";
+      }
+
+      const remoteUpdatedAt = payload.updatedAt || remoteData._meta?.updatedAt || "";
+      const localUpdatedAt = appData._meta?.updatedAt || "";
+      if (manual || !localUpdatedAt || remoteUpdatedAt > localUpdatedAt) {
+        appData = remoteData;
+        normalizeData();
+        appData._meta.clientId = syncState.clientId;
+        saveData({ skipSync: true, touch: false });
+        applyAccent();
+        syncState.lastSync = nowIso();
+        setSyncStatus(`Pulled ${formatSyncTime(syncState.lastSync)}`, true);
+        showToast("Planner data pulled from sync.");
+        return "pulled";
+      }
+
+      syncState.lastSync = nowIso();
+      setSyncStatus("This device is newer.", true);
+      if (manual) showToast("This device already has the newest data.");
+      return "local-newer";
+    } catch (error) {
+      setSyncStatus("Sync unavailable. Check the endpoint.", true);
+      if (manual) showToast(error.message || "Sync pull failed.");
+      return "error";
+    }
+  }
+
+  async function pushSyncData(manual = true) {
+    if (!syncConfigured() || syncInFlight) return "missing";
+    syncInFlight = true;
+    try {
+      setSyncStatus("Syncing...", manual);
+      const response = await fetch(syncState.endpoint, {
+        method: "POST",
+        headers: syncAuthHeaders(true),
+        body: JSON.stringify({
+          data: appData,
+          updatedAt: appData._meta?.updatedAt || nowIso(),
+          clientId: syncState.clientId
+        })
+      });
+      if (!response.ok) throw new Error(`Sync push failed (${response.status})`);
+      syncState.lastSync = nowIso();
+      setSyncStatus(`Pushed ${formatSyncTime(syncState.lastSync)}`, manual);
+      if (manual) showToast("Planner data pushed to sync.");
+      return "pushed";
+    } catch (error) {
+      setSyncStatus("Sync unavailable. Check the endpoint.", manual);
+      if (manual) showToast(error.message || "Sync push failed.");
+      return "error";
+    } finally {
+      syncInFlight = false;
+    }
+  }
+
+  function formatSyncTime(value) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(date);
+  }
+
+  function setUndo(label, restore) {
+    undoState = { scope: "finance", label, restore };
+  }
+
+  function undoFinanceDelete() {
+    if (!undoState?.restore) {
+      showToast("Nothing to undo.");
+      return;
+    }
+    undoState.restore();
+    const label = undoState.label;
+    undoState = null;
+    saveData();
+    render();
+    showToast(`Restored ${label}.`);
+  }
+
+  function deleteFinanceItem(list, id, label) {
+    const removed = removeById(list, id);
+    if (!removed) return false;
+    setUndo(label, () => {
+      list.splice(Math.min(removed.index, list.length), 0, removed.item);
+    });
+    return true;
   }
 
   function render() {
@@ -575,6 +792,8 @@
   function renderDashboard() {
     const range = calculateDateRange(ui.dashboardSpan, ui.dashboardCustom);
     const finance = calculateFinance(range);
+    const safetyRange = safetyForecastRange(range);
+    const safeFinance = calculateFinance(safetyRange);
     const habit = habitStats(range);
     const task = taskStats(range);
     const school = schoolStats(range);
@@ -587,12 +806,13 @@
     const dashboardMetrics = `
       ${metric("Tasks completed", `${task.completed}/${task.total}`, `${task.percent}% complete`)}
       ${metric("Daily habits completed", `${habit.completed}/${habit.total}`, `${habit.streak} day streak`)}
-      ${metric("Safe-to-spend money", formatCurrency(finance.safeToSpend), "After upcoming bills, debt, and shopping")}
+      ${metric("Safe-to-spend money", formatCurrency(safeFinance.safeToSpend), `After ${safetyRange.label.toLowerCase()} bills, debt, spending, and shopping`)}
       ${metric("Current balance", formatCurrency(finance.currentMoney), "All accounts")}
       ${metric("Projected balance", formatCurrency(finance.projectedBalance), range.label)}
       ${metric("Income in range", formatCurrency(finance.netIncome), `${formatNumber(finance.workHours, 1)} work hours`)}
       ${metric("Spending in range", formatCurrency(finance.spending), "Manual entries")}
       ${metric("Bills due in range", formatCurrency(finance.billsDue), `${finance.billOccurrences.length} item${finance.billOccurrences.length === 1 ? "" : "s"}`)}
+      ${metric("Debt payments", formatCurrency(safeFinance.debtPayments), `${safeFinance.debtPaymentOccurrences.length} due in ${safetyRange.label.toLowerCase()}`)}
       ${metric("Assignments due", String(school.openDue.length), `${school.overdue.length} overdue`)}
       ${metric("Work hours logged", formatNumber(finance.workHours, 1), "Hourly income entries")}
       ${metric("Gym sessions", String(gym.workouts.length), `${gym.streak} day streak`)}
@@ -601,14 +821,15 @@
     const ringMetrics = `
       ${ringMetric("Tasks", `${task.completed}/${task.total}`, task.percent, `${task.percent}% complete`)}
       ${ringMetric("Habits", `${habit.percent}%`, habit.percent, `${habit.streak} day streak`)}
-      ${ringMetric("Safe to spend", formatCurrency(finance.safeToSpend), finance.currentMoney ? (finance.safeToSpend / finance.currentMoney) * 100 : 0, "vs current money")}
+      ${ringMetric("Safe to spend", formatCurrency(safeFinance.safeToSpend), safeFinance.currentMoney ? (safeFinance.safeToSpend / safeFinance.currentMoney) * 100 : 0, safetyRange.label)}
       ${ringMetric("Projected", formatCurrency(finance.projectedBalance), finance.currentMoney ? (finance.projectedBalance / Math.max(finance.currentMoney, 1)) * 100 : 0, range.label)}
       ${ringMetric("School", String(school.openDue.length), school.total ? 100 - school.percent : 0, `${school.overdue.length} overdue`)}
       ${ringMetric("Gym", String(gym.workouts.length), Math.min(100, gym.workouts.length * 34), `${gym.streak} day streak`)}
       ${ringMetric("Income", formatCurrency(finance.netIncome), finance.netIncome ? 100 : 0, `${formatNumber(finance.workHours, 1)} hours`)}
       ${ringMetric("Spending", formatCurrency(finance.spending), finance.currentMoney ? (finance.spending / Math.max(finance.currentMoney, 1)) * 100 : 0, "Selected range")}
       ${ringMetric("Bills", formatCurrency(finance.billsDue), finance.currentMoney ? (finance.billsDue / Math.max(finance.currentMoney, 1)) * 100 : 0, `${finance.billOccurrences.length} due`)}
-      ${ringMetric("Shopping", formatCurrency(shopping.remainingTotal), finance.safeToSpend ? (shopping.remainingTotal / Math.max(finance.safeToSpend, 1)) * 100 : 0, `${shopping.remainingCount} items`)}
+      ${ringMetric("Debt", formatCurrency(safeFinance.debtPayments), safeFinance.currentMoney ? (safeFinance.debtPayments / Math.max(safeFinance.currentMoney, 1)) * 100 : 0, `${safeFinance.debtPaymentOccurrences.length} payments`)}
+      ${ringMetric("Shopping", formatCurrency(shopping.remainingTotal), safeFinance.safeToSpend ? (shopping.remainingTotal / Math.max(safeFinance.safeToSpend, 1)) * 100 : 0, `${shopping.remainingCount} items`)}
       ${ringMetric("Work hours", formatNumber(finance.workHours, 1), Math.min(100, finance.workHours * 5), "Logged")}
       ${ringMetric("Nutrition", appData.settings.nutrition ? `${nutrition.caloriePercent}%` : "Off", appData.settings.nutrition ? nutrition.caloriePercent : 0, appData.settings.nutrition ? `${formatNumber(nutrition.calories)} cal` : "Hidden")}
     `;
@@ -632,7 +853,7 @@
             <div class="stat-strip">
               <div class="strip-item"><span class="strip-value">${task.completed}/${task.total}</span><span class="strip-label">Tasks</span></div>
               <div class="strip-item"><span class="strip-value">${habit.percent}%</span><span class="strip-label">Habits</span></div>
-              <div class="strip-item"><span class="strip-value">${formatCurrency(finance.safeToSpend)}</span><span class="strip-label">Safe to spend</span></div>
+              <div class="strip-item"><span class="strip-value">${formatCurrency(safeFinance.safeToSpend)}</span><span class="strip-label">Safe to spend</span></div>
             </div>
           </div>
         </section>
@@ -658,7 +879,7 @@
               ${actionButton("add-reminder", "", "Add reminder", "plus", "secondary")}
             </div>
             <div class="list">
-              ${renderUpcomingDashboard(finance, school, reminders)}
+              ${renderUpcomingDashboard(safeFinance, school, reminders)}
             </div>
           </div>
         </section>
@@ -701,7 +922,7 @@
     if (item.type === "assignment") {
       return itemCard({
         title: item.title,
-        meta: ["School", className(item.classId), item.priority || "Priority"],
+        meta: ["School", item.classId ? className(item.classId) : "", item.priority],
         actions: actionButton("edit-assignment", item.id, "Edit", "edit")
       });
     }
@@ -721,10 +942,17 @@
         actions: actionButton("toggle-bill-paid", bill.id, bill.paid ? "Mark unpaid" : "Mark paid", bill.paid ? "undo" : "check")
       })
     );
+    const debtCards = finance.debtPaymentOccurrences.slice(0, 2).map((payment) =>
+      itemCard({
+        title: payment.name,
+        meta: ["Debt payment", formatCurrency(payment.amount), formatDate(payment.date)],
+        actions: actionButton("edit-debt", payment.debtId, "Edit debt", "edit")
+      })
+    );
     const assignmentCards = school.openDue.slice(0, 2).map((assignment) =>
       itemCard({
         title: assignment.title,
-        meta: ["Assignment", className(assignment.classId), formatDate(assignment.dueDate)],
+        meta: ["Assignment", assignment.classId ? className(assignment.classId) : "", formatDate(assignment.dueDate)],
         actions: actionButton("edit-assignment", assignment.id, "Edit", "edit")
       })
     );
@@ -735,8 +963,8 @@
         actions: actionButton("toggle-reminder", reminder.id, "Complete", "check")
       })
     );
-    const cards = [...billCards, ...assignmentCards, ...reminderCards];
-    return cards.length ? cards.join("") : emptyState("No upcoming bills, assignments, or reminders in this span.");
+    const cards = [...billCards, ...debtCards, ...assignmentCards, ...reminderCards];
+    return cards.length ? cards.join("") : emptyState("No upcoming bills, debt payments, assignments, or reminders in this span.");
   }
 
   function renderTasks() {
@@ -835,10 +1063,13 @@
   function renderFinance() {
     const range = calculateDateRange(ui.financeSpan, ui.financeCustom);
     const finance = calculateFinance(range);
+    const safetyRange = safetyForecastRange(range);
+    const safeFinance = calculateFinance(safetyRange);
+    const financeActions = `${undoState?.scope === "finance" ? actionButton("undo-finance-delete", "", `Undo ${undoState.label}`, "undo", "secondary") : ""}${actionButton("add-spending", "", "Add spending", "plus", "primary")}`;
 
     return `
       <div class="view">
-        ${topbar("Finance", "Money calculations", actionButton("add-spending", "", "Add spending", "plus", "primary"))}
+        ${topbar("Finance", "Money calculations", financeActions)}
 
         <section class="card hero-card">
           <div class="hero-content">
@@ -852,7 +1083,7 @@
             <div class="stat-strip">
               <div class="strip-item"><span class="strip-value">${formatCurrency(finance.currentMoney)}</span><span class="strip-label">Current</span></div>
               <div class="strip-item"><span class="strip-value">${formatCurrency(finance.projectedBalance)}</span><span class="strip-label">Projected</span></div>
-              <div class="strip-item"><span class="strip-value">${formatCurrency(finance.safeToSpend)}</span><span class="strip-label">Safe to spend</span></div>
+              <div class="strip-item"><span class="strip-value">${formatCurrency(safeFinance.safeToSpend)}</span><span class="strip-label">Safe to spend</span></div>
             </div>
           </div>
         </section>
@@ -860,20 +1091,21 @@
         <section class="metric-grid">
           ${metric("Total current money", formatCurrency(finance.currentMoney), "Checking, savings, cash, other")}
           ${metric("Upcoming bills", formatCurrency(finance.billsDue), `${finance.billOccurrences.length} due in range`)}
-          ${metric("Total debt", formatCurrency(finance.totalDebt), `${formatCurrency(finance.debtPayments)} due in range`)}
+          ${metric("Debt payments", formatCurrency(safeFinance.debtPayments), `${safeFinance.debtPaymentOccurrences.length} due in ${safetyRange.label.toLowerCase()}`)}
+          ${metric("Safe-to-spend", formatCurrency(safeFinance.safeToSpend), `Protected through ${formatDate(safetyRange.end)}`)}
           ${metric("Investments", formatCurrency(finance.investmentValue), `${formatCurrency(finance.investmentGain)} gain/loss`)}
           ${metric("Net worth estimate", formatCurrency(finance.netWorth), "Money + investments - debt")}
-          ${metric("Daily spending limit", formatCurrency(finance.dailyLimit), `${daysBetween(range.start, range.end)} days`)}
+          ${metric("Daily spending limit", formatCurrency(safeFinance.dailyLimit), `${daysBetween(safetyRange.start, safetyRange.end)} protected days`)}
         </section>
 
         <section class="details-stack">
-          ${financeDetails("Current money", renderAccounts(finance), "add-account", "Add account")}
+          ${financeDetails("Current money", renderAccounts(finance, safeFinance, safetyRange), "add-account", "Add account")}
           ${financeDetails("Income", renderIncome(finance, range), "add-income", "Add income")}
           ${financeDetails("Bills and subscriptions", renderBills(finance), "add-bill", "Add bill")}
           ${financeDetails("Spending", renderSpending(range), "add-spending", "Add spending")}
           ${financeDetails("Debt repayment", renderDebts(finance), "add-debt", "Add debt")}
           ${financeDetails("Investments", renderInvestments(finance), "add-investment", "Add investment")}
-          ${financeDetails("Forecast", renderForecast(finance, range), "", "")}
+          ${financeDetails("Forecast", renderForecast(finance, range, safeFinance, safetyRange), "", "")}
         </section>
       </div>
     `;
@@ -888,11 +1120,11 @@
     `;
   }
 
-  function renderAccounts(finance) {
+  function renderAccounts(finance, safeFinance = finance, safetyRange = finance.range) {
     return `
       <div class="metric-grid">
         ${metric("Total current money", formatCurrency(finance.currentMoney), "")}
-        ${metric("Safe-to-spend", formatCurrency(finance.safeToSpend), "")}
+        ${metric("Safe-to-spend", formatCurrency(safeFinance.safeToSpend), `After obligations through ${formatDate(safetyRange.end)}`)}
       </div>
       <div class="list">
         ${appData.finance.accounts.length ? appData.finance.accounts.map((account) => itemCard({
@@ -906,6 +1138,7 @@
 
   function renderIncome(finance, range) {
     const incomeInRange = appData.finance.income.filter((entry) => dateInRange(incomeDate(entry), range));
+    const outsideRange = appData.finance.income.filter((entry) => !dateInRange(incomeDate(entry), range));
     const bySource = groupTotals(incomeInRange, "source", entryNetIncome);
     return `
       <div class="metric-grid">
@@ -917,21 +1150,30 @@
       </div>
       ${renderBarChart(bySource, finance.netIncome)}
       <div class="list">
-        ${incomeInRange.length ? sortByDate(incomeInRange, "date").map(renderIncomeItem).join("") : emptyState("No income logged in this range.")}
+        ${incomeInRange.length ? sortIncomeEntries(incomeInRange).map((entry) => renderIncomeItem(entry, range)).join("") : emptyState("No income logged in this range.")}
       </div>
+      ${outsideRange.length ? `
+        <div class="mini-section">
+          <h3>Outside this range</h3>
+          <div class="list">
+            ${sortIncomeEntries(outsideRange).map((entry) => renderIncomeItem(entry, range)).join("")}
+          </div>
+        </div>
+      ` : ""}
     `;
   }
 
-  function renderIncomeItem(entry) {
+  function renderIncomeItem(entry, range = null) {
     const gross = entryGrossIncome(entry);
     const net = entryNetIncome(entry);
     const tax = entryTaxEstimate(entry);
+    const outsideRange = range && !dateInRange(incomeDate(entry), range);
     const taxNote = entry.taxMode === "manual"
       ? `Manual tax: ${formatCurrency(tax.total)} (${formatNumber(tax.effectiveRate, 1)}%)`
       : `Tax estimate: ${formatCurrency(tax.total)} (${formatNumber(tax.effectiveRate, 1)}%) · Fed ${formatCurrency(tax.federal)}, FICA ${formatCurrency(tax.socialSecurity + tax.medicare)}, OH ${formatCurrency(tax.ohio)}${tax.local ? `, local ${formatCurrency(tax.local)}` : ""}`;
     return itemCard({
       title: entry.source || "Income",
-      meta: [entry.type === "hourly" ? "Hourly" : "Manual", entry.taxMode === "manual" ? "Manual tax" : "Auto Ohio tax", `Gross ${formatCurrency(gross)}`, `Net ${formatCurrency(net)}`, formatDate(incomeDate(entry))],
+      meta: [entry.type === "hourly" ? "Hourly" : "Manual", entry.taxMode === "manual" ? "Manual tax" : "Auto Ohio tax", `Gross ${formatCurrency(gross)}`, `Net ${formatCurrency(net)}`, formatDate(incomeDate(entry)), outsideRange ? "Outside selected range" : ""],
       note: [taxNote, entry.notes].filter(Boolean).join(" · "),
       actions: `${actionButton("edit-income", entry.id, "Edit", "edit")}${actionButton("delete-income", entry.id, "Delete", "trash")}`
     });
@@ -993,6 +1235,7 @@
     return `
       <div class="metric-grid">
         ${metric("Total debt", formatCurrency(finance.totalDebt), "")}
+        ${metric("Debt payments due", formatCurrency(finance.debtPayments), `${finance.debtPaymentOccurrences.length} in selected range`)}
         ${metric("Monthly minimums", formatCurrency(sum(appData.finance.debts, (debt) => debt.minimumPayment)), "")}
       </div>
       <div class="list">
@@ -1005,6 +1248,7 @@
     const original = Number(debt.originalBalance) || Number(debt.balance) || 0;
     const progress = original ? pct(original - Number(debt.balance), original) : 0;
     const targetPay = monthlyDebtTarget(debt);
+    const reservedPayment = debtPaymentAmount(debt);
     return `
       <article class="item-card">
         <div class="item-main">
@@ -1012,6 +1256,8 @@
           <div class="item-meta">
             <span>${formatCurrency(debt.balance)} remaining</span>
             <span>${formatCurrency(debt.minimumPayment)} minimum</span>
+            <span>${formatCurrency(reservedPayment)} reserved</span>
+            <span>${debt.dueDate ? `Due ${formatDate(debt.dueDate)}` : "No due date set"}</span>
             <span>${debt.interestRate || 0}% APR</span>
             ${debt.targetPayoffDate ? `<span>${formatCurrency(targetPay)} monthly target</span>` : ""}
           </div>
@@ -1045,17 +1291,18 @@
     `;
   }
 
-  function renderForecast(finance, range) {
+  function renderForecast(finance, range, safeFinance = finance, safetyRange = range) {
     return `
       <div class="metric-grid">
         ${metric("Projected balance", formatCurrency(finance.projectedBalance), "Current + income - bills - debt - spending - shopping")}
-        ${metric("Projected safe-to-spend", formatCurrency(finance.safeToSpend), "Current minus obligations")}
+        ${metric("Safe-to-spend", formatCurrency(safeFinance.safeToSpend), `Protected through ${formatDate(safetyRange.end)}`)}
         ${metric("Expected income", formatCurrency(finance.netIncome), "Selected range")}
         ${metric("Upcoming bills", formatCurrency(finance.billsDue), "Unpaid bills")}
+        ${metric("Debt payments", formatCurrency(safeFinance.debtPayments), `${safeFinance.debtPaymentOccurrences.length} due in ${safetyRange.label.toLowerCase()}`)}
         ${metric("Expected spending", formatCurrency(finance.spending), "Logged spending in range")}
-        ${metric("Lowest balance", formatCurrency(finance.lowestBalance), "Before next income if available")}
+        ${metric("Lowest balance", formatCurrency(safeFinance.lowestBalance), "Lowest protected balance")}
       </div>
-      <p class="tiny">Daily spending limit is calculated from projected balance divided by days in the selected range.</p>
+      <p class="tiny">Safe-to-spend reserves upcoming bills, debt payments, logged spending, and open shopping before calculating the daily limit.</p>
     `;
   }
 
@@ -1063,8 +1310,11 @@
     const range = calculateDateRange("week");
     const stats = schoolStats(range);
     const byClass = appData.school.classes.map((klass) => classStats(klass.id));
-    const dueToday = appData.school.assignments.filter((assignment) => !assignmentComplete(assignment) && assignment.dueDate === today());
-    const upcomingExams = sortByDate(appData.school.assignments.filter((assignment) => !assignmentComplete(assignment) && assignment.type === "exam" && assignment.dueDate >= today())).slice(0, 5);
+    if (!validSchoolClassFilter(ui.schoolClassFilter)) ui.schoolClassFilter = "all";
+    const filteredAssignments = filterSchoolAssignments(appData.school.assignments);
+    const dueToday = filteredAssignments.filter((assignment) => !assignmentComplete(assignment) && assignment.dueDate === today());
+    const upcomingExams = sortByDate(filteredAssignments.filter((assignment) => !assignmentComplete(assignment) && assignment.type === "exam" && assignment.dueDate >= today())).slice(0, 5);
+    const filterLabel = schoolFilterLabel(ui.schoolClassFilter);
 
     return `
       <div class="view">
@@ -1072,7 +1322,7 @@
 
         <section class="metric-grid">
           ${metric("Due today", String(dueToday.length), "")}
-          ${metric("Due this week", String(stats.openDue.length), "")}
+          ${metric("Due this week", String(stats.openDue.length), "All classes")}
           ${metric("Overdue", String(stats.overdue.length), "Open assignments")}
           ${metric("Completed", String(stats.completed.length), "Submitted or graded")}
         </section>
@@ -1090,8 +1340,12 @@
         <section class="two-col">
           <div class="card panel section">
             <div class="section-header"><h2>Assignments</h2>${actionButton("add-assignment", "", "Add", "plus", "secondary")}</div>
+            <div class="assignment-tools">
+              ${schoolClassFilterToggle()}
+              <p class="tiny">${escapeHtml(filterLabel)} · ${filteredAssignments.length} assignment${filteredAssignments.length === 1 ? "" : "s"}</p>
+            </div>
             <div class="list">
-              ${appData.school.assignments.length ? sortByDate(appData.school.assignments).map(renderAssignmentItem).join("") : emptyState("No assignments added yet.")}
+              ${filteredAssignments.length ? sortByDate(filteredAssignments).map(renderAssignmentItem).join("") : emptyState("No assignments match this class filter.")}
             </div>
           </div>
 
@@ -1106,11 +1360,49 @@
     `;
   }
 
+  function validSchoolClassFilter(filter) {
+    return filter === "all" || filter === "unassigned" || Boolean(findById(appData.school.classes, filter));
+  }
+
+  function filterSchoolAssignments(assignments) {
+    if (ui.schoolClassFilter === "unassigned") return assignments.filter((assignment) => !assignment.classId);
+    if (ui.schoolClassFilter === "all") return assignments;
+    return assignments.filter((assignment) => assignment.classId === ui.schoolClassFilter);
+  }
+
+  function schoolFilterLabel(filter) {
+    if (filter === "unassigned") return "Showing assignments with no class";
+    if (filter === "all") return "Showing all assignments";
+    return `Showing ${className(filter)}`;
+  }
+
+  function schoolClassFilterToggle() {
+    const filters = [
+      { id: "all", name: "All", color: appData.settings.accent || "#f7f7ff" },
+      { id: "unassigned", name: "No class", color: "#6f7685" },
+      ...appData.school.classes.map((klass) => ({ id: klass.id, name: klass.name || "Class", color: klass.accentColor || "#7c5cff" }))
+    ];
+    return `
+      <div class="class-filter" role="group" aria-label="Filter assignments by class">
+        ${filters.map((filter) => {
+          const color = safeHexColor(filter.color);
+          return `
+            <button type="button" class="class-chip ${ui.schoolClassFilter === filter.id ? "active" : ""}" data-action="set-school-class-filter" data-class-id="${escapeHtml(filter.id)}" style="--class-color:${escapeHtml(color)}; --class-color-rgb:${rgbText(color)}">
+              <span class="color-dot"></span>
+              <span>${escapeHtml(filter.name)}</span>
+            </button>
+          `;
+        }).join("")}
+      </div>
+    `;
+  }
+
   function renderClassCard(stats) {
+    const color = safeHexColor(stats.color);
     return `
       <article class="item-card">
         <div class="item-main">
-          <p class="item-title"><span class="color-dot" style="background:${escapeHtml(stats.color)}"></span> ${escapeHtml(stats.name)}</p>
+          <p class="item-title"><span class="color-dot" style="background:${escapeHtml(color)}"></span> ${escapeHtml(stats.name)}</p>
           <div class="item-meta">
             <span>${stats.completed}/${stats.total} complete</span>
             <span>${stats.percent}% completion</span>
@@ -1119,6 +1411,7 @@
           <div class="progress"><span style="width:${clamp(stats.percent)}%"></span></div>
         </div>
         <div class="item-actions">
+          ${actionButton("set-school-class-filter", stats.id, "Show assignments", "target")}
           ${actionButton("edit-class", stats.id, "Edit", "edit")}
           ${actionButton("delete-class", stats.id, "Delete", "trash")}
         </div>
@@ -1128,15 +1421,21 @@
 
   function renderAssignmentItem(assignment) {
     const complete = assignmentComplete(assignment);
+    const klass = findById(appData.school.classes, assignment.classId);
+    const color = safeHexColor(klass?.accentColor, "#6f7685");
+    const dueLabel = `${formatDate(assignment.dueDate)}${assignment.dueTime ? ` ${assignment.dueTime}` : ""}`;
+    const meta = [
+      assignment.classId ? className(assignment.classId) : "",
+      assignment.type,
+      assignment.dueDate ? dueLabel : "No due date",
+      assignment.priority
+    ];
     return `
-      <article class="item-card ${complete ? "complete" : ""}">
+      <article class="item-card assignment-card ${complete ? "complete" : ""} ${!complete && isBeforeToday(assignment.dueDate) ? "overdue" : ""}" style="--class-color:${escapeHtml(color)}; --class-color-rgb:${rgbText(color)}">
         <div class="item-main">
-          <p class="item-title">${escapeHtml(assignment.title)}</p>
+          <p class="item-title assignment-title"><span class="color-dot"></span>${escapeHtml(assignment.title)}</p>
           <div class="item-meta">
-            <span>${escapeHtml(className(assignment.classId))}</span>
-            <span>${escapeHtml(assignment.type || "assignment")}</span>
-            <span>${escapeHtml(formatDate(assignment.dueDate))}${assignment.dueTime ? ` ${escapeHtml(assignment.dueTime)}` : ""}</span>
-            <span>${escapeHtml(assignment.priority || "Medium")}</span>
+            ${meta.filter(Boolean).map((item) => `<span>${escapeHtml(item)}</span>`).join("")}
           </div>
           <label class="field">
             <span class="tiny">Status</span>
@@ -1303,7 +1602,7 @@
         <div class="metric-grid">
           ${metric("Estimated total", formatCurrency(stats.remainingTotal), `${stats.remainingCount} unpurchased`)}
           ${metric("Purchased total", formatCurrency(stats.purchasedTotal), `${purchased.length} purchased`)}
-          ${metric("After shopping", formatCurrency(finance.safeToSpend - stats.remainingTotal), "Paycheck cycle safe-to-spend")}
+          ${metric("After shopping", formatCurrency(finance.safeToSpend), "Paycheck cycle safe-to-spend")}
         </div>
         <div class="card panel section">
           <h2>Unpurchased</h2>
@@ -1329,7 +1628,7 @@
   function renderShoppingItem(item) {
     return itemCard({
       title: item.itemName,
-      meta: [formatCurrency(item.estimatedPrice), item.store || "No store", item.category || "Other", item.priority || "Medium"],
+      meta: [formatCurrency(item.estimatedPrice), item.store, item.category, item.priority],
       className: item.purchased ? "purchased" : "",
       actions: `
         ${actionButton("toggle-shopping", item.id, item.purchased ? "Unpurchase" : "Purchased", item.purchased ? "undo" : "check")}
@@ -1538,6 +1837,8 @@
           </div>
         </div>
 
+        ${renderSyncSettings()}
+
         <div class="card panel section">
           <h3>Data</h3>
           <div class="actions">
@@ -1551,6 +1852,42 @@
           </div>
         </div>
       </section>
+    `;
+  }
+
+  function renderSyncSettings() {
+    const signedIn = syncConfigured();
+    return `
+      <div class="card panel section">
+        <div class="section-header">
+          <h3>Account sync</h3>
+          <span class="sync-badge ${signedIn ? "active" : ""}">${signedIn ? "Signed in" : "Local only"}</span>
+        </div>
+        <div class="sync-status">
+          <span>${escapeHtml(syncState.status || "Not signed in")}</span>
+          ${syncState.lastSync ? `<span>Last sync ${escapeHtml(formatSyncTime(syncState.lastSync))}</span>` : ""}
+        </div>
+        <label class="field">
+          <span>Sync API endpoint</span>
+          <input type="url" id="sync-endpoint" value="${escapeHtml(syncState.endpoint || defaultSyncEndpoint())}" placeholder="http://localhost:4173/api/sync">
+        </label>
+        <div class="custom-range">
+          <label class="field">
+            <span>Account name</span>
+            <input type="text" id="sync-account" value="${escapeHtml(syncState.account)}" autocomplete="username">
+          </label>
+          <label class="field">
+            <span>Sync key</span>
+            <input type="password" id="sync-key" value="${escapeHtml(syncState.key)}" autocomplete="current-password">
+          </label>
+        </div>
+        <div class="actions">
+          <button type="button" class="primary" data-action="save-sync-login">${icon("check")}<span>Sign in / save</span></button>
+          <button type="button" class="secondary" data-action="pull-sync-data">${icon("download")}<span>Pull</span></button>
+          <button type="button" class="secondary" data-action="push-sync-data">${icon("upload")}<span>Push</span></button>
+          <button type="button" class="ghost" data-action="sign-out-sync">${icon("undo")}<span>Sign out</span></button>
+        </div>
+      </div>
     `;
   }
 
@@ -1613,17 +1950,18 @@
     const spending = sum(spendingEntries, (entry) => entry.amount);
     const billOccurrences = appData.finance.bills.flatMap((bill) => billOccurrencesInRange(bill, range)).sort((a, b) => a.date.localeCompare(b.date));
     const billsDue = sum(billOccurrences.filter((bill) => !bill.paid), (bill) => bill.amount);
-    const debtPayments = sum(appData.finance.debts, (debt) => recurringMonthlyAmountInRange(debt.minimumPayment, debt.dueDate, range));
+    const debtPaymentOccurrences = appData.finance.debts.flatMap((debt) => debtPaymentOccurrencesInRange(debt, range)).sort((a, b) => a.date.localeCompare(b.date));
+    const debtPayments = sum(debtPaymentOccurrences, (payment) => payment.amount);
     const totalDebt = sum(appData.finance.debts, (debt) => debt.balance);
     const invested = sum(appData.finance.investments, (investment) => investment.amountInvested);
     const investmentValue = sum(appData.finance.investments, (investment) => investment.currentValue);
     const investmentGain = investmentValue - invested;
     const shopping = shoppingStats().remainingTotal;
     const projectedBalance = currentMoney + netIncome - billsDue - debtPayments - spending - shopping;
-    const safeToSpend = currentMoney - billsDue - debtPayments - shopping;
     const netWorth = currentMoney + investmentValue - totalDebt;
-    const lowestBalance = projectedLowestBalance(currentMoney, incomeEntries, billOccurrences, spendingEntries, appData.finance.debts, range);
-    const dailyLimit = Math.max(0, projectedBalance / daysBetween(range.start, range.end));
+    const lowestBalance = projectedLowestBalance(currentMoney, incomeEntries, billOccurrences, debtPaymentOccurrences, spendingEntries);
+    const safeToSpend = Math.min(currentMoney, projectedBalance, lowestBalance);
+    const dailyLimit = Math.max(0, safeToSpend / daysBetween(range.start, range.end));
     return {
       range,
       currentMoney,
@@ -1636,6 +1974,7 @@
       spending,
       billOccurrences,
       billsDue,
+      debtPaymentOccurrences,
       debtPayments,
       totalDebt,
       invested,
@@ -1779,16 +2118,38 @@
     return sum(billOccurrencesInRange(billLike, range), (item) => item.amount);
   }
 
-  function projectedLowestBalance(current, incomeEntries, billOccurrences, spendingEntries, debts, range) {
+  function debtPaymentAmount(debt) {
+    if ((Number(debt.balance) || 0) <= 0) return 0;
+    const minimum = Number(debt.minimumPayment) || 0;
+    const target = monthlyDebtTarget(debt);
+    return Math.max(minimum, target);
+  }
+
+  function debtPaymentOccurrencesInRange(debt, range) {
+    const amount = debtPaymentAmount(debt);
+    if (!amount) return [];
+    const dueDate = debt.dueDate || range.start;
+    return billOccurrencesInRange({
+      id: debt.id,
+      name: debt.name || "Debt payment",
+      amount,
+      dueDate,
+      frequency: "monthly",
+      paid: false
+    }, range).map((payment) => ({
+      ...payment,
+      debtId: debt.id,
+      minimumPayment: Number(debt.minimumPayment) || 0,
+      targetPayment: monthlyDebtTarget(debt)
+    }));
+  }
+
+  function projectedLowestBalance(current, incomeEntries, billOccurrences, debtPaymentOccurrences, spendingEntries) {
     const events = [];
     incomeEntries.forEach((entry) => events.push({ date: incomeDate(entry), amount: entryNetIncome(entry) }));
     billOccurrences.filter((bill) => !bill.paid).forEach((bill) => events.push({ date: bill.date, amount: -Number(bill.amount) || 0 }));
+    debtPaymentOccurrences.forEach((payment) => events.push({ date: payment.date, amount: -Number(payment.amount) || 0 }));
     spendingEntries.forEach((entry) => events.push({ date: entry.date, amount: -Number(entry.amount) || 0 }));
-    debts.forEach((debt) => {
-      billOccurrencesInRange({ amount: debt.minimumPayment, dueDate: debt.dueDate, frequency: "monthly", paid: false }, range).forEach((payment) => {
-        events.push({ date: payment.date, amount: -Number(payment.amount) || 0 });
-      });
-    });
     events.sort((a, b) => String(a.date).localeCompare(String(b.date)));
     let balance = current;
     let lowest = current;
@@ -1825,7 +2186,7 @@
     return {
       id: classId,
       name: klass.name || "Class",
-      color: klass.accentColor || "#7c5cff",
+      color: safeHexColor(klass.accentColor, "#7c5cff"),
       total: assignments.length,
       completed,
       percent: pct(completed, assignments.length),
@@ -2110,9 +2471,9 @@
   function taskFields(initial = {}) {
     return [
       { name: "title", label: "Title", required: true },
-      { name: "category", label: "Category", type: "select", options: appData.settings.taskCategories, default: initial.category || "Personal" },
+      { name: "category", label: "Category", type: "select", options: [{ value: "", label: "No category" }, ...appData.settings.taskCategories.map((category) => ({ value: category, label: category }))], default: initial.category || "" },
       { name: "dueDate", label: "Due date", type: "date", default: initial.dueDate || today() },
-      { name: "priority", label: "Priority", type: "select", options: ["Low", "Medium", "High"], default: "Medium" },
+      { name: "priority", label: "Priority", type: "select", options: [{ value: "", label: "No priority" }, "Low", "Medium", "High"], default: initial.priority || "" },
       { name: "reminderTime", label: "Reminder time", type: "time" },
       { name: "notes", label: "Notes", type: "textarea" }
     ];
@@ -2148,7 +2509,7 @@
       { name: "dueDate", label: "Due date", type: "date", default: today(), required: true },
       { name: "frequency", label: "Frequency", type: "select", options: ["weekly", "monthly", "yearly", "custom", "one-time"], default: "monthly" },
       { name: "customDays", label: "Custom frequency days", type: "number", min: 1, default: 30 },
-      { name: "category", label: "Category", type: "select", options: appData.settings.billCategories },
+      { name: "category", label: "Category", type: "select", options: [{ value: "", label: "No category" }, ...appData.settings.billCategories.map((category) => ({ value: category, label: category }))] },
       { name: "paid", label: "Paid", type: "checkbox" },
       { name: "notes", label: "Notes", type: "textarea" }
     ];
@@ -2157,7 +2518,7 @@
   function spendingFields() {
     return [
       { name: "amount", label: "Amount", type: "number", step: "0.01", required: true },
-      { name: "category", label: "Category", type: "select", options: appData.settings.spendingCategories },
+      { name: "category", label: "Category", type: "select", options: [{ value: "", label: "No category" }, ...appData.settings.spendingCategories.map((category) => ({ value: category, label: category }))] },
       { name: "date", label: "Date", type: "date", default: today(), required: true },
       { name: "note", label: "Note", type: "text" },
       { name: "necessary", label: "Necessary", type: "checkbox", default: true },
@@ -2202,10 +2563,10 @@
     return [
       { name: "title", label: "Assignment title", required: true },
       { name: "classId", label: "Class", type: "select", options: [{ value: "", label: "No class" }, ...appData.school.classes.map((klass) => ({ value: klass.id, label: klass.name }))] },
-      { name: "type", label: "Type", type: "select", options: ["assignment", "quiz", "exam", "project", "other"] },
+      { name: "type", label: "Type", type: "select", options: [{ value: "", label: "No type" }, "assignment", "quiz", "exam", "project", "other"] },
       { name: "dueDate", label: "Due date", type: "date", default: today(), required: true },
       { name: "dueTime", label: "Due time", type: "time" },
-      { name: "priority", label: "Priority", type: "select", options: ["Low", "Medium", "High"], default: "Medium" },
+      { name: "priority", label: "Priority", type: "select", options: [{ value: "", label: "No priority" }, "Low", "Medium", "High"] },
       { name: "status", label: "Status", type: "select", options: ["not started", "in progress", "submitted", "graded"] },
       { name: "grade", label: "Grade", type: "text" },
       { name: "pointsEarned", label: "Points earned", type: "number", step: "0.01" },
@@ -2244,7 +2605,7 @@
       { name: "estimatedPrice", label: "Estimated price", type: "number", step: "0.01" },
       { name: "store", label: "Store", type: "text" },
       { name: "category", label: "Category", type: "text" },
-      { name: "priority", label: "Priority", type: "select", options: ["Low", "Medium", "High"] },
+      { name: "priority", label: "Priority", type: "select", options: [{ value: "", label: "No priority" }, "Low", "Medium", "High"] },
       { name: "purchased", label: "Purchased", type: "checkbox" }
     ];
   }
@@ -2291,19 +2652,19 @@
     const clean = text.trim();
     if (!clean) return;
     if (category === "Shopping") {
-      appData.shopping.push(makeItem({ itemName: clean, estimatedPrice: 0, store: "", category: "", priority: "Medium", purchased: false }));
+      appData.shopping.push(makeItem({ itemName: clean, estimatedPrice: 0, store: "", category: "", priority: "", purchased: false }));
     } else if (category === "School") {
-      appData.school.assignments.push(makeItem({ title: clean, classId: "", type: "assignment", dueDate: today(), dueTime: "", priority: "Medium", status: "not started", grade: "", pointsEarned: "", pointsPossible: "", notes: "", link: "" }));
+      appData.school.assignments.push(makeItem({ title: clean, classId: "", type: "assignment", dueDate: today(), dueTime: "", priority: "", status: "not started", grade: "", pointsEarned: "", pointsPossible: "", notes: "", link: "" }));
     } else if (category === "Gym") {
-      appData.tasks.push(makeItem({ title: clean, category: "Gym", dueDate: today(), priority: "Medium", notes: "", reminderTime: "", completed: false }));
+      appData.tasks.push(makeItem({ title: clean, category: "Gym", dueDate: today(), priority: "", notes: "", reminderTime: "", completed: false }));
     } else if (category === "Reminder") {
       appData.reminders.push(makeItem({ title: clean, date: today(), time: "", type: "Reminder", notes: "", completed: false }));
     } else if (category === "Money") {
-      appData.tasks.push(makeItem({ title: clean, category: "Money", dueDate: today(), priority: "Medium", notes: "", reminderTime: "", completed: false }));
+      appData.tasks.push(makeItem({ title: clean, category: "Money", dueDate: today(), priority: "", notes: "", reminderTime: "", completed: false }));
     } else if (category === "Note" || category === "Idea") {
       inboxItem.processed = false;
     } else {
-      appData.tasks.push(makeItem({ title: clean, category: "Personal", dueDate: today(), priority: "Medium", notes: "", reminderTime: "", completed: false }));
+      appData.tasks.push(makeItem({ title: clean, category: "Personal", dueDate: today(), priority: "", notes: "", reminderTime: "", completed: false }));
     }
   }
 
@@ -2326,6 +2687,11 @@
       ui.moreView = button.dataset.view;
       return render();
     }
+    if (action === "set-school-class-filter") {
+      ui.schoolClassFilter = button.dataset.classId || id || "all";
+      return render();
+    }
+    if (action === "undo-finance-delete") return undoFinanceDelete();
     if (action === "open-quick-add") return openQuickAdd();
 
     const rerender = () => {
@@ -2398,8 +2764,9 @@
       }
       case "delete-account":
         if (confirm("Delete this account?")) {
-          deleteById(appData.finance.accounts, id);
+          deleteFinanceItem(appData.finance.accounts, id, "account");
           rerender();
+          showToast("Account deleted. Undo is available.");
         }
         break;
       case "add-income":
@@ -2410,8 +2777,9 @@
       }
       case "delete-income":
         if (confirm("Delete this income entry?")) {
-          deleteById(appData.finance.income, id);
+          deleteFinanceItem(appData.finance.income, id, "income entry");
           rerender();
+          showToast("Income deleted. Undo is available.");
         }
         break;
       case "add-bill":
@@ -2428,8 +2796,9 @@
       }
       case "delete-bill":
         if (confirm("Delete this bill?")) {
-          deleteById(appData.finance.bills, id);
+          deleteFinanceItem(appData.finance.bills, id, "bill");
           rerender();
+          showToast("Bill deleted. Undo is available.");
         }
         break;
       case "add-spending":
@@ -2440,8 +2809,9 @@
       }
       case "delete-spending":
         if (confirm("Delete this spending entry?")) {
-          deleteById(appData.finance.spending, id);
+          deleteFinanceItem(appData.finance.spending, id, "spending entry");
           rerender();
+          showToast("Spending deleted. Undo is available.");
         }
         break;
       case "add-debt":
@@ -2477,8 +2847,9 @@
       }
       case "delete-debt":
         if (confirm("Delete this debt?")) {
-          deleteById(appData.finance.debts, id);
+          deleteFinanceItem(appData.finance.debts, id, "debt");
           rerender();
+          showToast("Debt deleted. Undo is available.");
         }
         break;
       case "add-investment":
@@ -2489,8 +2860,9 @@
       }
       case "delete-investment":
         if (confirm("Delete this investment?")) {
-          deleteById(appData.finance.investments, id);
+          deleteFinanceItem(appData.finance.investments, id, "investment");
           rerender();
+          showToast("Investment deleted. Undo is available.");
         }
         break;
       case "add-class":
@@ -2678,6 +3050,41 @@
         ui.activeTab = "finance";
         render();
         break;
+      case "save-sync-login": {
+        const endpoint = document.getElementById("sync-endpoint")?.value.trim() || defaultSyncEndpoint();
+        const account = document.getElementById("sync-account")?.value.trim() || "";
+        const key = document.getElementById("sync-key")?.value || "";
+        syncState = {
+          ...syncState,
+          enabled: Boolean(endpoint && account && key),
+          endpoint,
+          account,
+          key,
+          status: endpoint && account && key ? "Signing in..." : "Missing sync details"
+        };
+        saveSync();
+        render();
+        connectSync();
+        break;
+      }
+      case "pull-sync-data":
+        pullSyncData(true);
+        break;
+      case "push-sync-data":
+        pushSyncData(true);
+        break;
+      case "sign-out-sync":
+        syncState = {
+          ...syncState,
+          enabled: false,
+          account: "",
+          key: "",
+          status: "Signed out"
+        };
+        saveSync();
+        render();
+        showToast("Signed out of sync.");
+        break;
       case "export-data":
         exportData();
         break;
@@ -2803,4 +3210,7 @@
 
   setupNavIcons();
   render();
+  if (syncConfigured()) {
+    window.setTimeout(() => pullSyncData(false), 500);
+  }
 })();
