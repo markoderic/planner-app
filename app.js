@@ -7,6 +7,7 @@
   const app = document.getElementById("app");
   const modalRoot = document.getElementById("modal-root");
   const toast = document.getElementById("toast");
+  const bootStarted = performance.now();
 
   const today = () => dateString(new Date());
   const nowIso = () => new Date().toISOString();
@@ -677,6 +678,17 @@
     if (ui.activeTab === "more") app.innerHTML = renderMore();
   }
 
+  function finishAppLoad() {
+    const minimumLoadMs = 520;
+    const delay = Math.max(0, minimumLoadMs - (performance.now() - bootStarted));
+    window.setTimeout(() => {
+      document.body.classList.remove("app-loading");
+      document.body.classList.add("app-ready");
+      const loader = document.querySelector(".app-loader");
+      if (loader) window.setTimeout(() => loader.remove(), 300);
+    }, delay);
+  }
+
   function actionButton(action, id, label, iconName, className = "icon-btn", extra = {}) {
     const attrs = Object.entries(extra)
       .map(([key, value]) => `data-${key}="${escapeHtml(value)}"`)
@@ -1292,8 +1304,15 @@
     const reservedPayment = debtPaymentAmount(debt);
     return `
       <article class="item-card debt-card">
+        <div class="debt-header">
+          <p class="item-title debt-title">${escapeHtml(debt.name)}</p>
+          <div class="item-actions debt-actions">
+            ${actionButton("make-debt-payment", debt.id, "Make payment", "wallet")}
+            ${actionButton("edit-debt", debt.id, "Edit", "edit")}
+            ${actionButton("delete-debt", debt.id, "Delete", "trash")}
+          </div>
+        </div>
         <div class="item-main debt-main">
-          <p class="item-title">${escapeHtml(debt.name)}</p>
           <div class="debt-overview">
             <div class="debt-balance">
               <span>Main balance</span>
@@ -1330,11 +1349,6 @@
             <strong>${clamp(progress)}%</strong>
           </div>
           <div class="progress" aria-label="Debt payoff progress"><span style="width:${clamp(progress)}%"></span></div>
-        </div>
-        <div class="item-actions">
-          ${actionButton("make-debt-payment", debt.id, "Make payment", "wallet")}
-          ${actionButton("edit-debt", debt.id, "Edit", "edit")}
-          ${actionButton("delete-debt", debt.id, "Delete", "trash")}
         </div>
       </article>
     `;
@@ -3279,6 +3293,7 @@
 
   setupNavIcons();
   render();
+  finishAppLoad();
   if (syncConfigured()) {
     window.setTimeout(() => pullSyncData(false), 500);
   }

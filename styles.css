@@ -44,6 +44,10 @@ body {
   letter-spacing: 0;
 }
 
+body.app-loading {
+  overflow: hidden;
+}
+
 button,
 input,
 select,
@@ -64,11 +68,84 @@ a {
   min-height: 100vh;
 }
 
+.app-loader {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 50% 42%, rgba(var(--accent-rgb), 0.12), transparent 18rem),
+    rgba(5, 5, 9, 0.94);
+  opacity: 1;
+  pointer-events: auto;
+  transition: opacity 260ms ease, visibility 260ms ease;
+}
+
+body.app-ready .app-loader {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.loader-panel {
+  width: min(220px, 70vw);
+  display: grid;
+  gap: 12px;
+}
+
+.loader-label {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 760;
+  letter-spacing: 0;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.loader-track {
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.loader-track span {
+  display: block;
+  height: 100%;
+  width: 42%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, transparent, var(--accent), var(--accent-2));
+  animation: loaderProgress 620ms cubic-bezier(0.24, 0.72, 0.2, 1) forwards;
+}
+
+@keyframes loaderProgress {
+  from {
+    transform: translateX(-100%);
+  }
+
+  to {
+    transform: translateX(145%);
+  }
+}
+
 .app-main {
   width: min(100%, 1140px);
   min-height: 100vh;
   margin: 0 auto;
   padding: calc(16px + env(safe-area-inset-top)) 14px calc(var(--nav-height) + 28px + env(safe-area-inset-bottom));
+  transition: opacity 260ms ease, transform 260ms ease;
+}
+
+body.app-loading .app-main {
+  opacity: 0.28;
+  transform: translateY(4px);
+}
+
+body.app-ready .app-main {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .view {
@@ -650,17 +727,36 @@ h3 {
 }
 
 .debt-card {
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
+  padding: 14px;
+}
+
+.debt-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.debt-title {
+  margin: 0;
+  font-size: clamp(1.08rem, 0.98rem + 0.38vw, 1.34rem);
+  line-height: 1.16;
+}
+
+.debt-actions {
+  align-items: center;
 }
 
 .debt-main {
   display: grid;
-  gap: 11px;
+  gap: 12px;
 }
 
 .debt-overview {
   display: grid;
-  gap: 10px;
+  gap: 9px;
 }
 
 .debt-balance {
@@ -700,11 +796,11 @@ h3 {
 .debt-info-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  gap: 9px;
 }
 
 .debt-info {
-  min-height: 66px;
+  min-height: 76px;
   display: grid;
   align-content: center;
   gap: 6px;
@@ -953,11 +1049,13 @@ textarea:focus {
   gap: 2px;
   padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
   border-top: 1px solid var(--line);
-  background: rgba(5, 5, 9, 0.92);
-  backdrop-filter: blur(18px);
+  background: rgba(8, 8, 14, 0.86);
+  box-shadow: 0 -1px 0 rgba(255, 255, 255, 0.035) inset;
+  backdrop-filter: blur(20px) saturate(1.1);
 }
 
 .nav-item {
+  position: relative;
   min-width: 0;
   min-height: 58px;
   display: grid;
@@ -968,18 +1066,47 @@ textarea:focus {
   background: transparent;
   color: var(--subtle);
   cursor: pointer;
-  transition: background 160ms ease, border-color 160ms ease, color 160ms ease, transform 160ms ease;
+  overflow: hidden;
+  transition: color 180ms ease, transform 160ms ease;
 }
 
 .nav-item span:last-child {
   font-size: 0.7rem;
+  font-weight: 650;
   line-height: 1;
 }
 
+.nav-item::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 6px;
+  width: 18px;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--accent);
+  opacity: 0;
+  transform: translateX(-50%) scaleX(0.5);
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.nav-item .icon {
+  opacity: 0.78;
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
 .nav-item.active {
-  border-color: rgba(var(--accent-rgb), 0.36);
-  background: rgba(var(--accent-rgb), 0.1);
-  color: var(--text);
+  color: rgba(247, 247, 255, 0.96);
+}
+
+.nav-item.active::after {
+  opacity: 0.72;
+  transform: translateX(-50%) scaleX(1);
+}
+
+.nav-item.active .icon {
+  opacity: 1;
+  transform: translateY(-1px);
 }
 
 .modal-backdrop {
@@ -1290,7 +1417,16 @@ textarea:focus {
   }
 
   .debt-overview {
-    grid-template-columns: minmax(180px, 0.85fr) minmax(0, 1.45fr);
+    grid-template-columns: minmax(220px, 1.1fr) minmax(0, 2.1fr);
+    align-items: stretch;
+  }
+
+  .debt-info-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .debt-info-wide {
+    grid-column: span 2;
   }
 
   .ring-grid {
