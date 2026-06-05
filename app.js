@@ -404,6 +404,12 @@
     return start <= end ? { start, end, label: "Custom range" } : { start: end, end: start, label: "Custom range" };
   }
 
+  function currentYearRange() {
+    const now = new Date();
+    const year = now.getFullYear();
+    return { start: `${year}-01-01`, end: `${year}-12-31`, label: "This year" };
+  }
+
   function safetyForecastRange(selectedRange) {
     const start = today();
     const thirtyDayEnd = dateString(addDays(new Date(), 29));
@@ -836,15 +842,13 @@
     const valueHtml = animation?.value
       ? countSpan(animation.value.key, animation.value.value, animation.value)
       : value;
-    const noteHtml = animation?.noteCount
-      ? countSpan(animation.noteCount.key, animation.noteCount.value, animation.noteCount)
-      : escapeHtml(note);
+    const noteHtml = escapeHtml(note);
     return `
       <article class="card metric-card">
         <div class="metric-label">${escapeHtml(label)}</div>
         <div>
           <div class="metric-value">${valueHtml}</div>
-          ${note || animation?.noteCount ? `<div class="metric-note">${noteHtml}</div>` : ""}
+          ${note ? `<div class="metric-note">${noteHtml}</div>` : ""}
         </div>
       </article>
     `;
@@ -878,13 +882,7 @@
   }
 
   function progressDetailHtml(key, detail) {
-    const text = String(detail || "");
-    const match = text.match(/^([0-9,.]+)\/([0-9,.]+)(.*)$/);
-    if (!match) return escapeHtml(text);
-    const count = Number(match[1].replaceAll(",", "")) || 0;
-    const total = match[2];
-    const suffix = `/${total}${match[3] || ""}`;
-    return countSpan(`${key}:count`, count, { suffix });
+    return escapeHtml(String(detail || ""));
   }
 
   function progressRow(label, percent, detail = "", key = "") {
@@ -1074,13 +1072,8 @@
     const obligationCount = openBills.length + safeFinance.debtPaymentOccurrences.length;
     const obligationTotal = safeFinance.billsDue + safeFinance.debtPayments;
     const dashboardMetrics = `
-      ${metric("Tasks completed", `${task.completed}/${task.total}`, `${task.percent}% complete`, {
-        value: { key: `dashboard:${range.label}:tasks-count`, value: task.completed, suffix: `/${task.total}` },
-        noteCount: { key: `dashboard:${range.label}:tasks-percent`, value: task.percent, suffix: "% complete" }
-      })}
-      ${metric("Habits completed", `${habit.completed}/${habit.total}`, `${habit.streak} day streak`, {
-        value: { key: `dashboard:${range.label}:habits-count`, value: habit.completed, suffix: `/${habit.total}` }
-      })}
+      ${metric("Tasks completed", `${task.completed}/${task.total}`, `${task.percent}% complete`)}
+      ${metric("Habits completed", `${habit.completed}/${habit.total}`, `${habit.streak} day streak`)}
       ${metric("Safe-to-spend", formatCurrency(safeFinance.safeToSpend), `Protected through ${formatDate(safetyRange.end)}`)}
       ${metric("Projected balance", formatCurrency(finance.projectedBalance), range.label)}
       ${metric("Bills and debt", formatCurrency(obligationTotal), `${obligationCount} due`)}
@@ -1291,17 +1284,14 @@
 
         <section class="metric-grid">
           ${metric("Daily completion", `${dayHabits.percent}%`, `${dayHabits.completed}/${dayHabits.total} today`, {
-            value: { key: "tasks:daily-percent", value: dayHabits.percent, suffix: "%" },
-            noteCount: { key: "tasks:daily-count", value: dayHabits.completed, suffix: `/${dayHabits.total} today` }
+            value: { key: "tasks:daily-percent", value: dayHabits.percent, suffix: "%" }
           })}
           ${metric("Weekly habits", `${weekHabits.percent}%`, `${weekHabits.completed}/${weekHabits.total}`, {
-            value: { key: "tasks:weekly-habits-percent", value: weekHabits.percent, suffix: "%" },
-            noteCount: { key: "tasks:weekly-habits-count", value: weekHabits.completed, suffix: `/${weekHabits.total}` }
+            value: { key: "tasks:weekly-habits-percent", value: weekHabits.percent, suffix: "%" }
           })}
           ${metric("Habit streak", `${dayHabits.streak}`, "Consecutive full days")}
           ${metric("Task completion", `${stats.percent}%`, `${stats.completed}/${stats.total} this week`, {
-            value: { key: "tasks:task-percent", value: stats.percent, suffix: "%" },
-            noteCount: { key: "tasks:task-count", value: stats.completed, suffix: `/${stats.total} this week` }
+            value: { key: "tasks:task-percent", value: stats.percent, suffix: "%" }
           })}
         </section>
 
@@ -1459,25 +1449,26 @@
     const incomeInRange = appData.finance.income.filter((entry) => dateInRange(incomeDate(entry), range));
     const outsideRange = appData.finance.income.filter((entry) => !dateInRange(incomeDate(entry), range));
     const bySource = groupTotals(incomeInRange, "source", entryNetIncome);
-    const tax = finance.taxBreakdown || emptyTaxEstimate();
+    const yearFinance = calculateFinance(currentYearRange());
+    const monthFinance = calculateFinance(calculateDateRange("month"));
+    const weekFinance = calculateFinance(calculateDateRange("week"));
     return `
       <div class="metric-grid">
-        ${metric("Gross earnings", formatCurrency(finance.grossIncome), "")}
-        ${metric("Federal income tax", formatCurrency(tax.federal), "Progressive brackets")}
-        ${metric("Social Security tax", formatCurrency(tax.socialSecurity), "6.2% up to wage cap")}
-        ${metric("Medicare tax", formatCurrency(tax.medicare), "1.45% of gross wages")}
-        ${metric("Total FICA tax", formatCurrency(tax.fica), "")}
-        ${metric("Ohio state tax", formatCurrency(tax.ohio), "Only income above threshold")}
-        ${metric("Municipal tax", formatCurrency(tax.municipal), `${formatNumber(taxSettings().municipalTaxRate, 2)}% local rate`)}
-        ${metric("School district tax", formatCurrency(tax.schoolDistrict), `${formatNumber(taxSettings().schoolDistrictTaxRate, 2)}% school rate`)}
-        ${metric("Total estimated taxes", formatCurrency(finance.taxTotal), "Federal, FICA, Ohio, local")}
-        ${metric("Estimated net", formatCurrency(finance.netIncome), "")}
-        ${metric("Effective tax rate", `${formatNumber(tax.effectiveRate, 1)}%`, "")}
-        ${metric("Weekly income", formatCurrency(calculateFinance(calculateDateRange("week")).netIncome), "")}
-        ${metric("Monthly income", formatCurrency(calculateFinance(calculateDateRange("month")).netIncome), "")}
+        ${metric("Gross income", formatCurrency(finance.grossIncome), range.label)}
+        ${metric("Net income", formatCurrency(finance.netIncome), "After any applied tax entries")}
+        ${metric("Tax tracked", formatCurrency(finance.taxTotal), "Optional estimates or manual tax")}
+        ${metric("Income entries", String(incomeInRange.length), `${Object.keys(bySource).length} sources`)}
+        ${metric("Yearly income total", formatCurrency(yearFinance.netIncome), "This year net")}
+        ${metric("Monthly income estimate", formatCurrency(monthFinance.netIncome), "This month net")}
+        ${metric("Weekly income estimate", formatCurrency(weekFinance.netIncome), "This week net")}
+        ${metric("Gross this year", formatCurrency(yearFinance.grossIncome), "Before applied tax entries")}
       </div>
-      ${renderTaxControlPanel("income")}
       ${renderBarChart(bySource, finance.netIncome)}
+      ${renderTaxCalculatorDetails(finance, range, yearFinance, monthFinance)}
+      <div class="section-header income-history-header">
+        <h3>Income history</h3>
+        ${actionButton("add-income", "", "Add income", "plus", "secondary")}
+      </div>
       <div class="list">
         ${incomeInRange.length ? sortIncomeEntries(incomeInRange).map((entry) => renderIncomeItem(entry, range)).join("") : emptyState("No income logged in this range.")}
       </div>
@@ -1492,19 +1483,57 @@
     `;
   }
 
+  function renderTaxCalculatorDetails(finance, range, yearFinance, monthFinance) {
+    const settings = taxSettings();
+    const tax = finance.taxBreakdown || emptyTaxEstimate();
+    const scopeButtons = `
+      <div class="actions tax-scope-actions">
+        ${actionButton("set-tax-gross", "", "Use selected range", "chart", "secondary", { gross: finance.grossIncome, label: range.label })}
+        ${actionButton("set-tax-gross", "", "Use this month", "calendar", "secondary", { gross: monthFinance.grossIncome, label: "This month" })}
+        ${actionButton("set-tax-gross", "", "Use this year", "calendar", "secondary", { gross: yearFinance.grossIncome, label: "This year" })}
+      </div>
+    `;
+    return `
+      <details class="tax-details">
+        <summary>
+          <span class="summary-copy">
+            <strong>Tax calculator</strong>
+            <small>Optional estimate for federal, FICA, Ohio, and local taxes</small>
+          </span>
+          <span class="tax-summary-pill">${formatCurrency(settings.annualGrossIncome)} base</span>
+        </summary>
+        <div class="details-body tax-details-body">
+          <div class="metric-grid">
+            ${metric("Gross income", formatCurrency(finance.grossIncome), range.label)}
+            ${metric("Applied tax", formatCurrency(tax.total), "Tracked income entries")}
+            ${metric("Net after tax", formatCurrency(finance.netIncome), "Selected range")}
+            ${metric("Effective tracked rate", `${formatNumber(tax.effectiveRate, 1)}%`, "")}
+          </div>
+          ${scopeButtons}
+          ${renderTaxControlPanel("income")}
+        </div>
+      </details>
+    `;
+  }
+
   function renderIncomeItem(entry, range = null) {
     const gross = entryGrossIncome(entry);
     const net = entryNetIncome(entry);
     const tax = entryTaxEstimate(entry);
     const outsideRange = range && !dateInRange(incomeDate(entry), range);
-    const taxNote = entry.taxMode === "manual"
+    const mode = normalizedIncomeTaxMode(entry);
+    const taxModeLabel = mode === "auto" ? "Auto tax estimate" : mode === "manual" ? "Manual tax" : "No tax calculation";
+    const taxNote = mode === "manual"
       ? `Manual tax: ${formatCurrency(tax.total)} (${formatNumber(tax.effectiveRate, 1)}%)`
-      : `Tax estimate: ${formatCurrency(tax.total)} (${formatNumber(tax.effectiveRate, 1)}%) · Fed ${formatCurrency(tax.federal)}, SS ${formatCurrency(tax.socialSecurity)}, Medicare ${formatCurrency(tax.medicare)}, OH ${formatCurrency(tax.ohio)}, municipal ${formatCurrency(tax.municipal)}${tax.schoolDistrict ? `, school ${formatCurrency(tax.schoolDistrict)}` : ""}`;
+      : mode === "auto"
+        ? `Tax estimate: ${formatCurrency(tax.total)} (${formatNumber(tax.effectiveRate, 1)}%) · Fed ${formatCurrency(tax.federal)}, SS ${formatCurrency(tax.socialSecurity)}, Medicare ${formatCurrency(tax.medicare)}, OH ${formatCurrency(tax.ohio)}, municipal ${formatCurrency(tax.municipal)}${tax.schoolDistrict ? `, school ${formatCurrency(tax.schoolDistrict)}` : ""}`
+        : "Tax not calculated for this entry.";
+    const estimateAction = mode === "auto" ? "" : actionButton("estimate-income-tax", entry.id, "Estimate tax", "chart", "secondary compact-action");
     return itemCard({
       title: entry.source || "Income",
-      meta: [entry.type === "hourly" ? "Hourly" : "Manual", entry.taxMode === "manual" ? "Manual tax" : "Auto tax estimate", `Gross ${formatCurrency(gross)}`, `Net ${formatCurrency(net)}`, formatDate(incomeDate(entry)), outsideRange ? "Outside selected range" : ""],
+      meta: [entry.type === "hourly" ? "Hourly" : "Manual", taxModeLabel, `Gross ${formatCurrency(gross)}`, `Net ${formatCurrency(net)}`, formatDate(incomeDate(entry)), outsideRange ? "Outside selected range" : ""],
       note: [taxNote, entry.notes].filter(Boolean).join(" · "),
-      actions: `${actionButton("edit-income", entry.id, "Edit", "edit")}${actionButton("delete-income", entry.id, "Delete", "trash")}`
+      actions: `${estimateAction}${actionButton("edit-income", entry.id, "Edit", "edit")}${actionButton("delete-income", entry.id, "Delete", "trash")}`
     });
   }
 
@@ -1620,10 +1649,12 @@
   function normalizeIncomeValues(values = {}) {
     return {
       ...values,
+      taxMode: normalizedIncomeTaxMode(values),
       hourlyWage: Math.max(0, Number(values.hourlyWage) || 0),
       hours: Math.max(0, Number(values.hours) || 0),
       amount: Math.max(0, Number(values.amount) || 0),
       annualGrossIncome: values.annualGrossIncome === "" ? "" : Math.max(0, Number(values.annualGrossIncome) || 0),
+      manualTaxAmount: values.manualTaxAmount === "" ? "" : Math.max(0, Number(values.manualTaxAmount) || 0),
       deductionPercent: values.deductionPercent === "" ? "" : clamp(values.deductionPercent || 0, 0, 100),
       w2Income: values.w2Income !== false
     };
@@ -2577,20 +2608,34 @@
     return Math.max(0, gross - entryTaxEstimate(entry).total);
   }
 
+  function normalizedIncomeTaxMode(entry = {}) {
+    if (["none", "auto", "manual"].includes(entry.taxMode)) return entry.taxMode;
+    if (Number(entry.manualTaxAmount) > 0 || Number(entry.deductionPercent) > 0) return "manual";
+    return "none";
+  }
+
   function entryTaxEstimate(entry) {
     const gross = entryGrossIncome(entry);
-    const mode = entry.taxMode || (Number(entry.deductionPercent) > 0 ? "manual" : "auto");
+    const mode = normalizedIncomeTaxMode(entry);
     if (!gross) return emptyTaxEstimate();
-    if (mode === "manual" || !appData.settings.tax?.autoOhio) {
-      const deduction = clamp(entry.deductionPercent || 0, 0, 100);
-      const total = gross * (deduction / 100);
+    if (mode === "none" || (mode === "auto" && appData.settings.tax?.autoOhio === false)) {
+      return {
+        ...emptyTaxEstimate(),
+        grossIncome: gross,
+        netIncome: gross
+      };
+    }
+    if (mode === "manual") {
+      const manualAmount = Math.max(0, Number(entry.manualTaxAmount) || 0);
+      const legacyPercentageAmount = gross * (clamp(entry.deductionPercent || 0, 0, 100) / 100);
+      const total = Math.min(gross, manualAmount || legacyPercentageAmount);
       return {
         ...emptyTaxEstimate(),
         grossIncome: gross,
         manual: total,
         total,
         netIncome: Math.max(0, gross - total),
-        effectiveRate: deduction
+        effectiveRate: gross ? (total / gross) * 100 : 0
       };
     }
 
@@ -3156,15 +3201,15 @@
     return [
       { name: "type", label: "Entry type", type: "select", options: [{ value: "hourly", label: "Hourly work" }, { value: "manual", label: "Manual income" }] },
       { name: "source", label: "Job/source", type: "select", options: appData.settings.incomeSources },
-      { name: "taxMode", label: "Tax calculation", type: "select", options: [{ value: "auto", label: "Automatic full estimate" }, { value: "manual", label: "Manual percentage" }] },
       { name: "hourlyWage", label: "Hourly wage", type: "number", step: "0.01" },
       { name: "hours", label: "Hours worked", type: "number", step: "0.1" },
       { name: "amount", label: "Manual amount", type: "number", step: "0.01" },
-      { name: "annualGrossIncome", label: "Gross annual income override", type: "number", min: 0, step: "0.01", help: "Optional. Leave blank to annualize this entry by paycheck frequency." },
-      { name: "w2Income", label: "W-2 wage income", type: "checkbox", default: taxSettings().w2Income, help: "Includes Social Security and Medicare in the automatic estimate." },
       { name: "date", label: "Date", type: "date", default: today(), required: true },
       { name: "payDate", label: "Pay date", type: "date" },
-      { name: "deductionPercent", label: "Manual deduction/tax percentage", type: "number", step: "0.1", min: 0, max: 100 },
+      { name: "taxMode", label: "Tax handling", type: "select", options: [{ value: "none", label: "No tax calculation" }, { value: "auto", label: "Automatic full estimate" }, { value: "manual", label: "Manual tax entry" }], default: "none" },
+      { name: "manualTaxAmount", label: "Manual tax amount", type: "number", step: "0.01", min: 0, help: "Used only when Manual tax entry is selected." },
+      { name: "annualGrossIncome", label: "Annual income override", type: "number", min: 0, step: "0.01", help: "Optional for automatic estimate. Leave blank to annualize this entry." },
+      { name: "w2Income", label: "W-2 wage income", type: "checkbox", default: taxSettings().w2Income, help: "Used only for automatic estimates." },
       { name: "notes", label: "Notes", type: "textarea" }
     ];
   }
@@ -3543,14 +3588,40 @@
         break;
       case "add-income":
       case "edit-income": {
-        const item = id ? findById(appData.finance.income, id) : { type: "hourly", source: "Job", taxMode: "auto", deductionPercent: "", w2Income: taxSettings().w2Income };
+        const item = id ? findById(appData.finance.income, id) : { type: "hourly", source: "Job", taxMode: "none", manualTaxAmount: "", deductionPercent: "", w2Income: taxSettings().w2Income };
         openEdit({
           title: id ? "Edit income" : "Add income",
           fields: incomeFields(),
           initial: item,
-          livePreview: renderIncomeFormPreview,
-          onSubmit: (values) => upsert(appData.finance.income, id, normalizeIncomeValues(values))
+          onSubmit: (values) => upsert(appData.finance.income, id, normalizeIncomeValues({ ...(id ? item : {}), ...values }))
         });
+        break;
+      }
+      case "estimate-income-tax": {
+        const item = findById(appData.finance.income, id);
+        if (item) {
+          item.taxMode = "auto";
+          item.w2Income = item.w2Income ?? taxSettings().w2Income;
+          saveData();
+          render({ quiet: true });
+          showToast("Income tax estimate applied.");
+        }
+        break;
+      }
+      case "set-tax-gross": {
+        const gross = Math.max(0, Number(button.dataset.gross) || 0);
+        appData.settings.tax.annualGrossIncome = gross;
+        appData.settings.tax.paycheckFrequency = normalizePaycheckFrequency(appData.settings.tax.paycheckFrequency);
+        appData.settings.tax.payPeriodsPerYear = payPeriodsForFrequency(appData.settings.tax.paycheckFrequency);
+        saveData();
+        document.querySelectorAll('[data-tax-input="annualGrossIncome"]').forEach((input) => {
+          input.value = String(gross);
+        });
+        document.querySelectorAll(".tax-summary-pill").forEach((pill) => {
+          pill.textContent = `${formatCurrency(gross)} base`;
+        });
+        updateTaxLiveSummaries();
+        showToast(`Tax calculator set to ${button.dataset.label || "selected income"}.`);
         break;
       }
       case "delete-income":
@@ -3937,7 +4008,6 @@
       updateTaxSettingFromControl(target);
       saveData();
       updateTaxLiveSummaries();
-      render({ quiet: true });
       return;
     }
     if (target.id === "task-filter") {

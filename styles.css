@@ -169,11 +169,15 @@ body.app-ready .app-main {
 }
 
 .topbar {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
   gap: 12px;
   padding-top: 2px;
+}
+
+.topbar > :first-child {
+  min-width: 0;
 }
 
 .eyebrow {
@@ -237,7 +241,17 @@ h3 {
 
 .section-header h2,
 .section-header h3 {
+  flex: 1 1 auto;
+  min-width: 0;
   margin: 0;
+}
+
+.section-header > .primary,
+.section-header > .secondary,
+.section-header > .ghost,
+.section-header > .actions {
+  flex: 0 0 auto;
+  margin-left: auto;
 }
 
 .card {
@@ -444,6 +458,8 @@ h3 {
 .actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
   gap: 8px;
 }
 
@@ -459,6 +475,7 @@ h3 {
 .danger-btn,
 .icon-btn {
   min-height: 42px;
+  flex: 0 0 auto;
   border: 1px solid transparent;
   border-radius: var(--radius);
   cursor: pointer;
@@ -474,6 +491,7 @@ h3 {
   background: var(--accent);
   color: var(--accent-contrast);
   font-weight: 750;
+  white-space: nowrap;
   box-shadow: none;
 }
 
@@ -486,6 +504,7 @@ h3 {
   border-color: transparent;
   background: rgba(255, 255, 255, 0.055);
   color: var(--text);
+  white-space: nowrap;
 }
 
 .secondary.active,
@@ -713,8 +732,16 @@ h3 {
 
 .item-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
+  justify-content: flex-end;
   gap: 6px;
+}
+
+.compact-action {
+  min-height: 36px;
+  padding: 0 10px;
+  font-size: 0.78rem;
 }
 
 .daily-habit-card {
@@ -970,13 +997,23 @@ details.card {
 
 details summary {
   min-height: 54px;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
   padding: 0 14px;
   cursor: pointer;
   list-style: none;
+}
+
+details summary > :first-child {
+  min-width: 0;
+}
+
+details summary .primary,
+details summary .secondary,
+details summary .ghost {
+  justify-self: end;
 }
 
 details summary::-webkit-details-marker {
@@ -1029,6 +1066,57 @@ details[open] .details-body {
   padding: 12px;
   border-radius: var(--radius);
   background: rgba(255, 255, 255, 0.035);
+}
+
+.tax-details {
+  overflow: hidden;
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.tax-details summary {
+  min-height: 62px;
+  padding: 0 12px;
+}
+
+.summary-copy {
+  display: grid;
+  gap: 4px;
+  line-height: 1.2;
+}
+
+.summary-copy strong {
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+.summary-copy small {
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.25;
+}
+
+.tax-summary-pill {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(var(--accent-rgb), 0.12);
+  color: var(--text);
+  font-size: 0.74rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.tax-details-body {
+  padding: 0 12px 12px;
+}
+
+.tax-scope-actions,
+.income-history-header {
+  justify-content: flex-end;
 }
 
 .tax-controls {
