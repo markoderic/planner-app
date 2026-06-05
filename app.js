@@ -179,6 +179,10 @@
   let undoState = null;
   let recentCompletion = null;
   let moreSwitchTimer = null;
+  let morePendingView = null;
+  const progressAnimationState = new Map();
+  const numberAnimationState = new Map();
+  const numberAnimationTokens = new Map();
   let appData = loadData();
   normalizeData();
   saveData({ skipSync: true, touch: false });
@@ -805,6 +809,8 @@
     if (ui.activeTab === "finance") app.innerHTML = renderFinance();
     if (ui.activeTab === "school") app.innerHTML = renderSchool();
     if (ui.activeTab === "more") app.innerHTML = renderMore();
+    animateProgressIndicators();
+    animateCountElements();
   }
 
   function finishAppLoad() {
@@ -826,13 +832,19 @@
     return `<button type="button" class="${className}" data-action="${action}" data-id="${escapeHtml(id || "")}" ${attrs} title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}">${icon(iconName)}${text}</button>`;
   }
 
-  function metric(label, value, note = "") {
+  function metric(label, value, note = "", animation = null) {
+    const valueHtml = animation?.value
+      ? countSpan(animation.value.key, animation.value.value, animation.value)
+      : value;
+    const noteHtml = animation?.noteCount
+      ? countSpan(animation.noteCount.key, animation.noteCount.value, animation.noteCount)
+      : escapeHtml(note);
     return `
       <article class="card metric-card">
         <div class="metric-label">${escapeHtml(label)}</div>
         <div>
-          <div class="metric-value">${value}</div>
-          ${note ? `<div class="metric-note">${escapeHtml(note)}</div>` : ""}
+          <div class="metric-value">${valueHtml}</div>
+          ${note || animation?.noteCount ? `<div class="metric-note">${noteHtml}</div>` : ""}
         </div>
       </article>
     `;
@@ -852,13 +864,118 @@
     `;
   }
 
-  function progressRow(label, percent, detail = "") {
+  function slugKey(value) {
+    return String(value || "item").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "item";
+  }
+
+  function countSpan(key, value, options = {}) {
+    const numeric = Number(value) || 0;
+    const format = options.format || "integer";
+    const digits = options.digits ?? 0;
+    const prefix = options.prefix || "";
+    const suffix = options.suffix || "";
+    return `<span class="count-value" data-count-key="${escapeHtml(key)}" data-count-value="${escapeHtml(numeric)}" data-count-format="${escapeHtml(format)}" data-count-digits="${escapeHtml(digits)}" data-count-prefix="${escapeHtml(prefix)}" data-count-suffix="${escapeHtml(suffix)}">${escapeHtml(formatAnimatedNumber(numeric, { format, digits, prefix, suffix }))}</span>`;
+  }
+
+  function progressDetailHtml(key, detail) {
+    const text = String(detail || "");
+    const match = text.match(/^([0-9,.]+)\/([0-9,.]+)(.*)$/);
+    if (!match) return escapeHtml(text);
+    const count = Number(match[1].replaceAll(",", "")) || 0;
+    const total = match[2];
+    const suffix = `/${total}${match[3] || ""}`;
+    return countSpan(`${key}:count`, count, { suffix });
+  }
+
+  function progressRow(label, percent, detail = "", key = "") {
+    const progressKey = `${ui.activeTab}:${slugKey(key || label)}`;
+    const value = clamp(percent);
     return `
-      <div class="progress-row">
-        <div class="progress-label"><span>${escapeHtml(label)}</span><span>${percent}%${detail ? ` · ${escapeHtml(detail)}` : ""}</span></div>
-        <div class="progress"><span style="width:${clamp(percent)}%"></span></div>
+      <div class="progress-row" data-progress-key="${escapeHtml(progressKey)}" data-progress-percent="${escapeHtml(value)}">
+        <div class="progress-label"><span>${escapeHtml(label)}</span><span class="progress-value">${countSpan(`${progressKey}:percent`, value, { suffix: "%" })}${detail ? ` · ${progressDetailHtml(progressKey, detail)}` : ""}</span></div>
+        <div class="progress"><span style="width:${value}%"></span></div>
       </div>
     `;
+  }
+
+  function animateProgressIndicators(root = app) {
+    root.querySelectorAll("[data-progress-key][data-progress-percent]").forEach((element) => {
+      const key = element.dataset.progressKey;
+      const target = clamp(element.dataset.progressPercent);
+      const bar = element.querySelector(".progress > span");
+      const previous = progressAnimationState.has(key) ? progressAnimationState.get(key) : target;
+      progressAnimationState.set(key, target);
+      if (!bar || previous === target) return;
+      element.classList.add("is-progress-animating");
+      bar.style.width = `${previous}%`;
+      window.requestAnimationFrame(() => {
+        if (!bar.isConnected) return;
+        bar.style.width = `${target}%`;
+      });
+      window.setTimeout(() => {
+        if (element.isConnected) element.classList.remove("is-progress-animating");
+      }, 760);
+    });
+  }
+
+  function animateCountElements(root = app) {
+    root.querySelectorAll("[data-count-key]").forEach((element) => {
+      const key = element.dataset.countKey;
+      const target = Number(element.dataset.countValue) || 0;
+      const previous = numberAnimationState.has(key) ? numberAnimationState.get(key) : target;
+      numberAnimationState.set(key, target);
+      if (previous === target) {
+        element.textContent = formatAnimatedNumber(target, countOptions(element));
+        return;
+      }
+      animateCountElement(element, previous, target);
+    });
+  }
+
+  function animateCountElement(element, start, end) {
+    const key = element.dataset.countKey;
+    const token = `${Date.now()}-${Math.random()}`;
+    numberAnimationTokens.set(key, token);
+    const distance = Math.abs(end - start);
+    const duration = Math.min(950, Math.max(420, 360 + distance * 28));
+    const startedAt = performance.now();
+    element.classList.add("is-counting");
+
+    const tick = (now) => {
+      if (!element.isConnected || numberAnimationTokens.get(key) !== token) return;
+      const progress = Math.min(1, (now - startedAt) / duration);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      const current = start + (end - start) * eased;
+      element.textContent = formatAnimatedNumber(current, countOptions(element));
+      if (progress < 1) {
+        window.requestAnimationFrame(tick);
+      } else {
+        element.textContent = formatAnimatedNumber(end, countOptions(element));
+        element.classList.remove("is-counting");
+      }
+    };
+
+    window.requestAnimationFrame(tick);
+  }
+
+  function countOptions(element) {
+    return {
+      format: element.dataset.countFormat || "integer",
+      digits: Number(element.dataset.countDigits) || 0,
+      prefix: element.dataset.countPrefix || "",
+      suffix: element.dataset.countSuffix || ""
+    };
+  }
+
+  function formatAnimatedNumber(value, options = {}) {
+    const format = options.format || "integer";
+    const digits = Number(options.digits) || 0;
+    let body;
+    if (format === "currency") body = formatCurrency(value);
+    else if (format === "decimal") body = formatNumber(value, digits);
+    else body = formatNumber(Math.round(value), 0);
+    if (format === "currency") return body;
+    return `${options.prefix || ""}${body}${options.suffix || ""}`;
   }
 
   function itemCard({ title, meta = [], note = "", actions = "", className = "" }) {
@@ -957,8 +1074,13 @@
     const obligationCount = openBills.length + safeFinance.debtPaymentOccurrences.length;
     const obligationTotal = safeFinance.billsDue + safeFinance.debtPayments;
     const dashboardMetrics = `
-      ${metric("Tasks completed", `${task.completed}/${task.total}`, `${task.percent}% complete`)}
-      ${metric("Habits completed", `${habit.completed}/${habit.total}`, `${habit.streak} day streak`)}
+      ${metric("Tasks completed", `${task.completed}/${task.total}`, `${task.percent}% complete`, {
+        value: { key: `dashboard:${range.label}:tasks-count`, value: task.completed, suffix: `/${task.total}` },
+        noteCount: { key: `dashboard:${range.label}:tasks-percent`, value: task.percent, suffix: "% complete" }
+      })}
+      ${metric("Habits completed", `${habit.completed}/${habit.total}`, `${habit.streak} day streak`, {
+        value: { key: `dashboard:${range.label}:habits-count`, value: habit.completed, suffix: `/${habit.total}` }
+      })}
       ${metric("Safe-to-spend", formatCurrency(safeFinance.safeToSpend), `Protected through ${formatDate(safetyRange.end)}`)}
       ${metric("Projected balance", formatCurrency(finance.projectedBalance), range.label)}
       ${metric("Bills and debt", formatCurrency(obligationTotal), `${obligationCount} due`)}
@@ -1168,10 +1290,19 @@
         ${topbar("Tasks", "Planner checklist", actionButton("add-task", "", "Add task", "plus", "primary"))}
 
         <section class="metric-grid">
-          ${metric("Daily completion", `${dayHabits.percent}%`, `${dayHabits.completed}/${dayHabits.total} today`)}
-          ${metric("Weekly habits", `${weekHabits.percent}%`, `${weekHabits.completed}/${weekHabits.total}`)}
+          ${metric("Daily completion", `${dayHabits.percent}%`, `${dayHabits.completed}/${dayHabits.total} today`, {
+            value: { key: "tasks:daily-percent", value: dayHabits.percent, suffix: "%" },
+            noteCount: { key: "tasks:daily-count", value: dayHabits.completed, suffix: `/${dayHabits.total} today` }
+          })}
+          ${metric("Weekly habits", `${weekHabits.percent}%`, `${weekHabits.completed}/${weekHabits.total}`, {
+            value: { key: "tasks:weekly-habits-percent", value: weekHabits.percent, suffix: "%" },
+            noteCount: { key: "tasks:weekly-habits-count", value: weekHabits.completed, suffix: `/${weekHabits.total}` }
+          })}
           ${metric("Habit streak", `${dayHabits.streak}`, "Consecutive full days")}
-          ${metric("Task completion", `${stats.percent}%`, `${stats.completed}/${stats.total} this week`)}
+          ${metric("Task completion", `${stats.percent}%`, `${stats.completed}/${stats.total} this week`, {
+            value: { key: "tasks:task-percent", value: stats.percent, suffix: "%" },
+            noteCount: { key: "tasks:task-count", value: stats.completed, suffix: `/${stats.total} this week` }
+          })}
         </section>
 
         <section class="card panel section">
@@ -1639,8 +1770,9 @@
     const progress = original ? pct(original - balance, original) : 0;
     const targetPay = monthlyDebtTarget(debt);
     const reservedPayment = debtPaymentAmount(debt);
+    const progressKey = `finance:debt-${debt.id}`;
     return `
-      <article class="item-card debt-card">
+      <article class="item-card debt-card" data-progress-key="${escapeHtml(progressKey)}" data-progress-percent="${escapeHtml(clamp(progress))}">
         <div class="debt-header">
           <p class="item-title debt-title">${escapeHtml(debt.name)}</p>
           <div class="item-actions debt-actions">
@@ -1683,7 +1815,7 @@
           </div>
           <div class="debt-progress-label">
             <span>Paid down</span>
-            <strong>${clamp(progress)}%</strong>
+            <strong>${countSpan(`${progressKey}:percent`, clamp(progress), { suffix: "%" })}</strong>
           </div>
           <div class="progress" aria-label="Debt payoff progress"><span style="width:${clamp(progress)}%"></span></div>
         </div>
@@ -1817,13 +1949,14 @@
 
   function renderClassCard(stats) {
     const color = safeHexColor(stats.color);
+    const progressKey = `school:class-${stats.id}`;
     return `
-      <article class="item-card class-card" style="--class-color:${escapeHtml(color)}; --class-color-rgb:${rgbText(color)}">
+      <article class="item-card class-card" data-progress-key="${escapeHtml(progressKey)}" data-progress-percent="${escapeHtml(clamp(stats.percent))}" style="--class-color:${escapeHtml(color)}; --class-color-rgb:${rgbText(color)}">
         <div class="item-main">
           <p class="item-title">${escapeHtml(stats.name)}</p>
           <div class="item-meta">
-            <span>${stats.completed}/${stats.total} complete</span>
-            <span>${stats.percent}% completion</span>
+            <span>${countSpan(`${progressKey}:count`, stats.completed, { suffix: `/${stats.total} complete` })}</span>
+            <span>${countSpan(`${progressKey}:percent`, stats.percent, { suffix: "% completion" })}</span>
             ${stats.grade !== null ? `<span>${formatNumber(stats.grade, 1)}% grade estimate</span>` : ""}
           </div>
           <div class="progress"><span style="width:${clamp(stats.percent)}%"></span></div>
@@ -1910,6 +2043,19 @@
     if (ui.moreView === "inbox") return renderInbox();
     if (ui.moreView === "review") return renderWeeklyReview();
     return renderSettings();
+  }
+
+  function selectMoreRow(view, button = null) {
+    app.querySelectorAll(".more-row").forEach((row) => {
+      row.classList.toggle("active", row.dataset.view === view);
+      row.classList.remove("is-selecting");
+    });
+    const selected = button || [...app.querySelectorAll(".more-row")].find((row) => row.dataset.view === view);
+    if (!selected) return;
+    selected.classList.add("active", "is-selecting");
+    window.setTimeout(() => {
+      if (selected.isConnected) selected.classList.remove("is-selecting");
+    }, 320);
   }
 
   function renderGym() {
@@ -3267,17 +3413,42 @@
     }
     if (action === "set-more-view") {
       const nextView = button.dataset.view;
-      if (!nextView || nextView === ui.moreView) return;
+      if (!nextView) return;
       const content = app.querySelector(".more-content");
+      selectMoreRow(nextView, button);
+      if (nextView === ui.moreView) {
+        clearTimeout(moreSwitchTimer);
+        morePendingView = null;
+        if (content) content.classList.remove("is-leaving");
+        return;
+      }
+      if (nextView === morePendingView) return;
       clearTimeout(moreSwitchTimer);
+      morePendingView = nextView;
       if (content) {
         content.classList.add("is-leaving");
         moreSwitchTimer = window.setTimeout(() => {
-          ui.moreView = nextView;
-          render({ quiet: true });
+          ui.moreView = morePendingView || nextView;
+          morePendingView = null;
+          saveUi();
+          if (content.isConnected) {
+            content.outerHTML = `
+              <div class="more-content" data-more-content="${escapeHtml(ui.moreView)}">
+                ${renderMoreView()}
+              </div>
+            `;
+            const newContent = app.querySelector(".more-content");
+            if (newContent) {
+              animateProgressIndicators(newContent);
+              animateCountElements(newContent);
+            }
+          } else {
+            render({ quiet: true });
+          }
         }, 115);
       } else {
         ui.moreView = nextView;
+        morePendingView = null;
         render({ quiet: true });
       }
       return;

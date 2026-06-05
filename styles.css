@@ -877,6 +877,11 @@ h3 {
   transition: width 340ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
+.is-progress-animating .progress > span {
+  transition-duration: 720ms;
+  transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
 .progress-row {
   display: grid;
   gap: 8px;
@@ -889,6 +894,21 @@ h3 {
   gap: 12px;
   color: var(--muted);
   font-size: 0.78rem;
+}
+
+.progress-value,
+.count-value {
+  font-variant-numeric: tabular-nums;
+}
+
+.count-value {
+  display: inline-block;
+  transition: color 180ms ease, transform 180ms ease;
+}
+
+.count-value.is-counting {
+  color: var(--text);
+  transform: translateY(-1px);
 }
 
 .two-col {
@@ -1351,6 +1371,7 @@ textarea:focus {
 }
 
 .more-row {
+  position: relative;
   width: 100%;
   min-height: 58px;
   display: grid;
@@ -1363,7 +1384,40 @@ textarea:focus {
   color: var(--text);
   text-align: left;
   cursor: pointer;
-  transition: background 180ms ease, transform 160ms ease, color 180ms ease;
+  overflow: hidden;
+  isolation: isolate;
+  transition: transform 160ms ease, color 180ms ease;
+}
+
+.more-row::before,
+.more-row::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+}
+
+.more-row::before {
+  inset: 4px;
+  z-index: 0;
+  border-radius: calc(var(--radius) - 4px);
+  background: rgba(var(--accent-rgb), 0.13);
+  opacity: 0;
+  transform: scaleX(0.92);
+  transform-origin: left center;
+  transition: opacity 170ms ease-out, transform 210ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.more-row::after {
+  inset: 0;
+  z-index: 0;
+  background: linear-gradient(90deg, transparent, rgba(var(--accent-rgb), 0.11), transparent);
+  opacity: 0;
+  transform: translateX(-85%);
+}
+
+.more-row > * {
+  position: relative;
+  z-index: 1;
 }
 
 .more-row:active {
@@ -1371,7 +1425,16 @@ textarea:focus {
 }
 
 .more-row.active {
-  background: rgba(var(--accent-rgb), 0.13);
+  color: var(--text);
+}
+
+.more-row.active::before {
+  opacity: 1;
+  transform: scaleX(1);
+}
+
+.more-row.is-selecting::after {
+  animation: moreRowSelect 280ms ease-out;
 }
 
 .more-row-icon {
@@ -1432,6 +1495,22 @@ textarea:focus {
   to {
     opacity: 0;
     transform: translateY(4px);
+  }
+}
+
+@keyframes moreRowSelect {
+  0% {
+    opacity: 0;
+    transform: translateX(-85%);
+  }
+
+  34% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateX(85%);
   }
 }
 
