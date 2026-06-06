@@ -81,6 +81,7 @@
       : [],
     habitCompletions: {},
     tasks: [],
+    goals: [],
     finance: {
       accounts: [],
       income: [],
@@ -147,6 +148,9 @@
     data.finance.savingsGoals = [emergencyGoal];
     data.finance.savings = [
       makeItem({ amount: 60, date: d0, accountId: data.finance.accounts[1]?.id || "", goalId: emergencyGoal.id, note: "Automatic savings" })
+    ];
+    data.goals = [
+      makeItem({ title: "Build emergency fund", category: "Money", targetDate: emergencyGoal.targetDate, linkedSavingsGoalId: emergencyGoal.id, progressPercent: 0, completed: false, notes: "" })
     ];
 
     const classA = makeItem({ name: "Anthropology", professor: "", meetingDays: "Mon Wed", accentColor: "#25d8ff", notes: "" });
@@ -312,6 +316,8 @@
     appData.dailyHabits = appData.dailyHabits || [];
     appData.habitCompletions = appData.habitCompletions || {};
     appData.tasks = appData.tasks || [];
+    appData.goals = appData.goals || [];
+    appData.goals.forEach((goal) => normalizeGoal(goal));
     appData.shopping = appData.shopping || [];
     appData.reminders = appData.reminders || [];
     appData.inbox = appData.inbox || [];
@@ -604,6 +610,17 @@
     goal.targetAmount = Math.max(0, Number(goal.targetAmount) || 0);
     goal.initialAmount = Math.max(0, Number(goal.initialAmount) || 0);
     goal.targetDate = goal.targetDate || "";
+    goal.notes = goal.notes || "";
+    return goal;
+  }
+
+  function normalizeGoal(goal = {}) {
+    goal.title = goal.title || "Goal";
+    goal.category = goal.category || "Personal";
+    goal.targetDate = goal.targetDate || "";
+    goal.linkedSavingsGoalId = findById(appData.finance.savingsGoals, goal.linkedSavingsGoalId) ? goal.linkedSavingsGoalId : "";
+    goal.progressPercent = clamp(goal.progressPercent);
+    goal.completed = Boolean(goal.completed);
     goal.notes = goal.notes || "";
     return goal;
   }
@@ -1319,6 +1336,8 @@
           ${progressRow("School", weekly.school.percent, `${weekly.school.completed.length}/${weekly.school.total}`)}
           ${progressRow("Nutrition", appData.settings.nutrition ? nutrition.caloriePercent : 0, appData.settings.nutrition ? `${formatNumber(nutrition.calories)} cal` : "Off")}
         </section>
+
+        ${renderDashboardGoals()}
       </div>
     `;
   }
@@ -1365,6 +1384,60 @@
     const amount = Math.max(0, Number(value) || 0);
     if (!amount) return 0;
     return clamp((amount / Math.max(1, maxValue)) * 100, 3, 100);
+  }
+
+  function renderDashboardGoals() {
+    const goals = (appData.goals || []).map(generalGoalStats);
+    const completeCount = goals.filter((goal) => goal.percent >= 100 || goal.goal.completed).length;
+    return `
+      <section class="card panel section dashboard-goals-card">
+        <div class="section-header">
+          <div>
+            <h2>Goals</h2>
+            <span class="tiny">${goals.length ? `${completeCount}/${goals.length} complete` : "Personal goals and linked savings targets"}</span>
+          </div>
+          ${actionButton("add-goal", "", "Add goal", "target", "secondary")}
+        </div>
+        <div class="dashboard-goals-grid">
+          ${goals.length ? goals.map(renderGoalItem).join("") : emptyState("Add a goal, then link it to a savings goal if money is part of the plan.")}
+        </div>
+      </section>
+    `;
+  }
+
+  function renderGoalItem(goalStats) {
+    const { goal, linkedGoal, linkedStats, percent } = goalStats;
+    const progressKey = `dashboard:goal-${goal.id}`;
+    const isComplete = goal.completed || percent >= 100;
+    const meta = [
+      goal.category || "Personal",
+      goal.targetDate ? `Target ${formatDate(goal.targetDate)}` : "",
+      linkedGoal ? `Linked to ${linkedGoal.name}` : ""
+    ].filter(Boolean);
+    const amountLine = linkedStats ? `${formatCurrency(linkedStats.saved)} of ${formatCurrency(linkedStats.target || linkedStats.saved)} saved` : `${percent}% complete`;
+    return `
+      <article class="goal-card ${isComplete ? "complete" : ""}" data-progress-key="${escapeHtml(progressKey)}" data-progress-percent="${escapeHtml(percent)}">
+        <div class="goal-card-top">
+          <div>
+            <span class="goal-category">${escapeHtml(goal.category || "Personal")}</span>
+            <h3>${escapeHtml(goal.title)}</h3>
+          </div>
+          <button class="goal-check ${isComplete ? "active" : ""}" data-action="toggle-goal-complete" data-id="${escapeHtml(goal.id)}" aria-label="${goal.completed ? "Mark goal active" : "Mark goal complete"}">
+            ${icon(isComplete ? "check" : "circle")}
+          </button>
+        </div>
+        <div class="item-meta">${meta.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>
+        <div class="goal-progress-row">
+          <div class="progress"><span style="width:${clamp(percent)}%"></span></div>
+          <strong>${percent}%</strong>
+        </div>
+        <p class="tiny">${escapeHtml(amountLine)}</p>
+        <div class="item-actions">
+          ${actionButton("edit-goal", goal.id, "Edit", "edit")}
+          ${actionButton("delete-goal", goal.id, "Delete", "trash")}
+        </div>
+      </article>
+    `;
   }
 
   function getTodayFocus() {
@@ -2000,6 +2073,7 @@
   function renderSavingsGoal(goalStats) {
     const { goal, saved, target, remaining, percent } = goalStats;
     const progressKey = `finance:savings-goal-${goal.id}`;
+    const chart = renderSavingsGoalLineChart(goalStats);
     return `
       <article class="item-card savings-goal-card" data-progress-key="${escapeHtml(progressKey)}" data-progress-percent="${escapeHtml(percent)}">
         <div class="item-main">
@@ -2011,6 +2085,7 @@
           </div>
           <div class="progress"><span style="width:${clamp(percent)}%"></span></div>
           <p class="tiny">${formatCurrency(remaining)} remaining</p>
+          ${chart}
         </div>
         <div class="item-actions">
           ${actionButton("edit-savings-goal", goal.id, "Edit", "edit")}
@@ -2018,6 +2093,95 @@
         </div>
       </article>
     `;
+  }
+
+  function renderSavingsGoalLineChart(goalStats) {
+    const chart = savingsGoalChartData(goalStats);
+    const pointString = chart.points.map((point) => `${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(" ");
+    const endPoint = chart.points[chart.points.length - 1];
+    const maxText = formatCompactCurrency(chart.maxAmount);
+    return `
+      <details class="savings-goal-chart">
+        <summary>
+          <span>
+            <b>Progress line</b>
+            <small>${escapeHtml(chart.scaleLabel)} timeline</small>
+          </span>
+        </summary>
+        <div class="savings-line-panel">
+          <div class="savings-line-labels">
+            <span>${escapeHtml(maxText)}</span>
+            <span>$0</span>
+          </div>
+          <div>
+            <svg class="savings-line-svg" viewBox="0 0 100 60" preserveAspectRatio="none" role="img" aria-label="${escapeHtml(goalStats.goal.name)} savings progress">
+              <line class="savings-line-grid target" x1="6" y1="6" x2="96" y2="6"></line>
+              <line class="savings-line-grid" x1="6" y1="54" x2="96" y2="54"></line>
+              <polyline class="savings-line-path" pathLength="1" points="${escapeHtml(pointString)}"></polyline>
+              <circle class="savings-line-dot" cx="${endPoint.x.toFixed(2)}" cy="${endPoint.y.toFixed(2)}" r="1.8"></circle>
+            </svg>
+            <div class="savings-line-axis">
+              <span>${escapeHtml(chart.startLabel)}</span>
+              <span>${escapeHtml(chart.endLabel)}</span>
+            </div>
+          </div>
+        </div>
+      </details>
+    `;
+  }
+
+  function savingsGoalChartData(goalStats) {
+    const { goal, saved, target } = goalStats;
+    const entries = sortByDate(appData.finance.savings.filter((entry) => entry.goalId === goal.id && entry.date <= today()), "date");
+    const createdDate = String(goal.createdAt || "").slice(0, 10);
+    const start = createdDate || entries[0]?.date || today();
+    const latestEntryDate = entries[entries.length - 1]?.date || "";
+    const endCandidates = [goal.targetDate, today(), latestEntryDate].filter(Boolean).sort();
+    let end = endCandidates[endCandidates.length - 1] || today();
+    if (end <= start) end = dateString(addDays(parseDate(start) || new Date(), 30));
+    const maxAmount = Math.max(1, target, saved);
+    const startDate = parseDate(start) || new Date();
+    const endDate = parseDate(end) || addDays(startDate, 30);
+    const totalMs = Math.max(1, endDate - startDate);
+    const bottom = 54;
+    const top = 6;
+    const height = bottom - top;
+    const rawPoints = [];
+    let cumulative = Math.max(0, Number(goal.initialAmount) || 0);
+    rawPoints.push({ date: start, amount: cumulative });
+    entries.forEach((entry) => {
+      cumulative += Math.max(0, Number(entry.amount) || 0);
+      rawPoints.push({ date: entry.date, amount: cumulative });
+    });
+    if (!rawPoints.some((point) => point.date === today())) rawPoints.push({ date: today(), amount: saved });
+    const byDate = rawPoints.reduce((map, point) => {
+      map.set(point.date, { date: point.date, amount: Math.max(0, Number(point.amount) || 0) });
+      return map;
+    }, new Map());
+    const points = [...byDate.values()].sort((a, b) => String(a.date).localeCompare(String(b.date))).map((point) => {
+      const pointDate = parseDate(point.date) || startDate;
+      const x = clamp(((pointDate - startDate) / totalMs) * 90 + 6, 6, 96);
+      const y = bottom - (Math.min(point.amount, maxAmount) / maxAmount) * height;
+      return { ...point, x, y: clamp(y, top, bottom) };
+    });
+    if (points.length === 1) points.push({ ...points[0], x: Math.min(96, points[0].x + 1) });
+    const timelineDays = daysBetween(start, end);
+    const scale = timelineDays <= 95 ? "days" : timelineDays <= 1100 ? "months" : "years";
+    return {
+      points,
+      maxAmount,
+      scaleLabel: scale,
+      startLabel: chartDateLabel(start, scale),
+      endLabel: chartDateLabel(end, scale)
+    };
+  }
+
+  function chartDateLabel(value, scale) {
+    const date = parseDate(value);
+    if (!date) return "Now";
+    if (scale === "years") return new Intl.DateTimeFormat(undefined, { year: "numeric" }).format(date);
+    if (scale === "months") return new Intl.DateTimeFormat(undefined, { month: "short", year: "numeric" }).format(date);
+    return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(date);
   }
 
   function renderSavingItem(entry) {
@@ -3018,6 +3182,18 @@
     };
   }
 
+  function generalGoalStats(goal) {
+    const linkedGoal = goal.linkedSavingsGoalId ? findById(appData.finance.savingsGoals, goal.linkedSavingsGoalId) : null;
+    const linkedStats = linkedGoal ? savingsGoalStats(linkedGoal) : null;
+    const percent = goal.completed ? 100 : linkedStats ? linkedStats.percent : clamp(goal.progressPercent);
+    return {
+      goal,
+      linkedGoal,
+      linkedStats,
+      percent
+    };
+  }
+
   function moneyTrendMonths(count = 6) {
     const now = new Date();
     return Array.from({ length: count }, (_, index) => {
@@ -3818,6 +3994,28 @@
     ];
   }
 
+  function goalFields() {
+    const savingsGoals = appData.finance.savingsGoals || [];
+    return [
+      { name: "title", label: "Goal title", required: true },
+      { name: "category", label: "Category", default: "Personal" },
+      { name: "targetDate", label: "Target date", type: "date" },
+      {
+        name: "linkedSavingsGoalId",
+        label: "Linked savings goal",
+        type: "select",
+        options: [
+          { value: "", label: savingsGoals.length ? "No linked savings goal" : "No savings goals added" },
+          ...savingsGoals.map((goal) => ({ value: goal.id, label: goal.name || "Savings goal" }))
+        ],
+        help: "When linked, this dashboard goal uses the savings goal progress automatically."
+      },
+      { name: "progressPercent", label: "Manual progress", type: "number", min: 0, max: 100, step: "1", default: 0, help: "Used only when no savings goal is linked." },
+      { name: "completed", label: "Goal completed", type: "checkbox" },
+      { name: "notes", label: "Notes", type: "textarea" }
+    ];
+  }
+
   function debtPaymentFields() {
     const accounts = appData.finance.accounts || [];
     return [
@@ -4147,6 +4345,32 @@
           rerender();
         }
         break;
+      case "add-goal":
+      case "edit-goal": {
+        const item = id ? findById(appData.goals, id) : { category: "Personal", progressPercent: 0, completed: false };
+        openEdit({
+          title: id ? "Edit goal" : "Add goal",
+          fields: goalFields(),
+          initial: item,
+          onSubmit: (values) => upsert(appData.goals, id, normalizeGoal({ ...(id ? item : {}), ...values }))
+        });
+        break;
+      }
+      case "toggle-goal-complete": {
+        const item = findById(appData.goals, id);
+        if (!item) break;
+        item.completed = !item.completed;
+        if (item.completed) item.progressPercent = 100;
+        rerender();
+        break;
+      }
+      case "delete-goal":
+        if (confirm("Delete this goal?")) {
+          deleteById(appData.goals, id);
+          rerender();
+          showToast("Goal deleted.");
+        }
+        break;
       case "add-task-category":
         openEdit({
           title: "Add task category",
@@ -4284,6 +4508,9 @@
           deleteFinanceItem(appData.finance.savingsGoals, id, "savings goal");
           appData.finance.savings.forEach((entry) => {
             if (entry.goalId === id) entry.goalId = "";
+          });
+          appData.goals.forEach((goal) => {
+            if (goal.linkedSavingsGoalId === id) goal.linkedSavingsGoalId = "";
           });
           rerender();
           showToast("Savings goal deleted.");
