@@ -2181,10 +2181,13 @@
         <div class="item-main">
           <p class="item-title">${escapeHtml(stats.name)}</p>
           <div class="item-meta">
-            <span>${countSpan(`${progressKey}:count`, stats.completed, { suffix: `/${stats.total}` })} · ${countSpan(`${progressKey}:percent`, stats.percent, { suffix: "% completion" })}</span>
+            <span>${countSpan(`${progressKey}:count`, stats.completed, { suffix: `/${stats.total} complete` })}</span>
             ${stats.grade !== null ? `<span>${formatNumber(stats.grade, 1)}% grade estimate</span>` : ""}
           </div>
-          <div class="progress"><span style="width:${clamp(stats.percent)}%"></span></div>
+          <div class="class-progress-line">
+            <div class="progress"><span style="width:${clamp(stats.percent)}%"></span></div>
+            <span>${countSpan(`${progressKey}:percent`, stats.percent, { suffix: "%" })}</span>
+          </div>
         </div>
         <div class="item-actions">
           ${actionButton("set-school-class-filter", stats.id, "Show assignments", "target")}
@@ -3122,12 +3125,19 @@
     card.querySelectorAll("button, select").forEach((control) => {
       control.disabled = true;
     });
-    card.classList.add("is-completing");
+    const height = card.getBoundingClientRect().height;
+    card.style.height = `${height}px`;
+    card.style.maxHeight = `${height}px`;
+    card.style.willChange = "height, opacity, transform";
+    card.getBoundingClientRect();
+    window.requestAnimationFrame(() => {
+      card.classList.add("is-completing");
+    });
     window.setTimeout(() => {
       item.status = nextStatus;
       saveData();
       render({ quiet: true, transition: "school-filter", schoolFilterState });
-    }, 240);
+    }, 280);
   }
 
   function normalizedAssignmentStatus(status = "") {
