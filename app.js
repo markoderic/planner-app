@@ -311,6 +311,14 @@
     });
     appData.finance.debts.forEach((debt) => {
       debt.debtType = normalizedDebtType(debt);
+      debt.paymentHistory = debt.paymentHistory || [];
+      debt.paymentHistory.forEach((payment) => {
+        payment.amount = Math.max(0, Number(payment.amount) || 0);
+        payment.date = paymentHistoryDate(payment);
+        if (!findById(appData.finance.accounts, payment.accountId)) {
+          payment.accountId = defaultSpendingAccountId("Debit card");
+        }
+      });
     });
     appData.finance.spending.forEach((entry) => {
       entry.paymentMethod = normalizedPaymentMethod(entry.paymentMethod, entry.debtId);
@@ -557,6 +565,19 @@
       }
     }
     return next;
+  }
+
+  function debtPaymentHistoryEntries() {
+    return appData.finance.debts.flatMap((debt) => (debt.paymentHistory || []).map((payment) => ({
+      ...payment,
+      debtId: debt.id,
+      debtName: debt.name || "Debt payment",
+      debtType: normalizedDebtType(debt)
+    })));
+  }
+
+  function paymentHistoryDate(payment = {}) {
+    return payment.date || String(payment.createdAt || "").slice(0, 10) || today();
   }
 
   function normalizePercentInput(value) {
@@ -827,7 +848,9 @@
 
   function render(options = {}) {
     const quiet = Boolean(options.quiet);
+    const periodTransition = options.transition === "period";
     app.classList.toggle("is-soft-render", quiet);
+    app.classList.toggle("is-period-render", periodTransition);
     saveUi();
     document.querySelectorAll(".nav-item").forEach((button) => {
       button.classList.toggle("active", button.dataset.tab === ui.activeTab);
@@ -840,6 +863,11 @@
     if (ui.activeTab === "more") app.innerHTML = renderMore();
     animateProgressIndicators();
     animateCountElements();
+    if (periodTransition) {
+      window.setTimeout(() => {
+        app.classList.remove("is-period-render");
+      }, 260);
+    }
   }
 
   function finishAppLoad() {
@@ -1473,9 +1501,9 @@
   function renderAccounts(finance, safeFinance = finance, safetyRange = finance.range) {
     return `
       <div class="metric-grid">
-        ${metric("Account balances", formatCurrency(finance.accountMoney), "Available after posted cash/debit spending")}
-        ${metric("Entered balances", formatCurrency(finance.rawAccountMoney), "Manual account totals before spending")}
-        ${metric("Cash/debit spent", formatCurrency(finance.postedCashSpending), "Removed from available balances")}
+        ${metric("Available money", formatCurrency(finance.accountMoney), "Current account balance after tracked outflows")}
+        ${metric("Cash/debit spending", formatCurrency(finance.postedCashSpending), "Posted through today")}
+        ${metric("Debt/card payments", formatCurrency(finance.postedDebtPayments), "Paid from accounts")}
         ${metric("Safe-to-spend", formatCurrency(safeFinance.safeToSpend), `After obligations through ${formatDate(safetyRange.end)}`)}
       </div>
       <div class="list">
@@ -1485,15 +1513,14 @@
   }
 
   function renderAccountItem(account, finance) {
-    const postedSpending = finance.accountSpendingById?.[account.id] || 0;
-    const available = (Number(account.balance) || 0) - postedSpending;
+    const trackedOutflow = finance.accountOutflowsById?.[account.id] || 0;
+    const available = (Number(account.balance) || 0) - trackedOutflow;
     return itemCard({
       title: account.name,
       meta: [
         account.type || "Account",
-        `Available ${formatCurrency(available)}`,
-        `Entered ${formatCurrency(account.balance)}`,
-        postedSpending ? `Posted spending ${formatCurrency(postedSpending)}` : ""
+        `Current ${formatCurrency(available)}`,
+        trackedOutflow ? `Tracked outflow ${formatCurrency(trackedOutflow)}` : ""
       ],
       actions: `${actionButton("edit-account", account.id, "Edit", "edit")}${actionButton("delete-account", account.id, "Delete", "trash")}`
     });
@@ -1905,9 +1932,32 @@
             <strong>${countSpan(`${progressKey}:percent`, clamp(progress), { suffix: "%" })}</strong>
           </div>
           <div class="progress" aria-label="Debt payoff progress"><span style="width:${clamp(progress)}%"></span></div>
+          ${renderDebtPaymentHistory(debt)}
         </div>
       </article>
     `;
+  }
+
+  function renderDebtPaymentHistory(debt) {
+    const payments = [...(debt.paymentHistory || [])].sort((a, b) => paymentHistoryDate(b).localeCompare(paymentHistoryDate(a)));
+    return `
+      <details class="debt-payment-history">
+        <summary><span>Payment history</span><span class="tiny">${payments.length}</span></summary>
+        <div class="list">
+          ${payments.length ? payments.map(renderDebtPaymentHistoryItem).join("") : emptyState("Payments toward this balance will appear here.")}
+        </div>
+      </details>
+    `;
+  }
+
+  function renderDebtPaymentHistoryItem(payment) {
+    const account = payment.accountId ? findById(appData.finance.accounts, payment.accountId) : null;
+    return itemCard({
+      title: formatCurrency(payment.amount),
+      meta: [formatDate(paymentHistoryDate(payment)), account ? `Paid from ${account.name}` : "", payment.notes ? "Note saved" : ""],
+      note: payment.notes || "",
+      className: "debt-payment-item"
+    });
   }
 
   function renderInvestments(finance) {
@@ -2602,12 +2652,15 @@
     const creditSpending = sum(creditSpendingEntries, (entry) => entry.amount);
     const postedCashSpendingEntries = appData.finance.spending.filter((entry) => !spendingUsesCredit(entry) && entry.date && entry.date <= today());
     const postedCashSpending = sum(postedCashSpendingEntries, (entry) => entry.amount);
-    const accountSpendingById = postedCashSpendingEntries.reduce((totals, entry) => {
+    const postedDebtPaymentEntries = debtPaymentHistoryEntries().filter((payment) => paymentHistoryDate(payment) <= today());
+    const postedDebtPayments = sum(postedDebtPaymentEntries, (payment) => payment.amount);
+    const accountOutflowsById = [...postedCashSpendingEntries, ...postedDebtPaymentEntries].reduce((totals, entry) => {
       if (entry.accountId) totals[entry.accountId] = (totals[entry.accountId] || 0) + (Number(entry.amount) || 0);
       return totals;
     }, {});
-    const linkedPostedCashSpending = sum(postedCashSpendingEntries.filter((entry) => entry.accountId), (entry) => entry.amount);
-    const unlinkedPostedCashSpending = Math.max(0, postedCashSpending - linkedPostedCashSpending);
+    const postedAccountOutflows = postedCashSpending + postedDebtPayments;
+    const linkedPostedAccountOutflows = sum([...postedCashSpendingEntries, ...postedDebtPaymentEntries].filter((entry) => entry.accountId), (entry) => entry.amount);
+    const unlinkedPostedAccountOutflows = Math.max(0, postedAccountOutflows - linkedPostedAccountOutflows);
     const futureCashSpendingEntries = cashSpendingEntries.filter((entry) => entry.date > today());
     const billOccurrences = appData.finance.bills.flatMap((bill) => billOccurrencesInRange(bill, range)).sort((a, b) => a.date.localeCompare(b.date));
     const billsDue = sum(billOccurrences.filter((bill) => !bill.paid), (bill) => bill.amount);
@@ -2618,7 +2671,7 @@
     const investmentValue = sum(appData.finance.investments, (investment) => investment.currentValue);
     const investmentGain = investmentValue - invested;
     const shopping = shoppingStats().remainingTotal;
-    const accountMoney = rawAccountMoney - postedCashSpending;
+    const accountMoney = rawAccountMoney - postedAccountOutflows;
     const currentMoney = accountMoney;
     const futureCashSpending = sum(futureCashSpendingEntries, (entry) => entry.amount);
     const projectedBalance = currentMoney + netIncome - billsDue - debtPayments - futureCashSpending - shopping;
@@ -2644,9 +2697,12 @@
       cashSpending,
       creditSpending,
       postedCashSpending,
-      linkedPostedCashSpending,
-      unlinkedPostedCashSpending,
-      accountSpendingById,
+      postedDebtPaymentEntries,
+      postedDebtPayments,
+      postedAccountOutflows,
+      linkedPostedAccountOutflows,
+      unlinkedPostedAccountOutflows,
+      accountOutflowsById,
       futureCashSpending,
       billOccurrences,
       billsDue,
@@ -3164,7 +3220,7 @@
     form.addEventListener("submit", (event) => {
       event.preventDefault();
       const values = collectFormValues(form, fields);
-      onSubmit(values);
+      if (onSubmit(values) === false) return;
       closeModal();
       saveData();
       render({ quiet: true });
@@ -3348,6 +3404,25 @@
     ];
   }
 
+  function debtPaymentFields() {
+    const accounts = appData.finance.accounts || [];
+    return [
+      { name: "amount", label: "Payment amount", type: "number", step: "0.01", min: 0, required: true },
+      {
+        name: "accountId",
+        label: "Paid from account",
+        type: "select",
+        options: [
+          { value: "", label: accounts.length ? "Auto-select account" : "No accounts added" },
+          ...accounts.map((account) => ({ value: account.id, label: account.name || "Account" }))
+        ],
+        default: defaultSpendingAccountId("Debit card")
+      },
+      { name: "date", label: "Payment date", type: "date", default: today() },
+      { name: "notes", label: "Notes", type: "textarea" }
+    ];
+  }
+
   function investmentFields() {
     return [
       { name: "name", label: "Investment name", required: true },
@@ -3524,7 +3599,7 @@
     if (action === "close-modal") return closeModal();
     if (action === "set-dashboard-span") {
       ui.dashboardSpan = button.dataset.span;
-      return render({ quiet: true });
+      return render({ transition: "period" });
     }
     if (action === "set-dashboard-style") {
       ui.dashboardStyle = button.dataset.style;
@@ -3532,7 +3607,7 @@
     }
     if (action === "set-finance-span") {
       ui.financeSpan = button.dataset.span;
-      return render({ quiet: true });
+      return render({ transition: "period" });
     }
     if (action === "set-more-view") {
       const nextView = button.dataset.view;
@@ -3760,15 +3835,35 @@
         const debt = findById(appData.finance.debts, id);
         openEdit({
           title: "Make debt payment",
-          fields: [
-            { name: "amount", label: "Payment amount", type: "number", step: "0.01", required: true },
-            { name: "date", label: "Payment date", type: "date", default: today() },
-            { name: "notes", label: "Notes", type: "textarea" }
-          ],
+          fields: debtPaymentFields(),
+          initial: { accountId: defaultSpendingAccountId("Debit card"), date: today() },
           onSubmit(values) {
-            debt.balance = Math.max(0, (Number(debt.balance) || 0) - (Number(values.amount) || 0));
+            const amount = Math.max(0, Number(values.amount) || 0);
+            const balance = Number(debt.balance) || 0;
+            const accountId = values.accountId || defaultSpendingAccountId("Debit card");
+            const account = findById(appData.finance.accounts, accountId);
+            const finance = calculateFinance(calculateDateRange("today"));
+            const accountAvailable = account ? (Number(account.balance) || 0) - (finance.accountOutflowsById?.[account.id] || 0) : finance.currentMoney;
+            if (!amount) {
+              alert("Enter a payment amount.");
+              return false;
+            }
+            if (amount > balance) {
+              alert(`Payment cannot be greater than the current balance of ${formatCurrency(balance)}.`);
+              return false;
+            }
+            if (amount > finance.currentMoney) {
+              alert(`Payment cannot be greater than your current available money of ${formatCurrency(finance.currentMoney)}.`);
+              return false;
+            }
+            if (account && amount > accountAvailable) {
+              alert(`Payment cannot be greater than ${account.name}'s available balance of ${formatCurrency(accountAvailable)}.`);
+              return false;
+            }
+            debt.balance = Math.max(0, balance - amount);
             debt.paymentHistory = debt.paymentHistory || [];
-            debt.paymentHistory.push(makeItem(values));
+            debt.paymentHistory.push(makeItem({ ...values, amount, accountId, date: values.date || today() }));
+            return true;
           }
         });
         break;
