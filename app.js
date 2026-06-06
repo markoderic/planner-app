@@ -131,8 +131,8 @@
       makeItem({ type: "manual", source: "Website client", amount: 250, date: d1, payDate: d1, taxMode: "auto", deductionPercent: "", notes: "" })
     ];
     data.finance.bills = [
-      makeItem({ name: "Phone", amount: 62, dueDate: d2, frequency: "monthly", category: "Phone", paid: false, notes: "" }),
-      makeItem({ name: "Streaming", amount: 15, dueDate: d5, frequency: "monthly", category: "Subscriptions", paid: false, notes: "" })
+      makeItem({ name: "Phone", amount: 62, dueDate: d2, frequency: "monthly", category: "Phone", billType: "bill", paid: false, notes: "" }),
+      makeItem({ name: "Streaming", amount: 15, dueDate: d5, frequency: "monthly", category: "Subscriptions", billType: "subscription", paid: false, notes: "" })
     ];
     data.finance.spending = [
       makeItem({ amount: 18.5, category: "Food", date: d0, note: "Lunch", necessary: true, paymentMethod: "Debit" }),
@@ -324,6 +324,7 @@
     appData.finance.income.forEach((entry) => {
       if (!entry.taxMode) entry.taxMode = Number(entry.deductionPercent) > 0 ? "manual" : "auto";
     });
+    appData.finance.bills.forEach((bill) => normalizeBill(bill));
     appData.finance.debts.forEach((debt) => {
       debt.debtType = normalizedDebtType(debt);
       debt.paymentHistory = debt.paymentHistory || [];
@@ -575,6 +576,35 @@
 
   function spendingUsesCredit(entry = {}) {
     return normalizedPaymentMethod(entry.paymentMethod, entry.debtId) === "Credit card";
+  }
+
+  function normalizedBillType(bill = {}) {
+    const value = String(bill.billType || bill.type || "").toLowerCase();
+    if (["subscription", "subscriptions", "optional"].includes(value)) return "subscription";
+    if (["bill", "mandatory", "required"].includes(value)) return "bill";
+    const category = String(bill.category || "").toLowerCase();
+    const name = String(bill.name || "").toLowerCase();
+    if (category.includes("subscription") || /\b(netflix|streaming|prime|amazon|doordash|door dash|chatgpt|spotify|hulu|disney|youtube|apple|membership)\b/.test(name)) {
+      return "subscription";
+    }
+    return "bill";
+  }
+
+  function billTypeLabel(bill = {}) {
+    return normalizedBillType(bill) === "subscription" ? "Subscription" : "Bill";
+  }
+
+  function normalizeBill(bill = {}) {
+    bill.name = bill.name || "Bill";
+    bill.amount = Math.max(0, Number(bill.amount) || 0);
+    bill.dueDate = bill.dueDate || today();
+    bill.frequency = bill.frequency || "monthly";
+    bill.customDays = Math.max(1, Number(bill.customDays) || 30);
+    bill.category = bill.category || "";
+    bill.billType = normalizedBillType(bill);
+    bill.paid = Boolean(bill.paid);
+    bill.notes = bill.notes || "";
+    return bill;
   }
 
   function normalizeSpendingValues(values = {}) {
@@ -1363,9 +1393,9 @@
           ${months.map((month) => `
             <div class="money-month">
               <div class="money-bars">
-                <span class="income" title="Income ${formatCurrency(month.income)}" style="height:${moneyBarHeight(month.income, maxValue)}%"></span>
-                <span class="spending" title="Spending ${formatCurrency(month.spending)}" style="height:${moneyBarHeight(month.spending, maxValue)}%"></span>
-                <span class="savings" title="Savings ${formatCurrency(month.savings)}" style="height:${moneyBarHeight(month.savings, maxValue)}%"></span>
+                <span class="income" title="Income ${formatCurrency(month.income)}" style="--level:${moneyBarHeight(month.income, maxValue)}%"></span>
+                <span class="spending" title="Spending ${formatCurrency(month.spending)}" style="--level:${moneyBarHeight(month.spending, maxValue)}%"></span>
+                <span class="savings" title="Savings ${formatCurrency(month.savings)}" style="--level:${moneyBarHeight(month.savings, maxValue)}%"></span>
               </div>
               <span>${escapeHtml(month.label)}</span>
             </div>
@@ -1479,7 +1509,7 @@
     const billCards = finance.billOccurrences.slice(0, 2).map((bill) =>
       itemCard({
         title: bill.name,
-        meta: ["Bill", formatCurrency(bill.amount), formatDate(bill.date)],
+        meta: [billTypeLabel(bill), formatCurrency(bill.amount), formatDate(bill.date)],
         className: bill.paid ? "paid" : "",
         actions: actionButton("toggle-bill-paid", bill.id, bill.paid ? "Mark unpaid" : "Mark paid", bill.paid ? "undo" : "check")
       })
@@ -1968,23 +1998,49 @@
   }
 
   function renderBills(finance) {
+    const bills = sortByDate(appData.finance.bills, "dueDate");
+    const mandatoryBills = bills.filter((bill) => normalizedBillType(bill) === "bill");
+    const subscriptions = bills.filter((bill) => normalizedBillType(bill) === "subscription");
+    const mandatoryDue = sum(finance.billOccurrences.filter((bill) => normalizedBillType(bill) === "bill" && !bill.paid), (bill) => bill.amount);
+    const subscriptionsDue = sum(finance.billOccurrences.filter((bill) => normalizedBillType(bill) === "subscription" && !bill.paid), (bill) => bill.amount);
     return `
       <div class="metric-grid">
         ${metric("Bills due soon", formatCurrency(finance.billsDue), "Selected range")}
+        ${metric("Mandatory bills", formatCurrency(mandatoryDue), `${mandatoryBills.length} tracked`)}
+        ${metric("Subscriptions", formatCurrency(subscriptionsDue), `${subscriptions.length} optional`)}
         ${metric("After bills", formatCurrency(finance.currentMoney - finance.billsDue), "Current minus unpaid bills")}
       </div>
-      <div class="list">
-        ${appData.finance.bills.length ? sortByDate(appData.finance.bills, "dueDate").map(renderBillItem).join("") : emptyState("Add recurring bills and subscriptions.")}
+      <div class="bill-groups">
+        ${renderBillGroup("Bills", mandatoryBills, "Must-pay obligations like phone, rent, insurance, school, and debt.", mandatoryDue)}
+        ${renderBillGroup("Subscriptions", subscriptions, "Optional monthly charges like DoorDash, Netflix, Amazon Prime, or ChatGPT Plus.", subscriptionsDue)}
+      </div>
+    `;
+  }
+
+  function renderBillGroup(title, bills, note, dueTotal = 0) {
+    return `
+      <div class="mini-section bill-group">
+        <div class="bill-group-header">
+          <div>
+            <h3>${escapeHtml(title)}</h3>
+            <p class="tiny">${escapeHtml(note)}</p>
+          </div>
+          <span class="bill-group-total">${formatCurrency(dueTotal)} due</span>
+        </div>
+        <div class="list">
+          ${bills.length ? bills.map(renderBillItem).join("") : emptyState(`No ${title.toLowerCase()} added yet.`)}
+        </div>
       </div>
     `;
   }
 
   function renderBillItem(bill) {
+    const type = normalizedBillType(bill);
     return itemCard({
       title: bill.name,
-      meta: [formatCurrency(bill.amount), formatDate(bill.dueDate), bill.frequency, bill.category, bill.paid ? "Paid" : "Unpaid"],
+      meta: [billTypeLabel(bill), formatCurrency(bill.amount), formatDate(bill.dueDate), bill.frequency, bill.category, bill.paid ? "Paid" : "Unpaid"],
       note: bill.notes,
-      className: bill.paid ? "paid" : "",
+      className: `${bill.paid ? "paid" : ""} ${type === "subscription" ? "subscription-bill" : "mandatory-bill"}`,
       actions: `
         ${actionButton("toggle-bill-paid", bill.id, bill.paid ? "Mark unpaid" : "Mark paid", bill.paid ? "undo" : "check")}
         ${actionButton("edit-bill", bill.id, "Edit", "edit")}
@@ -2076,21 +2132,28 @@
     const chart = renderSavingsGoalLineChart(goalStats);
     return `
       <article class="item-card savings-goal-card" data-progress-key="${escapeHtml(progressKey)}" data-progress-percent="${escapeHtml(percent)}">
-        <div class="item-main">
-          <p class="item-title">${escapeHtml(goal.name)}</p>
-          <div class="item-meta">
-            <span>${formatCurrency(saved)} saved</span>
-            <span>${formatCurrency(target)} goal</span>
-            ${goal.targetDate ? `<span>${formatDate(goal.targetDate)}</span>` : ""}
+        <div class="savings-goal-top">
+          <div class="item-main savings-goal-main">
+            <p class="item-title">${escapeHtml(goal.name)}</p>
+            <div class="item-meta">
+              <span>${formatCurrency(saved)} saved</span>
+              <span>${formatCurrency(target)} goal</span>
+              ${goal.targetDate ? `<span>Due ${formatDate(goal.targetDate)}</span>` : ""}
+            </div>
+          </div>
+          <div class="item-actions">
+            ${actionButton("edit-savings-goal", goal.id, "Edit", "edit")}
+            ${actionButton("delete-savings-goal", goal.id, "Delete", "trash")}
+          </div>
+        </div>
+        <div class="savings-goal-progress">
+          <div class="savings-goal-progress-label">
+            <span>${formatNumber(percent)}% funded</span>
+            <strong>${formatCurrency(remaining)} remaining</strong>
           </div>
           <div class="progress"><span style="width:${clamp(percent)}%"></span></div>
-          <p class="tiny">${formatCurrency(remaining)} remaining</p>
-          ${chart}
         </div>
-        <div class="item-actions">
-          ${actionButton("edit-savings-goal", goal.id, "Edit", "edit")}
-          ${actionButton("delete-savings-goal", goal.id, "Delete", "trash")}
-        </div>
+        ${chart}
       </article>
     `;
   }
@@ -2100,8 +2163,11 @@
     const pointString = chart.points.map((point) => `${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(" ");
     const endPoint = chart.points[chart.points.length - 1];
     const maxText = formatCompactCurrency(chart.maxAmount);
+    const dotX = clamp(endPoint.x, 14, 88);
+    const dotY = clamp((endPoint.y / 60) * 100, 18, 84);
+    const savedLabel = `${formatCompactCurrency(goalStats.saved)} saved`;
     return `
-      <details class="savings-goal-chart">
+      <details class="savings-goal-chart" open>
         <summary>
           <span>
             <b>Progress line</b>
@@ -2113,12 +2179,15 @@
             <span>${escapeHtml(maxText)}</span>
             <span>$0</span>
           </div>
-          <div>
+          <div class="savings-line-plot" style="--dot-x:${dotX.toFixed(2)}%; --dot-y:${dotY.toFixed(2)}%;">
+            <span class="savings-line-dot-label">${escapeHtml(savedLabel)}</span>
             <svg class="savings-line-svg" viewBox="0 0 100 60" preserveAspectRatio="none" role="img" aria-label="${escapeHtml(goalStats.goal.name)} savings progress">
               <line class="savings-line-grid target" x1="6" y1="6" x2="96" y2="6"></line>
+              <line class="savings-line-grid" x1="6" y1="30" x2="96" y2="30"></line>
               <line class="savings-line-grid" x1="6" y1="54" x2="96" y2="54"></line>
+              <polyline class="savings-line-path-glow" points="${escapeHtml(pointString)}"></polyline>
               <polyline class="savings-line-path" pathLength="1" points="${escapeHtml(pointString)}"></polyline>
-              <circle class="savings-line-dot" cx="${endPoint.x.toFixed(2)}" cy="${endPoint.y.toFixed(2)}" r="1.8"></circle>
+              <circle class="savings-line-dot" cx="${endPoint.x.toFixed(2)}" cy="${endPoint.y.toFixed(2)}" r="2.15"></circle>
             </svg>
             <div class="savings-line-axis">
               <span>${escapeHtml(chart.startLabel)}</span>
@@ -2894,7 +2963,7 @@
         <div class="card panel section">
           <h2>Analytical summary</h2>
           <p class="muted">This week: ${summary.tasks.percent}% task completion, ${formatCurrency(summary.finance.netIncome)} income logged, ${formatCurrency(summary.finance.spending)} spending, ${summary.gym.workouts.length} gym sessions, and ${summary.school.completed.length} school assignments completed.</p>
-          <div class="pill-row">
+          <div class="pill-row analytical-summary-pills">
             <span class="chip active">Best category: ${escapeHtml(best)}</span>
             <span class="chip">Needs attention: ${escapeHtml(weakest)}</span>
           </div>
@@ -3892,6 +3961,7 @@
       { name: "name", label: "Bill name", required: true },
       { name: "amount", label: "Amount", type: "number", step: "0.01", required: true },
       { name: "dueDate", label: "Due date", type: "date", default: today(), required: true },
+      { name: "billType", label: "Payment type", type: "select", options: [{ value: "bill", label: "Bill (mandatory)" }, { value: "subscription", label: "Subscription (optional)" }], default: "bill" },
       { name: "frequency", label: "Frequency", type: "select", options: ["weekly", "monthly", "yearly", "custom", "one-time"], default: "monthly" },
       { name: "customDays", label: "Custom frequency days", type: "number", min: 1, default: 30 },
       { name: "category", label: "Category", type: "select", options: [{ value: "", label: "No category" }, ...appData.settings.billCategories.map((category) => ({ value: category, label: category }))] },
@@ -4444,8 +4514,8 @@
         break;
       case "add-bill":
       case "edit-bill": {
-        const item = id ? findById(appData.finance.bills, id) : { frequency: "monthly", paid: false };
-        openEdit({ title: id ? "Edit bill" : "Add bill", fields: billFields(), initial: item, onSubmit: (values) => upsert(appData.finance.bills, id, values) });
+        const item = id ? findById(appData.finance.bills, id) : { frequency: "monthly", billType: "bill", paid: false };
+        openEdit({ title: id ? "Edit bill" : "Add bill", fields: billFields(), initial: normalizeBill({ ...(item || {}) }), onSubmit: (values) => upsert(appData.finance.bills, id, normalizeBill({ ...(id ? item : {}), ...values })) });
         break;
       }
       case "toggle-bill-paid": {
