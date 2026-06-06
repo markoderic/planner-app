@@ -1372,6 +1372,126 @@ h3 {
   gap: 10px;
 }
 
+.finance-shortcuts {
+  position: sticky;
+  top: calc(8px + env(safe-area-inset-top));
+  z-index: 20;
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.045);
+  border-radius: var(--radius);
+  background: rgba(13, 13, 20, 0.86);
+  backdrop-filter: blur(16px);
+}
+
+.finance-shortcuts-label {
+  color: var(--subtle);
+  font-size: 0.68rem;
+  font-weight: 780;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.finance-shortcut-list {
+  display: flex;
+  gap: 7px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: none;
+}
+
+.finance-shortcut-list::-webkit-scrollbar {
+  display: none;
+}
+
+.finance-shortcut {
+  min-height: 36px;
+  flex: 0 0 auto;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 740;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 170ms ease, border-color 170ms ease, color 170ms ease, transform 160ms ease;
+}
+
+.finance-shortcut:hover,
+.finance-shortcut:focus-visible {
+  border-color: rgba(var(--accent-rgb), 0.24);
+  background: rgba(var(--accent-rgb), 0.13);
+  color: var(--text);
+}
+
+.finance-shortcut:active {
+  transform: scale(0.98);
+}
+
+.finance-details-stack {
+  scroll-margin-top: 84px;
+}
+
+.finance-section-card {
+  scroll-margin-top: 92px;
+  transition: border-color 240ms ease, background 240ms ease, box-shadow 240ms ease;
+}
+
+.finance-section-card.is-jump-target {
+  animation: financeJumpGlow 1400ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.finance-section-heading {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.finance-section-number {
+  width: 30px;
+  height: 30px;
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: rgba(var(--accent-rgb), 0.13);
+  color: var(--accent-2);
+  font-size: 0.68rem;
+  font-weight: 820;
+  font-variant-numeric: tabular-nums;
+}
+
+.finance-section-title {
+  color: var(--text);
+  font-size: 0.98rem;
+  font-weight: 840;
+  line-height: 1.1;
+}
+
+@keyframes financeJumpGlow {
+  0% {
+    border-color: rgba(var(--accent-rgb), 0.08);
+    box-shadow: 0 0 0 0 rgba(var(--accent-rgb), 0);
+    background: var(--card);
+  }
+
+  18% {
+    border-color: rgba(var(--accent-rgb), 0.34);
+    box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.16);
+    background: rgba(var(--accent-rgb), 0.08);
+  }
+
+  100% {
+    border-color: rgba(255, 255, 255, 0.035);
+    box-shadow: none;
+    background: var(--card);
+  }
+}
+
 .bill-groups {
   display: grid;
   gap: 12px;
@@ -1414,13 +1534,16 @@ h3 {
   white-space: nowrap;
 }
 
-.mandatory-bill {
-  box-shadow: 4px 0 0 rgba(var(--accent-rgb), 0.58) inset;
+.item-card.has-bill-color {
+  border-color: rgba(var(--bill-color-rgb), 0.18);
+  background: rgba(var(--bill-color-rgb), 0.07);
+  box-shadow: 4px 0 0 var(--bill-color) inset;
 }
 
-.subscription-bill {
-  background: rgba(37, 216, 255, 0.06);
-  box-shadow: 4px 0 0 #25d8ff inset;
+.item-card.paid.has-bill-color {
+  background:
+    linear-gradient(90deg, rgba(var(--bill-color-rgb), 0.1), rgba(var(--bill-color-rgb), 0.04)),
+    rgba(50, 217, 143, 0.08);
 }
 
 .mini-section,
@@ -1521,11 +1644,15 @@ details summary::after {
   border-right: 2px solid var(--muted);
   border-bottom: 2px solid var(--muted);
   transform: rotate(45deg);
-  transition: transform 180ms ease;
+  transition: transform 300ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 details[open] summary::after {
   transform: rotate(225deg);
+}
+
+details[open].is-closing summary::after {
+  transform: rotate(45deg);
 }
 
 .details-body {
@@ -1534,19 +1661,35 @@ details[open] summary::after {
   padding: 0 14px 14px;
 }
 
-details[open] .details-body {
-  animation: detailsIn 180ms ease-out;
+details[open]:not(.is-closing) .details-body {
+  animation: detailsIn 360ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+details[open].is-closing .details-body {
+  animation: detailsOut 320ms cubic-bezier(0.5, 0, 0.2, 1) forwards;
 }
 
 @keyframes detailsIn {
   from {
     opacity: 0;
-    transform: translateY(-4px);
+    transform: translateY(-8px);
   }
 
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes detailsOut {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(-8px);
   }
 }
 
@@ -1639,7 +1782,7 @@ details[open] .details-body {
 }
 
 details[open] .savings-line-panel {
-  animation: detailsIn 180ms ease-out;
+  animation: detailsIn 360ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .savings-line-labels {
@@ -1916,6 +2059,94 @@ input[type="checkbox"] {
 input[type="color"] {
   height: 44px;
   padding: 4px;
+}
+
+.color-field {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.color-field legend {
+  margin: 0 0 7px;
+  padding: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 680;
+}
+
+.color-swatches {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.color-choice {
+  position: relative;
+  min-width: 0;
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.055);
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.1;
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease, transform 160ms ease;
+}
+
+.color-choice input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  min-height: 1px;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.color-swatch {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  border: 2px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  background: var(--swatch-color, transparent);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.16) inset;
+}
+
+.color-swatch.no-color {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.color-swatch.no-color::after {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border-top: 2px solid rgba(255, 107, 138, 0.86);
+  transform: rotate(-38deg);
+  transform-origin: center;
+}
+
+.color-choice input:checked + .color-swatch {
+  border-color: var(--text);
+  box-shadow:
+    0 0 0 3px rgba(var(--accent-rgb), 0.18),
+    0 0 0 1px rgba(0, 0, 0, 0.16) inset;
+}
+
+.color-choice input:checked ~ span:last-child {
+  color: var(--text);
+}
+
+.color-choice:active {
+  transform: scale(0.98);
 }
 
 input:focus,

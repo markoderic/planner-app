@@ -41,6 +41,7 @@
       annual: 1
     }
   };
+  const colorSwatches = ["#f7f7ff", "#c8ccd6", "#6f7685", "#25d8ff", "#7c5cff", "#9b8cff", "#32d98f", "#ffd166", "#ff6b8a", "#ff9f43"];
 
   const defaultSettings = () => ({
     accent: "#f7f7ff",
@@ -602,6 +603,7 @@
     bill.customDays = Math.max(1, Number(bill.customDays) || 30);
     bill.category = bill.category || "";
     bill.billType = normalizedBillType(bill);
+    bill.color = safeHexColor(bill.color, "");
     bill.paid = Boolean(bill.paid);
     bill.notes = bill.notes || "";
     return bill;
@@ -1006,10 +1008,33 @@
     return `<button type="button" class="${className}" data-action="${action}" data-id="${escapeHtml(id || "")}" ${attrs} title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}">${icon(iconName)}${text}</button>`;
   }
 
+  function countableValueHtml(key, value) {
+    const text = String(value ?? "").trim();
+    if (!text || text.includes("<") || text.includes("/") || /[a-z]/i.test(text.replace(/K|M|B/g, ""))) return value;
+    const plain = text.replaceAll(",", "");
+    const currencyMatch = plain.match(/^(-?)\$([0-9]+(?:\.[0-9]+)?)$/);
+    if (currencyMatch) {
+      const amount = Number(`${currencyMatch[1]}${currencyMatch[2]}`) || 0;
+      return countSpan(key, amount, { format: "currency" });
+    }
+    const percentMatch = plain.match(/^(-?[0-9]+(?:\.[0-9]+)?)%$/);
+    if (percentMatch) {
+      const amount = Number(percentMatch[1]) || 0;
+      const decimals = percentMatch[1].split(".")[1]?.length || 0;
+      return countSpan(key, amount, { format: decimals ? "decimal" : "integer", digits: decimals, suffix: "%" });
+    }
+    const numberMatch = plain.match(/^-?[0-9]+(?:\.[0-9]+)?$/);
+    if (numberMatch) {
+      const decimals = plain.split(".")[1]?.length || 0;
+      return countSpan(key, Number(plain) || 0, { format: decimals ? "decimal" : "integer", digits: decimals });
+    }
+    return value;
+  }
+
   function metric(label, value, note = "", animation = null) {
     const valueHtml = animation?.value
       ? countSpan(animation.value.key, animation.value.value, animation.value)
-      : value;
+      : countableValueHtml(`${ui.activeTab}:metric:${slugKey(label)}`, value);
     const noteHtml = escapeHtml(note);
     return `
       <article class="card metric-card">
@@ -1026,7 +1051,7 @@
     return `
       <article class="card ring-card">
         <div class="ring" style="--value:${clamp(percent)}">
-          <span class="ring-value">${value}</span>
+          <span class="ring-value">${countableValueHtml(`${ui.activeTab}:ring:${slugKey(label)}`, value)}</span>
         </div>
         <div>
           <p class="ring-label">${escapeHtml(label)}</p>
@@ -1038,6 +1063,10 @@
 
   function slugKey(value) {
     return String(value || "item").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "item";
+  }
+
+  function animatedDisplay(scope, label, value) {
+    return countableValueHtml(`${ui.activeTab}:${scope}:${slugKey(label)}`, value);
   }
 
   function countSpan(key, value, options = {}) {
@@ -1144,10 +1173,10 @@
     return `${options.prefix || ""}${body}${options.suffix || ""}`;
   }
 
-  function itemCard({ title, meta = [], note = "", actions = "", className = "" }) {
+  function itemCard({ title, meta = [], note = "", actions = "", className = "", style = "" }) {
     const metaHtml = meta.filter(Boolean).map((m) => `<span>${escapeHtml(m)}</span>`).join("");
     return `
-      <article class="item-card ${className}">
+      <article class="item-card ${className}"${style ? ` style="${escapeHtml(style)}"` : ""}>
         <div class="item-main">
           <p class="item-title">${escapeHtml(title)}</p>
           ${metaHtml ? `<div class="item-meta">${metaHtml}</div>` : ""}
@@ -1275,8 +1304,8 @@
             ${dashboardViewToggle()}
             <div class="stat-strip">
               <div class="strip-item"><span class="strip-value">${task.completed}/${task.total}</span><span class="strip-label">Tasks</span></div>
-              <div class="strip-item"><span class="strip-value">${habit.percent}%</span><span class="strip-label">Habits</span></div>
-              <div class="strip-item"><span class="strip-value">${formatCompactCurrency(safeFinance.safeToSpend)}</span><span class="strip-label">Safe to spend</span></div>
+              <div class="strip-item"><span class="strip-value">${animatedDisplay("strip", "habits", `${habit.percent}%`)}</span><span class="strip-label">Habits</span></div>
+              <div class="strip-item"><span class="strip-value">${animatedDisplay("strip", "safe-to-spend", formatCompactCurrency(safeFinance.safeToSpend))}</span><span class="strip-label">Safe to spend</span></div>
             </div>
           </div>
         </section>
@@ -1285,7 +1314,7 @@
           <article class="card overview-card overview-card-primary">
             <div>
               <p class="eyebrow">Today focus</p>
-              <h2 class="overview-value">${todayFocus.length}</h2>
+              <h2 class="overview-value">${animatedDisplay("overview", "today-focus", todayFocus.length)}</h2>
               <p class="muted">${todayFocus.length === 1 ? "open item" : "open items"} due today</p>
             </div>
             <div class="overview-pairs">
@@ -1296,7 +1325,7 @@
           <article class="card overview-card">
             <div>
               <p class="eyebrow">Money</p>
-              <h2 class="overview-value">${formatCurrency(safeFinance.safeToSpend)}</h2>
+              <h2 class="overview-value">${animatedDisplay("overview", "safe-to-spend", formatCurrency(safeFinance.safeToSpend))}</h2>
               <p class="muted">safe through ${escapeHtml(formatDate(safetyRange.end))}</p>
             </div>
             <div class="overview-pairs">
@@ -1307,7 +1336,7 @@
           <article class="card overview-card">
             <div>
               <p class="eyebrow">School</p>
-              <h2 class="overview-value">${school.openDue.length}</h2>
+              <h2 class="overview-value">${animatedDisplay("overview", "school", school.openDue.length)}</h2>
               <p class="muted">assignments in ${escapeHtml(range.label.toLowerCase())}</p>
             </div>
             <div class="overview-pairs">
@@ -1318,7 +1347,7 @@
           <article class="card overview-card">
             <div>
               <p class="eyebrow">Bills + debt</p>
-              <h2 class="overview-value">${formatCompactCurrency(obligationTotal)}</h2>
+              <h2 class="overview-value">${animatedDisplay("overview", "bills-and-debt", formatCompactCurrency(obligationTotal))}</h2>
               <p class="muted">${obligationCount} upcoming ${obligationCount === 1 ? "obligation" : "obligations"}</p>
             </div>
             <div class="overview-pairs">
@@ -1664,6 +1693,16 @@
     const safetyRange = safetyForecastRange(range);
     const safeFinance = calculateFinance(safetyRange);
     const financeActions = actionButton("add-spending", "", "Add spending", "plus", "primary");
+    const sections = [
+      { key: "current-money", title: "Current money", body: renderAccounts(finance, safeFinance, safetyRange), action: "add-account", label: "Add account" },
+      { key: "income", title: "Income", body: renderIncome(finance, range), action: "add-income", label: "Add income" },
+      { key: "bills", title: "Bills and subscriptions", body: renderBills(finance), action: "add-bill", label: "Add bill" },
+      { key: "spending", title: "Spending", body: renderSpending(range), action: "add-spending", label: "Add spending" },
+      { key: "savings", title: "Savings", body: renderSavings(finance, range), action: "add-saving", label: "Add savings" },
+      { key: "debt", title: "Debt repayment", body: renderDebts(finance), action: "add-debt", label: "Add debt" },
+      { key: "investments", title: "Investments", body: renderInvestments(finance), action: "add-investment", label: "Add investment" },
+      { key: "forecast", title: "Forecast", body: renderForecast(finance, range, safeFinance, safetyRange), action: "", label: "" }
+    ];
 
     return `
       <div class="view">
@@ -1679,9 +1718,9 @@
             ${rangeToggle("finance", ui.financeSpan)}
             ${customRangeControls("finance", range)}
             <div class="stat-strip">
-              <div class="strip-item"><span class="strip-value">${formatCompactCurrency(finance.currentMoney)}</span><span class="strip-label">Current</span></div>
-              <div class="strip-item"><span class="strip-value">${formatCompactCurrency(finance.projectedBalance)}</span><span class="strip-label">Projected</span></div>
-              <div class="strip-item"><span class="strip-value">${formatCompactCurrency(safeFinance.safeToSpend)}</span><span class="strip-label">Safe to spend</span></div>
+              <div class="strip-item"><span class="strip-value">${animatedDisplay("strip", "current", formatCompactCurrency(finance.currentMoney))}</span><span class="strip-label">Current</span></div>
+              <div class="strip-item"><span class="strip-value">${animatedDisplay("strip", "projected", formatCompactCurrency(finance.projectedBalance))}</span><span class="strip-label">Projected</span></div>
+              <div class="strip-item"><span class="strip-value">${animatedDisplay("strip", "safe-to-spend", formatCompactCurrency(safeFinance.safeToSpend))}</span><span class="strip-label">Safe to spend</span></div>
             </div>
           </div>
         </section>
@@ -1697,25 +1736,42 @@
           ${metric("Daily spending limit", formatCurrency(safeFinance.dailyLimit), `${daysBetween(safetyRange.start, safetyRange.end)} protected days`)}
         </section>
 
-        <section class="details-stack">
-          ${financeDetails("Current money", renderAccounts(finance, safeFinance, safetyRange), "add-account", "Add account")}
-          ${financeDetails("Income", renderIncome(finance, range), "add-income", "Add income")}
-          ${financeDetails("Bills and subscriptions", renderBills(finance), "add-bill", "Add bill")}
-          ${financeDetails("Spending", renderSpending(range), "add-spending", "Add spending")}
-          ${financeDetails("Savings", renderSavings(finance, range), "add-saving", "Add savings")}
-          ${financeDetails("Debt repayment", renderDebts(finance), "add-debt", "Add debt")}
-          ${financeDetails("Investments", renderInvestments(finance), "add-investment", "Add investment")}
-          ${financeDetails("Forecast", renderForecast(finance, range, safeFinance, safetyRange), "", "")}
+        ${financeShortcutNav(sections)}
+
+        <section class="details-stack finance-details-stack">
+          ${sections.map((section, index) => financeDetails(section, index)).join("")}
         </section>
       </div>
     `;
   }
 
-  function financeDetails(title, body, action, label) {
+  function financeShortcutNav(sections) {
     return `
-      <details class="card" open>
-        <summary><span>${escapeHtml(title)}</span>${action ? actionButton(action, "", label, "plus", "secondary") : "<span></span>"}</summary>
-        <div class="details-body">${body}</div>
+      <nav class="finance-shortcuts" aria-label="Finance section shortcuts">
+        <span class="finance-shortcuts-label">Jump to</span>
+        <div class="finance-shortcut-list">
+          ${sections.map((section) => `
+            <button type="button" class="finance-shortcut" data-action="jump-finance-section" data-section="${escapeHtml(section.key)}">
+              ${escapeHtml(section.title)}
+            </button>
+          `).join("")}
+        </div>
+      </nav>
+    `;
+  }
+
+  function financeDetails(section, index) {
+    const sectionNumber = String(index + 1).padStart(2, "0");
+    return `
+      <details class="card finance-section-card" id="finance-section-${escapeHtml(section.key)}" data-finance-section="${escapeHtml(section.key)}" open>
+        <summary>
+          <span class="finance-section-heading">
+            <span class="finance-section-number">${escapeHtml(sectionNumber)}</span>
+            <span class="finance-section-title">${escapeHtml(section.title)}</span>
+          </span>
+          ${section.action ? actionButton(section.action, "", section.label, "plus", "secondary") : "<span></span>"}
+        </summary>
+        <div class="details-body">${section.body}</div>
       </details>
     `;
   }
@@ -2036,11 +2092,14 @@
 
   function renderBillItem(bill) {
     const type = normalizedBillType(bill);
+    const color = safeHexColor(bill.color, "");
+    const colorStyle = color ? `--bill-color:${color}; --bill-color-rgb:${rgbText(color)};` : "";
     return itemCard({
       title: bill.name,
       meta: [billTypeLabel(bill), formatCurrency(bill.amount), formatDate(bill.dueDate), bill.frequency, bill.category, bill.paid ? "Paid" : "Unpaid"],
       note: bill.notes,
-      className: `${bill.paid ? "paid" : ""} ${type === "subscription" ? "subscription-bill" : "mandatory-bill"}`,
+      className: `${bill.paid ? "paid" : ""} ${type === "subscription" ? "subscription-bill" : "mandatory-bill"} ${color ? "has-bill-color" : ""}`,
+      style: colorStyle,
       actions: `
         ${actionButton("toggle-bill-paid", bill.id, bill.paid ? "Mark unpaid" : "Mark paid", bill.paid ? "undo" : "check")}
         ${actionButton("edit-bill", bill.id, "Edit", "edit")}
@@ -2973,14 +3032,13 @@
   }
 
   function renderSettings() {
-    const swatches = ["#f7f7ff", "#c8ccd6", "#6f7685", "#25d8ff", "#7c5cff", "#9b8cff", "#32d98f", "#ffd166", "#ff6b8a", "#ff9f43"];
     return `
       <section class="section">
         <h2>Settings</h2>
         <div class="card panel section">
           <h3>Theme accent</h3>
           <div class="swatches">
-            ${swatches.map((color) => `<button type="button" class="swatch ${String(appData.settings.accent).toLowerCase() === color ? "active" : ""}" style="background:${color}" data-action="set-accent" data-color="${color}" title="${color}" aria-label="Set accent ${color}"></button>`).join("")}
+            ${colorSwatches.map((color) => `<button type="button" class="swatch ${String(appData.settings.accent).toLowerCase() === color ? "active" : ""}" style="background:${color}" data-action="set-accent" data-color="${color}" title="${color}" aria-label="Set accent ${color}"></button>`).join("")}
           </div>
         </div>
 
@@ -3859,6 +3917,30 @@
         return `<option value="${escapeHtml(opt.value)}" ${String(value ?? field.default ?? "") === String(opt.value) ? "selected" : ""}>${escapeHtml(opt.label)}</option>`;
       }).join("")}</select>${field.help ? `<span class="tiny">${escapeHtml(field.help)}</span>` : ""}</label>`;
     }
+    if (field.type === "color-swatches") {
+      const current = String(value ?? field.default ?? "");
+      return `
+        <fieldset class="field color-field">
+          <legend>${escapeHtml(field.label)}</legend>
+          <div class="color-swatches">
+            ${field.options.map((option, index) => {
+              const opt = typeof option === "string" ? { value: option, label: option } : option;
+              const optionId = `field-${field.name}-${index}`;
+              const selected = current === String(opt.value);
+              const swatchStyle = opt.value ? ` style="--swatch-color:${escapeHtml(opt.value)}"` : "";
+              return `
+                <label class="color-choice" for="${escapeHtml(optionId)}" title="${escapeHtml(opt.label)}">
+                  <input id="${escapeHtml(optionId)}" type="radio" name="${escapeHtml(field.name)}" value="${escapeHtml(opt.value)}" ${selected ? "checked" : ""}>
+                  <span class="color-swatch ${opt.value ? "" : "no-color"}"${swatchStyle}></span>
+                  <span>${escapeHtml(opt.label)}</span>
+                </label>
+              `;
+            }).join("")}
+          </div>
+          ${field.help ? `<span class="tiny">${escapeHtml(field.help)}</span>` : ""}
+        </fieldset>
+      `;
+    }
     if (field.type === "textarea") {
       return `${label}<textarea ${common} ${placeholder}>${escapeHtml(value ?? field.default ?? "")}</textarea>${field.help ? `<span class="tiny">${escapeHtml(field.help)}</span>` : ""}</label>`;
     }
@@ -3887,6 +3969,34 @@
     window.setTimeout(() => {
       if (backdrop.isConnected) modalRoot.innerHTML = "";
     }, 155);
+  }
+
+  function handleDetailsSummaryClick(event) {
+    const summary = event.target.closest("summary");
+    if (!summary) return false;
+    const details = summary.parentElement;
+    if (!details || details.tagName?.toLowerCase() !== "details") return false;
+    if (event.target.closest("button, [data-action], a, input, select, textarea, label")) return false;
+
+    event.preventDefault();
+    if (details.classList.contains("is-closing")) return true;
+
+    if (details.open) {
+      details.classList.remove("is-opening");
+      details.classList.add("is-closing");
+      window.setTimeout(() => {
+        if (!details.isConnected) return;
+        details.open = false;
+        details.classList.remove("is-closing");
+      }, 340);
+    } else {
+      details.open = true;
+      details.classList.add("is-opening");
+      window.setTimeout(() => {
+        if (details.isConnected) details.classList.remove("is-opening");
+      }, 420);
+    }
+    return true;
   }
 
   function animateCompletionToggle(button, isComplete, completeLabel = "Uncomplete", openLabel = "Complete", completeMeta = "", openMeta = "") {
@@ -3962,6 +4072,7 @@
       { name: "amount", label: "Amount", type: "number", step: "0.01", required: true },
       { name: "dueDate", label: "Due date", type: "date", default: today(), required: true },
       { name: "billType", label: "Payment type", type: "select", options: [{ value: "bill", label: "Bill (mandatory)" }, { value: "subscription", label: "Subscription (optional)" }], default: "bill" },
+      { name: "color", label: "Bill color", type: "color-swatches", options: [{ value: "", label: "No color" }, ...colorSwatches.map((color) => ({ value: color, label: color }))], default: "", help: "Use No color for a neutral bill card." },
       { name: "frequency", label: "Frequency", type: "select", options: ["weekly", "monthly", "yearly", "custom", "one-time"], default: "monthly" },
       { name: "customDays", label: "Custom frequency days", type: "number", min: 1, default: 30 },
       { name: "category", label: "Category", type: "select", options: [{ value: "", label: "No category" }, ...appData.settings.billCategories.map((category) => ({ value: category, label: category }))] },
@@ -4279,9 +4390,23 @@
   function handleAction(action, button) {
     const id = button.dataset.id;
     if (action === "close-modal") return closeModal();
+    if (action === "jump-finance-section") {
+      const key = button.dataset.section;
+      const target = key ? document.getElementById(`finance-section-${key}`) : null;
+      if (!target) return;
+      if (!target.open) target.open = true;
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+      target.classList.remove("is-jump-target");
+      void target.offsetWidth;
+      target.classList.add("is-jump-target");
+      window.setTimeout(() => {
+        if (target.isConnected) target.classList.remove("is-jump-target");
+      }, 1400);
+      return;
+    }
     if (action === "set-dashboard-span") {
       ui.dashboardSpan = button.dataset.span;
-      return render({ quiet: true });
+      return render({ quiet: true, transition: "period" });
     }
     if (action === "set-dashboard-style") {
       ui.dashboardStyle = button.dataset.style;
@@ -4289,7 +4414,7 @@
     }
     if (action === "set-finance-span") {
       ui.financeSpan = button.dataset.span;
-      return render({ quiet: true });
+      return render({ quiet: true, transition: "period" });
     }
     if (action === "set-more-view") {
       const nextView = button.dataset.view;
@@ -4932,8 +5057,12 @@
       return;
     }
     const button = event.target.closest("[data-action]");
-    if (!button) return;
-    handleAction(button.dataset.action, button);
+    if (button) {
+      event.preventDefault();
+      handleAction(button.dataset.action, button);
+      return;
+    }
+    if (handleDetailsSummaryClick(event)) return;
   });
 
   document.addEventListener("input", (event) => {
@@ -4960,12 +5089,12 @@
     }
     if (target.dataset.dashboardCustom) {
       ui.dashboardCustom[target.dataset.dashboardCustom] = target.value;
-      render({ quiet: true });
+      render({ quiet: true, transition: "period" });
       return;
     }
     if (target.dataset.financeCustom) {
       ui.financeCustom[target.dataset.financeCustom] = target.value;
-      render({ quiet: true });
+      render({ quiet: true, transition: "period" });
       return;
     }
     if (target.dataset.assignmentStatus) {
@@ -5004,6 +5133,9 @@
 
   window.addEventListener("keydown", (event) => {
     if (event.key === "Escape") closeModal();
+    if ((event.key === "Enter" || event.key === " ") && event.target?.matches?.("summary")) {
+      handleDetailsSummaryClick(event);
+    }
   });
 
   if ("serviceWorker" in navigator && location.protocol !== "file:") {
