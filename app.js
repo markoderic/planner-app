@@ -87,7 +87,9 @@
       bills: [],
       spending: [],
       debts: [],
-      investments: []
+      investments: [],
+      savings: [],
+      savingsGoals: []
     },
     school: {
       classes: [],
@@ -140,6 +142,11 @@
     ];
     data.finance.investments = [
       makeItem({ name: "Starter portfolio", type: "stock", amountInvested: 300, currentValue: 326, notes: "" })
+    ];
+    const emergencyGoal = makeItem({ name: "Emergency fund", targetAmount: 1000, initialAmount: 420, targetDate: dateString(addDays(new Date(), 180)), notes: "" });
+    data.finance.savingsGoals = [emergencyGoal];
+    data.finance.savings = [
+      makeItem({ amount: 60, date: d0, accountId: data.finance.accounts[1]?.id || "", goalId: emergencyGoal.id, note: "Automatic savings" })
     ];
 
     const classA = makeItem({ name: "Anthropology", professor: "", meetingDays: "Mon Wed", accentColor: "#25d8ff", notes: "" });
@@ -334,6 +341,8 @@
         }
       }
     });
+    appData.finance.savings.forEach((entry) => normalizeSavingEntry(entry));
+    appData.finance.savingsGoals.forEach((goal) => normalizeSavingsGoal(goal));
     appData.school.assignments.forEach((assignment) => {
       assignment.status = normalizedAssignmentStatus(assignment.status);
     });
@@ -532,6 +541,15 @@
     return appData.finance.debts.filter((debt) => normalizedDebtType(debt) === "credit-card");
   }
 
+  function savingsAccounts() {
+    return (appData.finance?.accounts || []).filter((account) => String(account.type || account.name || "").toLowerCase().includes("saving"));
+  }
+
+  function defaultSavingsAccountId() {
+    const savings = savingsAccounts();
+    return (savings[0] || appData.finance.accounts?.[0] || {}).id || "";
+  }
+
   function defaultSpendingAccountId(method = "Debit card") {
     const accounts = appData.finance?.accounts || [];
     if (!accounts.length) return "";
@@ -570,6 +588,24 @@
       }
     }
     return next;
+  }
+
+  function normalizeSavingEntry(entry = {}) {
+    entry.amount = Math.max(0, Number(entry.amount) || 0);
+    entry.date = entry.date || today();
+    if (!findById(appData.finance.accounts, entry.accountId)) entry.accountId = defaultSavingsAccountId();
+    if (!findById(appData.finance.savingsGoals, entry.goalId)) entry.goalId = "";
+    entry.note = entry.note || "";
+    return entry;
+  }
+
+  function normalizeSavingsGoal(goal = {}) {
+    goal.name = goal.name || "Savings goal";
+    goal.targetAmount = Math.max(0, Number(goal.targetAmount) || 0);
+    goal.initialAmount = Math.max(0, Number(goal.initialAmount) || 0);
+    goal.targetDate = goal.targetDate || "";
+    goal.notes = goal.notes || "";
+    return goal;
   }
 
   function debtPaymentHistoryEntries() {
@@ -1156,6 +1192,7 @@
     const openBills = safeFinance.billOccurrences.filter((bill) => !bill.paid);
     const obligationCount = openBills.length + safeFinance.debtPaymentOccurrences.length;
     const obligationTotal = safeFinance.billsDue + safeFinance.debtPayments;
+    const moneyTrend = moneyTrendMonths(6);
     const dashboardMetrics = `
       ${metric("Tasks completed", `${task.completed}/${task.total}`, `${task.percent}% complete`)}
       ${metric("Habits completed", `${habit.completed}/${habit.total}`, `${habit.streak} day streak`)}
@@ -1244,6 +1281,8 @@
           </article>
         </section>
 
+        ${renderDashboardMoneyGraph(moneyTrend)}
+
         <section class="${ui.dashboardStyle === "rings" ? "ring-grid" : "metric-grid"}">
           ${ui.dashboardStyle === "rings" ? ringMetrics : dashboardMetrics}
         </section>
@@ -1282,6 +1321,50 @@
         </section>
       </div>
     `;
+  }
+
+  function renderDashboardMoneyGraph(months) {
+    const current = months[months.length - 1] || { income: 0, spending: 0, savings: 0, net: 0 };
+    const maxValue = Math.max(1, ...months.flatMap((month) => [month.income, month.spending, month.savings]));
+    return `
+      <section class="card panel section money-trend-card">
+        <div class="section-header">
+          <div>
+            <h2>Money trend</h2>
+            <span class="tiny">Monthly income, spending, and savings</span>
+          </div>
+          <span class="money-net ${current.net >= 0 ? "positive" : "negative"}">${formatCompactCurrency(current.net)}</span>
+        </div>
+        <div class="money-trend-summary">
+          <span><b>${formatCompactCurrency(current.income)}</b> income</span>
+          <span><b>${formatCompactCurrency(current.spending)}</b> spent</span>
+          <span><b>${formatCompactCurrency(current.savings)}</b> saved</span>
+        </div>
+        <div class="money-trend-chart" aria-label="Six month money trend">
+          ${months.map((month) => `
+            <div class="money-month">
+              <div class="money-bars">
+                <span class="income" title="Income ${formatCurrency(month.income)}" style="height:${moneyBarHeight(month.income, maxValue)}%"></span>
+                <span class="spending" title="Spending ${formatCurrency(month.spending)}" style="height:${moneyBarHeight(month.spending, maxValue)}%"></span>
+                <span class="savings" title="Savings ${formatCurrency(month.savings)}" style="height:${moneyBarHeight(month.savings, maxValue)}%"></span>
+              </div>
+              <span>${escapeHtml(month.label)}</span>
+            </div>
+          `).join("")}
+        </div>
+        <div class="money-legend">
+          <span><i class="income"></i>Income</span>
+          <span><i class="spending"></i>Spending</span>
+          <span><i class="savings"></i>Savings</span>
+        </div>
+      </section>
+    `;
+  }
+
+  function moneyBarHeight(value, maxValue) {
+    const amount = Math.max(0, Number(value) || 0);
+    if (!amount) return 0;
+    return clamp((amount / Math.max(1, maxValue)) * 100, 3, 100);
   }
 
   function getTodayFocus() {
@@ -1505,6 +1588,7 @@
           ${metric("Upcoming bills", formatCurrency(finance.billsDue), `${finance.billOccurrences.length} due in range`)}
           ${metric("Debt payments", formatCurrency(safeFinance.debtPayments), `${safeFinance.debtPaymentOccurrences.length} due in ${safetyRange.label.toLowerCase()}`)}
           ${metric("Safe-to-spend", formatCurrency(safeFinance.safeToSpend), `Protected through ${formatDate(safetyRange.end)}`)}
+          ${metric("Savings", formatCurrency(finance.savingsBalance), `${formatCurrency(finance.savings)} saved in range`)}
           ${metric("Investments", formatCurrency(finance.investmentValue), `${formatCurrency(finance.investmentGain)} gain/loss`)}
           ${metric("Net worth estimate", formatCurrency(finance.netWorth), "Money + investments - debt")}
           ${metric("Daily spending limit", formatCurrency(safeFinance.dailyLimit), `${daysBetween(safetyRange.start, safetyRange.end)} protected days`)}
@@ -1515,6 +1599,7 @@
           ${financeDetails("Income", renderIncome(finance, range), "add-income", "Add income")}
           ${financeDetails("Bills and subscriptions", renderBills(finance), "add-bill", "Add bill")}
           ${financeDetails("Spending", renderSpending(range), "add-spending", "Add spending")}
+          ${financeDetails("Savings", renderSavings(finance, range), "add-saving", "Add savings")}
           ${financeDetails("Debt repayment", renderDebts(finance), "add-debt", "Add debt")}
           ${financeDetails("Investments", renderInvestments(finance), "add-investment", "Add investment")}
           ${financeDetails("Forecast", renderForecast(finance, range, safeFinance, safetyRange), "", "")}
@@ -1548,12 +1633,14 @@
 
   function renderAccountItem(account, finance) {
     const trackedOutflow = finance.accountOutflowsById?.[account.id] || 0;
-    const available = (Number(account.balance) || 0) - trackedOutflow;
+    const trackedInflow = finance.accountInflowsById?.[account.id] || 0;
+    const available = (Number(account.balance) || 0) + trackedInflow - trackedOutflow;
     return itemCard({
       title: account.name,
       meta: [
         account.type || "Account",
         `Current ${formatCurrency(available)}`,
+        trackedInflow ? `Savings added ${formatCurrency(trackedInflow)}` : "",
         trackedOutflow ? `Tracked outflow ${formatCurrency(trackedOutflow)}` : ""
       ],
       actions: `${actionButton("edit-account", account.id, "Edit", "edit")}${actionButton("delete-account", account.id, "Delete", "trash")}`
@@ -1875,6 +1962,71 @@
         linkedDebt ? `Charged to ${linkedDebt.name}` : ""
       ],
       actions: `${actionButton("edit-spending", entry.id, "Edit", "edit")}${actionButton("delete-spending", entry.id, "Delete", "trash")}`
+    });
+  }
+
+  function renderSavings(finance, range) {
+    const entries = appData.finance.savings.filter((entry) => dateInRange(entry.date, range));
+    const goals = finance.savingsGoalProgress || [];
+    const remaining = sum(goals, (item) => item.remaining);
+    return `
+      <div class="metric-grid">
+        ${metric("Savings balance", formatCurrency(finance.savingsBalance), "Savings accounts + logged deposits")}
+        ${metric("Saved in range", formatCurrency(finance.savings), range.label)}
+        ${metric("Active goals", String(goals.length), `${formatCurrency(remaining)} remaining`)}
+        ${metric("Future savings", formatCurrency(finance.futureSavings), "Planned in selected range")}
+      </div>
+      <div class="mini-section">
+        <div class="section-header">
+          <h3>Savings goals</h3>
+          ${actionButton("add-savings-goal", "", "Add goal", "target", "secondary")}
+        </div>
+        <div class="list">
+          ${goals.length ? goals.map(renderSavingsGoal).join("") : emptyState("Add a savings goal for emergency funds, school, a car, or anything else.")}
+        </div>
+      </div>
+      <div class="mini-section">
+        <div class="section-header">
+          <h3>Savings history</h3>
+          ${actionButton("add-saving", "", "Add savings", "plus", "secondary")}
+        </div>
+        <div class="list">
+          ${entries.length ? sortByDate(entries, "date").reverse().map(renderSavingItem).join("") : emptyState("Savings deposits in this range will appear here.")}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderSavingsGoal(goalStats) {
+    const { goal, saved, target, remaining, percent } = goalStats;
+    const progressKey = `finance:savings-goal-${goal.id}`;
+    return `
+      <article class="item-card savings-goal-card" data-progress-key="${escapeHtml(progressKey)}" data-progress-percent="${escapeHtml(percent)}">
+        <div class="item-main">
+          <p class="item-title">${escapeHtml(goal.name)}</p>
+          <div class="item-meta">
+            <span>${formatCurrency(saved)} saved</span>
+            <span>${formatCurrency(target)} goal</span>
+            ${goal.targetDate ? `<span>${formatDate(goal.targetDate)}</span>` : ""}
+          </div>
+          <div class="progress"><span style="width:${clamp(percent)}%"></span></div>
+          <p class="tiny">${formatCurrency(remaining)} remaining</p>
+        </div>
+        <div class="item-actions">
+          ${actionButton("edit-savings-goal", goal.id, "Edit", "edit")}
+          ${actionButton("delete-savings-goal", goal.id, "Delete", "trash")}
+        </div>
+      </article>
+    `;
+  }
+
+  function renderSavingItem(entry) {
+    const account = entry.accountId ? findById(appData.finance.accounts, entry.accountId) : null;
+    const goal = entry.goalId ? findById(appData.finance.savingsGoals, entry.goalId) : null;
+    return itemCard({
+      title: entry.note || "Savings deposit",
+      meta: [formatCurrency(entry.amount), formatDate(entry.date), account ? account.name : "Savings", goal ? goal.name : ""],
+      actions: `${actionButton("edit-saving", entry.id, "Edit", "edit")}${actionButton("delete-saving", entry.id, "Delete", "trash")}`
     });
   }
 
@@ -2221,13 +2373,13 @@
           <div class="item-meta">
             ${meta.filter(Boolean).join("")}
           </div>
-          ${assignmentStatusControl(assignment.id, status)}
           ${assignment.notes ? `<p class="tiny">${escapeHtml(assignment.notes)}</p>` : ""}
         </div>
         <div class="item-actions">
           ${actionButton("edit-assignment", assignment.id, "Edit", "edit")}
           ${actionButton("delete-assignment", assignment.id, "Delete", "trash")}
         </div>
+        ${assignmentStatusControl(assignment.id, status)}
       </article>
     `;
   }
@@ -2758,13 +2910,25 @@
     const postedCashSpending = sum(postedCashSpendingEntries, (entry) => entry.amount);
     const postedDebtPaymentEntries = debtPaymentHistoryEntries().filter((payment) => paymentHistoryDate(payment) <= today());
     const postedDebtPayments = sum(postedDebtPaymentEntries, (payment) => payment.amount);
+    const savingsEntries = appData.finance.savings.filter((entry) => dateInRange(entry.date, range));
+    const savings = sum(savingsEntries, (entry) => entry.amount);
+    const postedSavingsEntries = appData.finance.savings.filter((entry) => entry.date && entry.date <= today());
+    const postedSavings = sum(postedSavingsEntries, (entry) => entry.amount);
+    const futureSavingsEntries = savingsEntries.filter((entry) => entry.date > today());
+    const futureSavings = sum(futureSavingsEntries, (entry) => entry.amount);
     const accountOutflowsById = [...postedCashSpendingEntries, ...postedDebtPaymentEntries].reduce((totals, entry) => {
+      if (entry.accountId) totals[entry.accountId] = (totals[entry.accountId] || 0) + (Number(entry.amount) || 0);
+      return totals;
+    }, {});
+    const accountInflowsById = postedSavingsEntries.reduce((totals, entry) => {
       if (entry.accountId) totals[entry.accountId] = (totals[entry.accountId] || 0) + (Number(entry.amount) || 0);
       return totals;
     }, {});
     const postedAccountOutflows = postedCashSpending + postedDebtPayments;
     const linkedPostedAccountOutflows = sum([...postedCashSpendingEntries, ...postedDebtPaymentEntries].filter((entry) => entry.accountId), (entry) => entry.amount);
     const unlinkedPostedAccountOutflows = Math.max(0, postedAccountOutflows - linkedPostedAccountOutflows);
+    const linkedPostedSavings = sum(postedSavingsEntries.filter((entry) => entry.accountId), (entry) => entry.amount);
+    const unlinkedPostedSavings = Math.max(0, postedSavings - linkedPostedSavings);
     const futureCashSpendingEntries = cashSpendingEntries.filter((entry) => entry.date > today());
     const billOccurrences = appData.finance.bills.flatMap((bill) => billOccurrencesInRange(bill, range)).sort((a, b) => a.date.localeCompare(b.date));
     const billsDue = sum(billOccurrences.filter((bill) => !bill.paid), (bill) => bill.amount);
@@ -2775,12 +2939,17 @@
     const investmentValue = sum(appData.finance.investments, (investment) => investment.currentValue);
     const investmentGain = investmentValue - invested;
     const shopping = shoppingStats().remainingTotal;
-    const accountMoney = rawAccountMoney - postedAccountOutflows;
+    const accountMoney = rawAccountMoney + postedSavings - postedAccountOutflows;
     const currentMoney = accountMoney;
     const futureCashSpending = sum(futureCashSpendingEntries, (entry) => entry.amount);
-    const projectedBalance = currentMoney + netIncome - billsDue - debtPayments - futureCashSpending - shopping;
+    const projectedBalance = currentMoney + netIncome + futureSavings - billsDue - debtPayments - futureCashSpending - shopping;
     const netWorth = currentMoney + investmentValue - totalDebt;
-    const lowestBalance = projectedLowestBalance(currentMoney, incomeEntries, billOccurrences, debtPaymentOccurrences, futureCashSpendingEntries);
+    const lowestBalance = projectedLowestBalance(currentMoney, incomeEntries, billOccurrences, debtPaymentOccurrences, futureCashSpendingEntries, futureSavingsEntries);
+    const savingsAccountIds = new Set(savingsAccounts().map((account) => account.id));
+    const savingsAccountBalance = sum(appData.finance.accounts.filter((account) => savingsAccountIds.has(account.id)), (account) => (Number(account.balance) || 0) + (accountInflowsById[account.id] || 0) - (accountOutflowsById[account.id] || 0));
+    const postedSavingsOutsideSavingsAccounts = sum(postedSavingsEntries.filter((entry) => !entry.accountId || !savingsAccountIds.has(entry.accountId)), (entry) => entry.amount);
+    const savingsBalance = savingsAccountBalance + postedSavingsOutsideSavingsAccounts;
+    const savingsGoalProgress = appData.finance.savingsGoals.map((goal) => savingsGoalStats(goal));
     const safeToSpend = Math.max(0, Math.min(currentMoney, projectedBalance, lowestBalance));
     const dailyLimit = Math.max(0, safeToSpend / daysBetween(range.start, range.end));
     return {
@@ -2798,6 +2967,12 @@
       spending,
       cashSpendingEntries,
       creditSpendingEntries,
+      savingsEntries,
+      savings,
+      postedSavingsEntries,
+      postedSavings,
+      futureSavingsEntries,
+      futureSavings,
       cashSpending,
       creditSpending,
       postedCashSpending,
@@ -2807,6 +2982,9 @@
       linkedPostedAccountOutflows,
       unlinkedPostedAccountOutflows,
       accountOutflowsById,
+      accountInflowsById,
+      linkedPostedSavings,
+      unlinkedPostedSavings,
       futureCashSpending,
       billOccurrences,
       billsDue,
@@ -2816,6 +2994,8 @@
       invested,
       investmentValue,
       investmentGain,
+      savingsBalance,
+      savingsGoalProgress,
       shopping,
       projectedBalance,
       safeToSpend,
@@ -2823,6 +3003,39 @@
       lowestBalance,
       dailyLimit
     };
+  }
+
+  function savingsGoalStats(goal) {
+    const saved = (Number(goal.initialAmount) || 0) + sum(appData.finance.savings.filter((entry) => entry.goalId === goal.id && entry.date <= today()), (entry) => entry.amount);
+    const target = Math.max(0, Number(goal.targetAmount) || 0);
+    const remaining = Math.max(0, target - saved);
+    return {
+      goal,
+      saved,
+      target,
+      remaining,
+      percent: pct(Math.min(saved, target), target)
+    };
+  }
+
+  function moneyTrendMonths(count = 6) {
+    const now = new Date();
+    return Array.from({ length: count }, (_, index) => {
+      const monthDate = new Date(now.getFullYear(), now.getMonth() - (count - 1 - index), 1);
+      const range = {
+        start: dateString(startOfMonth(monthDate)),
+        end: dateString(endOfMonth(monthDate)),
+        label: new Intl.DateTimeFormat(undefined, { month: "short" }).format(monthDate)
+      };
+      const finance = calculateFinance(range);
+      return {
+        ...range,
+        income: finance.netIncome,
+        spending: finance.spending,
+        savings: finance.savings,
+        net: finance.netIncome + finance.savings - finance.spending
+      };
+    });
   }
 
   function entryGrossIncome(entry) {
@@ -3071,9 +3284,10 @@
     }));
   }
 
-  function projectedLowestBalance(current, incomeEntries, billOccurrences, debtPaymentOccurrences, spendingEntries) {
+  function projectedLowestBalance(current, incomeEntries, billOccurrences, debtPaymentOccurrences, spendingEntries, savingsEntries = []) {
     const events = [];
     incomeEntries.forEach((entry) => events.push({ date: incomeDate(entry), amount: entryNetIncome(entry) }));
+    savingsEntries.forEach((entry) => events.push({ date: entry.date, amount: Number(entry.amount) || 0 }));
     billOccurrences.filter((bill) => !bill.paid).forEach((bill) => events.push({ date: bill.date, amount: -Number(bill.amount) || 0 }));
     debtPaymentOccurrences.forEach((payment) => events.push({ date: payment.date, amount: -Number(payment.amount) || 0 }));
     spendingEntries.forEach((entry) => events.push({ date: entry.date, amount: -Number(entry.amount) || 0 }));
@@ -3564,6 +3778,46 @@
     ];
   }
 
+  function savingFields() {
+    const accounts = appData.finance.accounts || [];
+    const goals = appData.finance.savingsGoals || [];
+    return [
+      { name: "amount", label: "Saved amount", type: "number", step: "0.01", min: 0, required: true },
+      { name: "date", label: "Date", type: "date", default: today(), required: true },
+      {
+        name: "accountId",
+        label: "Savings account",
+        type: "select",
+        options: [
+          { value: "", label: accounts.length ? "Auto-select savings account" : "No accounts added" },
+          ...accounts.map((account) => ({ value: account.id, label: `${account.name || "Account"}${String(account.type || "").toLowerCase().includes("saving") ? " (savings)" : ""}` }))
+        ],
+        default: defaultSavingsAccountId(),
+        help: "This deposit increases total current money and this account's available balance."
+      },
+      {
+        name: "goalId",
+        label: "Savings goal",
+        type: "select",
+        options: [
+          { value: "", label: goals.length ? "No linked goal" : "No savings goals added" },
+          ...goals.map((goal) => ({ value: goal.id, label: goal.name || "Savings goal" }))
+        ]
+      },
+      { name: "note", label: "Note", type: "text" }
+    ];
+  }
+
+  function savingsGoalFields() {
+    return [
+      { name: "name", label: "Goal name", required: true },
+      { name: "targetAmount", label: "Target amount", type: "number", step: "0.01", min: 0, required: true },
+      { name: "initialAmount", label: "Already saved", type: "number", step: "0.01", min: 0, help: "Use this if money was already in savings before tracking deposits here." },
+      { name: "targetDate", label: "Target date", type: "date" },
+      { name: "notes", label: "Notes", type: "textarea" }
+    ];
+  }
+
   function debtPaymentFields() {
     const accounts = appData.finance.accounts || [];
     return [
@@ -3994,6 +4248,45 @@
           deleteSpendingItem(id);
           rerender();
           showToast("Spending deleted.");
+        }
+        break;
+      case "add-saving":
+      case "edit-saving": {
+        const item = id ? findById(appData.finance.savings, id) : { accountId: defaultSavingsAccountId(), date: today() };
+        openEdit({
+          title: id ? "Edit savings deposit" : "Add savings",
+          fields: savingFields(),
+          initial: item,
+          onSubmit: (values) => upsert(appData.finance.savings, id, normalizeSavingEntry({ ...(id ? item : {}), ...values }))
+        });
+        break;
+      }
+      case "delete-saving":
+        if (confirm("Delete this savings entry?")) {
+          deleteFinanceItem(appData.finance.savings, id, "savings entry");
+          rerender();
+          showToast("Savings entry deleted.");
+        }
+        break;
+      case "add-savings-goal":
+      case "edit-savings-goal": {
+        const item = id ? findById(appData.finance.savingsGoals, id) : {};
+        openEdit({
+          title: id ? "Edit savings goal" : "Add savings goal",
+          fields: savingsGoalFields(),
+          initial: item,
+          onSubmit: (values) => upsert(appData.finance.savingsGoals, id, normalizeSavingsGoal({ ...(id ? item : {}), ...values }))
+        });
+        break;
+      }
+      case "delete-savings-goal":
+        if (confirm("Delete this savings goal? Savings deposits linked to it will stay in history.")) {
+          deleteFinanceItem(appData.finance.savingsGoals, id, "savings goal");
+          appData.finance.savings.forEach((entry) => {
+            if (entry.goalId === id) entry.goalId = "";
+          });
+          rerender();
+          showToast("Savings goal deleted.");
         }
         break;
       case "add-debt":
