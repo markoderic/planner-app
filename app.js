@@ -192,6 +192,8 @@
   let recentCompletion = null;
   let moreSwitchTimer = null;
   let morePendingView = null;
+  let lastScrollY = window.scrollY || 0;
+  let financeShortcutScrollTicking = false;
   const progressAnimationState = new Map();
   const numberAnimationState = new Map();
   const numberAnimationTokens = new Map();
@@ -954,7 +956,9 @@
     if (ui.activeTab === "school") app.innerHTML = renderSchool();
     if (ui.activeTab === "more") app.innerHTML = renderMore();
     animateProgressIndicators();
-    animateCountElements();
+    animateCountElements(app, { force: periodTransition });
+    if (ui.activeTab !== "finance") app.classList.remove("finance-shortcuts-hidden");
+    lastScrollY = window.scrollY || 0;
     restoreSchoolFilterState(options.schoolFilterState, { keepSelectedClass: options.keepSelectedClassFilter });
     if (periodTransition) {
       window.setTimeout(() => {
@@ -1010,8 +1014,15 @@
 
   function countableValueHtml(key, value) {
     const text = String(value ?? "").trim();
-    if (!text || text.includes("<") || text.includes("/") || /[a-z]/i.test(text.replace(/K|M|B/g, ""))) return value;
+    if (!text || text.includes("<") || text.includes("/")) return value;
     const plain = text.replaceAll(",", "");
+    const compactCurrencyMatch = plain.match(/^(-?)\$([0-9]+(?:\.[0-9]+)?)([KMB])$/i);
+    if (compactCurrencyMatch) {
+      const multiplier = { k: 1000, m: 1000000, b: 1000000000 }[compactCurrencyMatch[3].toLowerCase()] || 1;
+      const amount = (Number(`${compactCurrencyMatch[1]}${compactCurrencyMatch[2]}`) || 0) * multiplier;
+      return countSpan(key, amount, { format: "compact-currency" });
+    }
+    if (/[a-z]/i.test(plain)) return value;
     const currencyMatch = plain.match(/^(-?)\$([0-9]+(?:\.[0-9]+)?)$/);
     if (currencyMatch) {
       const amount = Number(`${currencyMatch[1]}${currencyMatch[2]}`) || 0;
@@ -1069,6 +1080,13 @@
     return countableValueHtml(`${ui.activeTab}:${scope}:${slugKey(label)}`, value);
   }
 
+  function animatedRangeLabel(scope, label, value) {
+    const text = String(value || "");
+    const days = text.match(/^(\d+)\s+days$/i);
+    if (days) return countSpan(`${ui.activeTab}:${scope}:${slugKey(label)}:days`, Number(days[1]) || 0, { suffix: " days" });
+    return escapeHtml(text);
+  }
+
   function countSpan(key, value, options = {}) {
     const numeric = Number(value) || 0;
     const format = options.format || "integer";
@@ -1113,7 +1131,7 @@
     });
   }
 
-  function animateCountElements(root = app) {
+  function animateCountElements(root = app, options = {}) {
     root.querySelectorAll("[data-count-key]").forEach((element) => {
       const key = element.dataset.countKey;
       const target = Number(element.dataset.countValue) || 0;
@@ -1121,6 +1139,14 @@
       numberAnimationState.set(key, target);
       if (previous === target) {
         element.textContent = formatAnimatedNumber(target, countOptions(element));
+        if (options.force) {
+          element.classList.remove("is-counting");
+          void element.offsetWidth;
+          element.classList.add("is-counting");
+          window.setTimeout(() => {
+            if (element.isConnected) element.classList.remove("is-counting");
+          }, 420);
+        }
         return;
       }
       animateCountElement(element, previous, target);
@@ -1153,6 +1179,29 @@
     window.requestAnimationFrame(tick);
   }
 
+  function updateFinanceShortcutVisibility() {
+    financeShortcutScrollTicking = false;
+    if (ui.activeTab !== "finance" || !app.querySelector(".finance-shortcuts")) {
+      app.classList.remove("finance-shortcuts-hidden");
+      lastScrollY = window.scrollY || 0;
+      return;
+    }
+    const currentY = window.scrollY || 0;
+    const delta = currentY - lastScrollY;
+    if (currentY < 120 || delta < -18) {
+      app.classList.remove("finance-shortcuts-hidden");
+    } else if (delta > 18) {
+      app.classList.add("finance-shortcuts-hidden");
+    }
+    lastScrollY = currentY;
+  }
+
+  function scheduleFinanceShortcutVisibility() {
+    if (financeShortcutScrollTicking) return;
+    financeShortcutScrollTicking = true;
+    window.requestAnimationFrame(updateFinanceShortcutVisibility);
+  }
+
   function countOptions(element) {
     return {
       format: element.dataset.countFormat || "integer",
@@ -1167,9 +1216,10 @@
     const digits = Number(options.digits) || 0;
     let body;
     if (format === "currency") body = formatCurrency(value);
+    else if (format === "compact-currency") body = formatCompactCurrency(value);
     else if (format === "decimal") body = formatNumber(value, digits);
     else body = formatNumber(Math.round(value), 0);
-    if (format === "currency") return body;
+    if (format === "currency" || format === "compact-currency") return body;
     return `${options.prefix || ""}${body}${options.suffix || ""}`;
   }
 
@@ -1295,7 +1345,7 @@
             <div class="hero-row">
               <div>
                 <p class="eyebrow">Selected span</p>
-                <h2>${escapeHtml(range.label)}</h2>
+                <h2>${animatedRangeLabel("range", "dashboard", range.label)}</h2>
                 <p class="muted">${escapeHtml(formatDate(range.start))} to ${escapeHtml(formatDate(range.end))}</p>
               </div>
             </div>
@@ -1712,7 +1762,7 @@
           <div class="hero-content">
             <div>
               <p class="eyebrow">Forecast span</p>
-              <h2>${escapeHtml(range.label)}</h2>
+              <h2>${animatedRangeLabel("range", "finance", range.label)}</h2>
               <p class="muted">${escapeHtml(formatDate(range.start))} to ${escapeHtml(formatDate(range.end))}</p>
             </div>
             ${rangeToggle("finance", ui.financeSpan)}
@@ -1749,6 +1799,9 @@
     return `
       <nav class="finance-shortcuts" aria-label="Finance section shortcuts">
         <span class="finance-shortcuts-label">Jump to</span>
+        <button type="button" class="finance-shortcuts-toggle" data-action="toggle-finance-shortcuts" aria-label="Hide finance shortcuts" title="Hide shortcuts">
+          ${icon("chevron")}
+        </button>
         <div class="finance-shortcut-list">
           ${sections.map((section) => `
             <button type="button" class="finance-shortcut" data-action="jump-finance-section" data-section="${escapeHtml(section.key)}">
@@ -3982,19 +4035,36 @@
     if (details.classList.contains("is-closing")) return true;
 
     if (details.open) {
+      const summaryHeight = summary.offsetHeight;
+      const startHeight = details.offsetHeight;
+      details.style.height = `${startHeight}px`;
       details.classList.remove("is-opening");
-      details.classList.add("is-closing");
+      details.classList.add("is-details-animating", "is-closing");
+      details.offsetHeight;
+      window.requestAnimationFrame(() => {
+        if (details.isConnected) details.style.height = `${summaryHeight}px`;
+      });
       window.setTimeout(() => {
         if (!details.isConnected) return;
         details.open = false;
-        details.classList.remove("is-closing");
-      }, 340);
+        details.style.height = "";
+        details.classList.remove("is-details-animating", "is-closing");
+      }, 380);
     } else {
+      const startHeight = details.offsetHeight;
       details.open = true;
-      details.classList.add("is-opening");
+      const endHeight = details.scrollHeight;
+      details.style.height = `${startHeight}px`;
+      details.classList.add("is-details-animating", "is-opening");
+      details.offsetHeight;
+      window.requestAnimationFrame(() => {
+        if (details.isConnected) details.style.height = `${endHeight}px`;
+      });
       window.setTimeout(() => {
-        if (details.isConnected) details.classList.remove("is-opening");
-      }, 420);
+        if (!details.isConnected) return;
+        details.style.height = "";
+        details.classList.remove("is-details-animating", "is-opening");
+      }, 440);
     }
     return true;
   }
@@ -4390,6 +4460,10 @@
   function handleAction(action, button) {
     const id = button.dataset.id;
     if (action === "close-modal") return closeModal();
+    if (action === "toggle-finance-shortcuts") {
+      app.classList.toggle("finance-shortcuts-hidden");
+      return;
+    }
     if (action === "jump-finance-section") {
       const key = button.dataset.section;
       const target = key ? document.getElementById(`finance-section-${key}`) : null;
@@ -5137,6 +5211,8 @@
       handleDetailsSummaryClick(event);
     }
   });
+
+  window.addEventListener("scroll", scheduleFinanceShortcutVisibility, { passive: true });
 
   if ("serviceWorker" in navigator && location.protocol !== "file:") {
     window.addEventListener("load", () => {
