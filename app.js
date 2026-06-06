@@ -854,8 +854,10 @@
   function render(options = {}) {
     const quiet = Boolean(options.quiet);
     const periodTransition = options.transition === "period";
+    const schoolFilterTransition = options.transition === "school-filter";
     app.classList.toggle("is-soft-render", quiet);
     app.classList.toggle("is-period-render", periodTransition);
+    app.classList.toggle("is-school-filter-render", schoolFilterTransition);
     saveUi();
     document.querySelectorAll(".nav-item").forEach((button) => {
       button.classList.toggle("active", button.dataset.tab === ui.activeTab);
@@ -868,11 +870,38 @@
     if (ui.activeTab === "more") app.innerHTML = renderMore();
     animateProgressIndicators();
     animateCountElements();
+    restoreSchoolFilterState(options.schoolFilterState, { keepSelectedClass: options.keepSelectedClassFilter });
     if (periodTransition) {
       window.setTimeout(() => {
         app.classList.remove("is-period-render");
       }, 260);
     }
+    if (schoolFilterTransition) {
+      window.setTimeout(() => {
+        app.classList.remove("is-school-filter-render");
+      }, 260);
+    }
+  }
+
+  function captureSchoolFilterState() {
+    return {
+      classScrollLeft: app.querySelector(".class-filter")?.scrollLeft || 0,
+      statusScrollLeft: app.querySelector(".assignment-status-filter")?.scrollLeft || 0
+    };
+  }
+
+  function restoreSchoolFilterState(state, options = {}) {
+    if (!state || ui.activeTab !== "school") return;
+    window.requestAnimationFrame(() => {
+      const classFilter = app.querySelector(".class-filter");
+      const statusFilter = app.querySelector(".assignment-status-filter");
+      if (classFilter) classFilter.scrollLeft = Number(state.classScrollLeft) || 0;
+      if (statusFilter) statusFilter.scrollLeft = Number(state.statusScrollLeft) || 0;
+      if (options.keepSelectedClass) {
+        const selectedClass = classFilter?.querySelector(".class-chip.active");
+        selectedClass?.scrollIntoView({ block: "nearest", inline: "center", behavior: "auto" });
+      }
+    });
   }
 
   function finishAppLoad() {
@@ -2041,7 +2070,7 @@
               ${schoolAssignmentFilterToggle()}
               <p class="tiny">${escapeHtml(filterLabel)} · ${escapeHtml(statusFilterLabel)} · ${filteredAssignments.length} assignment${filteredAssignments.length === 1 ? "" : "s"}</p>
             </div>
-            <div class="list">
+            <div class="list assignment-list">
               ${filteredAssignments.length ? sortAssignmentsForFilter(filteredAssignments).map(renderAssignmentItem).join("") : emptyState("No assignments match these filters.")}
             </div>
           </div>
@@ -2152,8 +2181,7 @@
         <div class="item-main">
           <p class="item-title">${escapeHtml(stats.name)}</p>
           <div class="item-meta">
-            <span>${countSpan(`${progressKey}:count`, stats.completed, { suffix: `/${stats.total} complete` })}</span>
-            <span>${countSpan(`${progressKey}:percent`, stats.percent, { suffix: "% completion" })}</span>
+            <span>${countSpan(`${progressKey}:count`, stats.completed, { suffix: `/${stats.total}` })} · ${countSpan(`${progressKey}:percent`, stats.percent, { suffix: "% completion" })}</span>
             ${stats.grade !== null ? `<span>${formatNumber(stats.grade, 1)}% grade estimate</span>` : ""}
           </div>
           <div class="progress"><span style="width:${clamp(stats.percent)}%"></span></div>
@@ -2184,18 +2212,13 @@
       complete ? `<span class="assignment-status-tag complete">Completed</span>` : ""
     ];
     return `
-      <article class="item-card assignment-card ${complete ? "complete" : ""} ${inProgress ? "in-progress" : ""} ${!complete && isBeforeToday(assignment.dueDate) ? "overdue" : ""}" style="--class-color:${escapeHtml(color)}; --class-color-rgb:${rgbText(color)}">
+      <article class="item-card assignment-card ${complete ? "complete" : ""} ${inProgress ? "in-progress" : ""} ${!complete && isBeforeToday(assignment.dueDate) ? "overdue" : ""}" data-assignment-card-id="${escapeHtml(assignment.id)}" style="--class-color:${escapeHtml(color)}; --class-color-rgb:${rgbText(color)}">
         <div class="item-main">
           <p class="item-title assignment-title">${escapeHtml(assignment.title)}</p>
           <div class="item-meta">
             ${meta.filter(Boolean).join("")}
           </div>
-          <label class="field">
-            <span class="tiny">Status</span>
-            <select data-assignment-status="${escapeHtml(assignment.id)}">
-              ${assignmentStatusOptions().map((option) => `<option value="${option.value}" ${status === option.value ? "selected" : ""}>${option.label}</option>`).join("")}
-            </select>
-          </label>
+          ${assignmentStatusControl(assignment.id, status)}
           ${assignment.notes ? `<p class="tiny">${escapeHtml(assignment.notes)}</p>` : ""}
         </div>
         <div class="item-actions">
@@ -2203,6 +2226,21 @@
           ${actionButton("delete-assignment", assignment.id, "Delete", "trash")}
         </div>
       </article>
+    `;
+  }
+
+  function assignmentStatusControl(assignmentId, status) {
+    return `
+      <div class="assignment-status-control" role="group" aria-label="Assignment status">
+        <span class="tiny">Status</span>
+        <div class="assignment-status-options">
+          ${assignmentStatusOptions().map((option) => `
+            <button type="button" class="assignment-status-option ${status === option.value ? "active" : ""}" data-action="set-assignment-status" data-id="${escapeHtml(assignmentId)}" data-assignment-next-status="${escapeHtml(option.value)}" aria-pressed="${status === option.value ? "true" : "false"}">
+              ${escapeHtml(option.label)}
+            </button>
+          `).join("")}
+        </div>
+      </div>
     `;
   }
 
@@ -3058,9 +3096,43 @@
     return normalizedAssignmentStatus(assignment.status) === "completed";
   }
 
+  function setAssignmentStatus(assignmentId, status, trigger = null) {
+    const item = findById(appData.school.assignments, assignmentId);
+    if (!item) return;
+    const nextStatus = normalizedAssignmentStatus(status);
+    const currentStatus = normalizedAssignmentStatus(item.status);
+    if (nextStatus === currentStatus) return;
+
+    const schoolFilterState = captureSchoolFilterState();
+    const visibleAssignmentFilter = app.querySelector(".assignment-status-filter .status-chip.active")?.getAttribute("data-assignment-filter") || ui.schoolAssignmentFilter;
+    const shouldLeaveActiveList = ui.activeTab === "school" && visibleAssignmentFilter === "active" && nextStatus === "completed";
+    const card = (trigger && typeof trigger.closest === "function" ? trigger.closest(".assignment-card") : null)
+      || app.querySelector(`[data-assignment-card-id="${assignmentId}"]`);
+    if (shouldLeaveActiveList && card) {
+      animateAssignmentCompletion(item, nextStatus, card, schoolFilterState);
+      return;
+    }
+
+    item.status = nextStatus;
+    saveData();
+    render({ quiet: true, transition: "school-filter", schoolFilterState });
+  }
+
+  function animateAssignmentCompletion(item, nextStatus, card, schoolFilterState) {
+    card.querySelectorAll("button, select").forEach((control) => {
+      control.disabled = true;
+    });
+    card.classList.add("is-completing");
+    window.setTimeout(() => {
+      item.status = nextStatus;
+      saveData();
+      render({ quiet: true, transition: "school-filter", schoolFilterState });
+    }, 240);
+  }
+
   function normalizedAssignmentStatus(status = "") {
     const value = String(status || "").toLowerCase();
-    if (value === "submitted" || value === "graded" || value === "complete") return "completed";
+    if (value === "submitted" || value === "graded" || value === "complete" || value === "completed") return "completed";
     if (value === "in progress") return "in progress";
     return "not started";
   }
@@ -3677,7 +3749,7 @@
     if (action === "close-modal") return closeModal();
     if (action === "set-dashboard-span") {
       ui.dashboardSpan = button.dataset.span;
-      return render({ transition: "period" });
+      return render({ quiet: true });
     }
     if (action === "set-dashboard-style") {
       ui.dashboardStyle = button.dataset.style;
@@ -3685,7 +3757,7 @@
     }
     if (action === "set-finance-span") {
       ui.financeSpan = button.dataset.span;
-      return render({ transition: "period" });
+      return render({ quiet: true });
     }
     if (action === "set-more-view") {
       const nextView = button.dataset.view;
@@ -3730,12 +3802,27 @@
       return;
     }
     if (action === "set-school-class-filter") {
+      const schoolFilterState = captureSchoolFilterState();
       ui.schoolClassFilter = button.dataset.classId || id || "all";
-      return render({ quiet: true });
+      return render({ quiet: true, transition: "school-filter", schoolFilterState, keepSelectedClassFilter: true });
     }
     if (action === "set-school-assignment-filter") {
+      const schoolFilterState = captureSchoolFilterState();
       ui.schoolAssignmentFilter = button.dataset.assignmentFilter || "active";
-      return render({ quiet: true });
+      return render({ quiet: true, transition: "school-filter", schoolFilterState });
+    }
+    if (action === "set-assignment-status") {
+      const nextStatus = normalizedAssignmentStatus(button.getAttribute("data-assignment-next-status"));
+      const visibleAssignmentFilter = app.querySelector(".assignment-status-filter .status-chip.active")?.getAttribute("data-assignment-filter") || ui.schoolAssignmentFilter;
+      const card = button.closest(".assignment-card");
+      if (nextStatus === "completed" && visibleAssignmentFilter === "active" && card) {
+        const item = findById(appData.school.assignments, id);
+        const schoolFilterState = captureSchoolFilterState();
+        if (!item || normalizedAssignmentStatus(item.status) === nextStatus) return;
+        animateAssignmentCompletion(item, nextStatus, card, schoolFilterState);
+        return;
+      }
+      return setAssignmentStatus(id, nextStatus, button);
     }
     if (action === "undo-finance-delete") return undoFinanceDelete();
     if (action === "open-quick-add") return openQuickAdd();
@@ -4282,12 +4369,7 @@
       return;
     }
     if (target.dataset.assignmentStatus) {
-      const item = findById(appData.school.assignments, target.dataset.assignmentStatus);
-      if (item) {
-        item.status = normalizedAssignmentStatus(target.value);
-        saveData();
-        render({ quiet: true });
-      }
+      setAssignmentStatus(target.dataset.assignmentStatus, target.value, target);
       return;
     }
     if (target.dataset.setting) {

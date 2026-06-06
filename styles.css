@@ -160,6 +160,10 @@ body.app-ready .app-main {
   animation: periodSwap 190ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
+.app-main.is-school-filter-render .assignment-list {
+  animation: assignmentListSwap 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
 @keyframes rise {
   from {
     opacity: 0;
@@ -176,6 +180,18 @@ body.app-ready .app-main {
   from {
     opacity: 0.68;
     transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes assignmentListSwap {
+  from {
+    opacity: 0.72;
+    transform: translateY(5px);
   }
 
   to {
@@ -635,6 +651,7 @@ h3 {
 }
 
 .assignment-card {
+  max-height: 420px;
   box-shadow: 4px 0 0 var(--class-color, var(--accent)) inset;
   background: rgba(255, 255, 255, 0.052);
 }
@@ -658,6 +675,25 @@ h3 {
 .assignment-card.complete {
   box-shadow: 4px 0 0 var(--good) inset;
   background: rgba(50, 217, 143, 0.075);
+}
+
+.assignment-card.is-completing {
+  max-height: 0;
+  margin: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-width: 0;
+  opacity: 0;
+  overflow: hidden;
+  transform: translateX(18px) scale(0.99);
+  pointer-events: none;
+  transition:
+    max-height 240ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    margin 240ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    padding 240ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    border-width 240ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity 190ms ease,
+    transform 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .assignment-class-tag {
@@ -688,6 +724,59 @@ h3 {
 .assignment-status-tag.complete {
   border-color: rgba(50, 217, 143, 0.28) !important;
   background: rgba(50, 217, 143, 0.1) !important;
+  color: #9ff3c7;
+}
+
+.assignment-status-control {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.assignment-status-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  padding: 4px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.assignment-status-option {
+  min-height: 34px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 740;
+  line-height: 1.1;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease,
+    transform 160ms ease;
+}
+
+.assignment-status-option:hover {
+  color: var(--text);
+}
+
+.assignment-status-option:active {
+  transform: scale(0.98);
+}
+
+.assignment-status-option.active {
+  border-color: rgba(var(--class-color-rgb, var(--accent-rgb)), 0.28);
+  background: rgba(var(--class-color-rgb, var(--accent-rgb)), 0.16);
+  color: var(--text);
+}
+
+.assignment-status-option[data-assignment-next-status="completed"].active {
+  border-color: rgba(50, 217, 143, 0.3);
+  background: rgba(50, 217, 143, 0.16);
   color: #9ff3c7;
 }
 
@@ -780,7 +869,7 @@ h3 {
   line-height: 1.35;
 }
 
-.item-meta span {
+.item-meta > span {
   display: inline-flex;
   align-items: center;
   min-height: 24px;
