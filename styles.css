@@ -650,9 +650,14 @@ h3 {
   border-bottom-color: rgba(255, 107, 138, 0.28);
 }
 
+.assignment-card.in-progress {
+  box-shadow: 4px 0 0 var(--good) inset;
+  background: rgba(50, 217, 143, 0.065);
+}
+
 .assignment-card.complete {
   box-shadow: 4px 0 0 var(--good) inset;
-  background: rgba(50, 217, 143, 0.1);
+  background: rgba(50, 217, 143, 0.075);
 }
 
 .assignment-class-tag {
@@ -671,6 +676,18 @@ h3 {
 .assignment-status-tag {
   border-color: rgba(50, 217, 143, 0.34) !important;
   background: rgba(50, 217, 143, 0.12) !important;
+  color: #9ff3c7;
+}
+
+.assignment-status-tag.in-progress {
+  border-color: rgba(var(--class-color-rgb, var(--accent-rgb)), 0.4) !important;
+  background: rgba(var(--class-color-rgb, var(--accent-rgb)), 0.14) !important;
+  color: var(--text);
+}
+
+.assignment-status-tag.complete {
+  border-color: rgba(50, 217, 143, 0.28) !important;
+  background: rgba(50, 217, 143, 0.1) !important;
   color: #9ff3c7;
 }
 
@@ -1029,11 +1046,21 @@ h3 {
   scrollbar-width: none;
 }
 
-.class-filter::-webkit-scrollbar {
+.class-filter::-webkit-scrollbar,
+.assignment-status-filter::-webkit-scrollbar {
   display: none;
 }
 
-.class-chip {
+.assignment-status-filter {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: none;
+}
+
+.class-chip,
+.status-chip {
   min-height: 38px;
   display: inline-flex;
   align-items: center;
@@ -1047,10 +1074,19 @@ h3 {
   transition: border-color 160ms ease, background 160ms ease, color 160ms ease, transform 160ms ease;
 }
 
-.class-chip.active {
+.status-chip {
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.class-chip.active,
+.status-chip.active {
   border-color: transparent;
   background: rgba(var(--class-color-rgb, var(--accent-rgb)), 0.2);
   color: var(--text);
+}
+
+.status-chip.active {
+  background: rgba(var(--accent-rgb), 0.16);
 }
 
 details.card {

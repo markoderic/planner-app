@@ -206,6 +206,7 @@
         financeSpan: "30",
         taskFilter: "All",
         schoolClassFilter: "all",
+        schoolAssignmentFilter: "active",
         dashboardCustom: { start: today(), end: today() },
         financeCustom: { start: today(), end: dateString(addDays(new Date(), 30)) },
         ...JSON.parse(localStorage.getItem(UI_KEY) || "{}")
@@ -219,6 +220,7 @@
         financeSpan: "30",
         taskFilter: "All",
         schoolClassFilter: "all",
+        schoolAssignmentFilter: "active",
         dashboardCustom: { start: today(), end: today() },
         financeCustom: { start: today(), end: dateString(addDays(new Date(), 30)) }
       };
@@ -331,6 +333,9 @@
           entry.accountId = defaultSpendingAccountId(entry.paymentMethod);
         }
       }
+    });
+    appData.school.assignments.forEach((assignment) => {
+      assignment.status = normalizedAssignmentStatus(assignment.status);
     });
   }
 
@@ -1999,10 +2004,13 @@
     const stats = schoolStats(range);
     const byClass = appData.school.classes.map((klass) => classStats(klass.id));
     if (!validSchoolClassFilter(ui.schoolClassFilter)) ui.schoolClassFilter = "all";
+    if (!validSchoolAssignmentFilter(ui.schoolAssignmentFilter)) ui.schoolAssignmentFilter = "active";
+    const classFilteredAssignments = filterAssignmentsByClass(appData.school.assignments);
     const filteredAssignments = filterSchoolAssignments(appData.school.assignments);
-    const dueToday = filteredAssignments.filter((assignment) => !assignmentComplete(assignment) && assignment.dueDate === today());
-    const upcomingExams = sortByDate(filteredAssignments.filter((assignment) => !assignmentComplete(assignment) && assignment.type === "exam" && assignment.dueDate >= today())).slice(0, 5);
+    const dueToday = classFilteredAssignments.filter((assignment) => !assignmentComplete(assignment) && assignment.dueDate === today());
+    const upcomingExams = sortByDate(classFilteredAssignments.filter((assignment) => !assignmentComplete(assignment) && assignment.type === "exam" && assignment.dueDate >= today())).slice(0, 5);
     const filterLabel = schoolFilterLabel(ui.schoolClassFilter);
+    const statusFilterLabel = schoolAssignmentFilterLabel(ui.schoolAssignmentFilter);
 
     return `
       <div class="view">
@@ -2012,7 +2020,7 @@
           ${metric("Due today", String(dueToday.length), "")}
           ${metric("Due this week", String(stats.openDue.length), "All classes")}
           ${metric("Overdue", String(stats.overdue.length), "Open assignments")}
-          ${metric("Completed", String(stats.completed.length), "Submitted or graded")}
+          ${metric("Completed", String(stats.completed.length), "Finished assignments")}
         </section>
 
         <section class="card panel section">
@@ -2030,10 +2038,11 @@
             <div class="section-header"><h2>Assignments</h2>${actionButton("add-assignment", "", "Add", "plus", "secondary")}</div>
             <div class="assignment-tools">
               ${schoolClassFilterToggle()}
-              <p class="tiny">${escapeHtml(filterLabel)} · ${filteredAssignments.length} assignment${filteredAssignments.length === 1 ? "" : "s"}</p>
+              ${schoolAssignmentFilterToggle()}
+              <p class="tiny">${escapeHtml(filterLabel)} · ${escapeHtml(statusFilterLabel)} · ${filteredAssignments.length} assignment${filteredAssignments.length === 1 ? "" : "s"}</p>
             </div>
             <div class="list">
-              ${filteredAssignments.length ? sortByDate(filteredAssignments).map(renderAssignmentItem).join("") : emptyState("No assignments match this class filter.")}
+              ${filteredAssignments.length ? sortAssignmentsForFilter(filteredAssignments).map(renderAssignmentItem).join("") : emptyState("No assignments match these filters.")}
             </div>
           </div>
 
@@ -2052,21 +2061,54 @@
     return filter === "all" || filter === "unassigned" || Boolean(findById(appData.school.classes, filter));
   }
 
+  function validSchoolAssignmentFilter(filter) {
+    return ["active", "all", "in-progress", "completed"].includes(filter);
+  }
+
   function filterSchoolAssignments(assignments) {
+    return filterAssignmentsByStatus(filterAssignmentsByClass(assignments));
+  }
+
+  function filterAssignmentsByClass(assignments) {
     if (ui.schoolClassFilter === "unassigned") return assignments.filter((assignment) => !assignment.classId);
     if (ui.schoolClassFilter === "all") return assignments;
     return assignments.filter((assignment) => assignment.classId === ui.schoolClassFilter);
   }
 
+  function filterAssignmentsByStatus(assignments) {
+    const filter = validSchoolAssignmentFilter(ui.schoolAssignmentFilter) ? ui.schoolAssignmentFilter : "active";
+    if (filter === "all") return assignments;
+    if (filter === "completed") return assignments.filter(assignmentComplete);
+    if (filter === "in-progress") return assignments.filter((assignment) => normalizedAssignmentStatus(assignment.status) === "in progress");
+    return assignments.filter((assignment) => !assignmentComplete(assignment));
+  }
+
+  function sortAssignmentsForFilter(assignments) {
+    if (ui.schoolAssignmentFilter === "completed") {
+      return [...assignments].sort((a, b) => String(b.dueDate || "").localeCompare(String(a.dueDate || "")));
+    }
+    return sortByDate(assignments);
+  }
+
   function schoolFilterLabel(filter) {
     if (filter === "unassigned") return "Showing assignments with no class";
-    if (filter === "all") return "Showing all assignments";
+    if (filter === "all") return "All Classes";
     return `Showing ${className(filter)}`;
+  }
+
+  function schoolAssignmentFilterLabel(filter) {
+    const labels = {
+      active: "Active assignments",
+      all: "All assignments",
+      "in-progress": "In progress",
+      completed: "Completed"
+    };
+    return labels[filter] || labels.active;
   }
 
   function schoolClassFilterToggle() {
     const filters = [
-      { id: "all", name: "All", color: appData.settings.accent || "#f7f7ff" },
+      { id: "all", name: "All Classes", color: appData.settings.accent || "#f7f7ff" },
       { id: "unassigned", name: "No class", color: "#6f7685" },
       ...appData.school.classes.map((klass) => ({ id: klass.id, name: klass.name || "Class", color: klass.accentColor || "#7c5cff" }))
     ];
@@ -2080,6 +2122,24 @@
             </button>
           `;
         }).join("")}
+      </div>
+    `;
+  }
+
+  function schoolAssignmentFilterToggle() {
+    const filters = [
+      { id: "active", name: "Active" },
+      { id: "all", name: "All Assignments" },
+      { id: "in-progress", name: "In Progress" },
+      { id: "completed", name: "Completed" }
+    ];
+    return `
+      <div class="assignment-status-filter" role="group" aria-label="Filter assignments by status">
+        ${filters.map((filter) => `
+          <button type="button" class="status-chip ${ui.schoolAssignmentFilter === filter.id ? "active" : ""}" data-action="set-school-assignment-filter" data-assignment-filter="${escapeHtml(filter.id)}">
+            <span>${escapeHtml(filter.name)}</span>
+          </button>
+        `).join("")}
       </div>
     `;
   }
@@ -2109,6 +2169,8 @@
 
   function renderAssignmentItem(assignment) {
     const complete = assignmentComplete(assignment);
+    const status = normalizedAssignmentStatus(assignment.status);
+    const inProgress = status === "in progress";
     const klass = findById(appData.school.classes, assignment.classId);
     const color = safeHexColor(klass?.accentColor, "#6f7685");
     const dueLabel = `${formatDate(assignment.dueDate)}${assignment.dueTime ? ` ${assignment.dueTime}` : ""}`;
@@ -2118,10 +2180,11 @@
       assignment.type ? `<span>${escapeHtml(assignment.type)}</span>` : "",
       assignment.dueDate ? `<span>${escapeHtml(dueLabel)}</span>` : "<span>No due date</span>",
       assignment.priority ? `<span>${escapeHtml(assignment.priority)}</span>` : "",
-      complete ? `<span class="assignment-status-tag">${escapeHtml(assignment.status)}</span>` : ""
+      inProgress ? `<span class="assignment-status-tag in-progress">In Progress</span>` : "",
+      complete ? `<span class="assignment-status-tag complete">Completed</span>` : ""
     ];
     return `
-      <article class="item-card assignment-card ${complete ? "complete" : ""} ${!complete && isBeforeToday(assignment.dueDate) ? "overdue" : ""}" style="--class-color:${escapeHtml(color)}; --class-color-rgb:${rgbText(color)}">
+      <article class="item-card assignment-card ${complete ? "complete" : ""} ${inProgress ? "in-progress" : ""} ${!complete && isBeforeToday(assignment.dueDate) ? "overdue" : ""}" style="--class-color:${escapeHtml(color)}; --class-color-rgb:${rgbText(color)}">
         <div class="item-main">
           <p class="item-title assignment-title">${escapeHtml(assignment.title)}</p>
           <div class="item-meta">
@@ -2130,7 +2193,7 @@
           <label class="field">
             <span class="tiny">Status</span>
             <select data-assignment-status="${escapeHtml(assignment.id)}">
-              ${["not started", "in progress", "submitted", "graded"].map((status) => `<option value="${status}" ${assignment.status === status ? "selected" : ""}>${status}</option>`).join("")}
+              ${assignmentStatusOptions().map((option) => `<option value="${option.value}" ${status === option.value ? "selected" : ""}>${option.label}</option>`).join("")}
             </select>
           </label>
           ${assignment.notes ? `<p class="tiny">${escapeHtml(assignment.notes)}</p>` : ""}
@@ -2992,7 +3055,22 @@
   }
 
   function assignmentComplete(assignment) {
-    return ["submitted", "graded"].includes(assignment.status);
+    return normalizedAssignmentStatus(assignment.status) === "completed";
+  }
+
+  function normalizedAssignmentStatus(status = "") {
+    const value = String(status || "").toLowerCase();
+    if (value === "submitted" || value === "graded" || value === "complete") return "completed";
+    if (value === "in progress") return "in progress";
+    return "not started";
+  }
+
+  function assignmentStatusOptions() {
+    return [
+      { value: "not started", label: "Not Started" },
+      { value: "in progress", label: "In Progress" },
+      { value: "completed", label: "Completed" }
+    ];
   }
 
   function className(classId) {
@@ -3451,7 +3529,7 @@
       { name: "dueDate", label: "Due date", type: "date", default: today(), required: true },
       { name: "dueTime", label: "Due time", type: "time" },
       { name: "priority", label: "Priority", type: "select", options: [{ value: "", label: "No priority" }, "Low", "Medium", "High"] },
-      { name: "status", label: "Status", type: "select", options: ["not started", "in progress", "submitted", "graded"] },
+      { name: "status", label: "Status", type: "select", options: assignmentStatusOptions() },
       { name: "grade", label: "Grade", type: "text" },
       { name: "pointsEarned", label: "Points earned", type: "number", step: "0.01" },
       { name: "pointsPossible", label: "Points possible", type: "number", step: "0.01" },
@@ -3653,6 +3731,10 @@
     }
     if (action === "set-school-class-filter") {
       ui.schoolClassFilter = button.dataset.classId || id || "all";
+      return render({ quiet: true });
+    }
+    if (action === "set-school-assignment-filter") {
+      ui.schoolAssignmentFilter = button.dataset.assignmentFilter || "active";
       return render({ quiet: true });
     }
     if (action === "undo-finance-delete") return undoFinanceDelete();
@@ -3906,7 +3988,7 @@
       case "add-assignment":
       case "edit-assignment": {
         const item = id ? findById(appData.school.assignments, id) : { status: "not started", type: "assignment" };
-        openEdit({ title: id ? "Edit assignment" : "Add assignment", fields: assignmentFields(), initial: item, onSubmit: (values) => upsert(appData.school.assignments, id, values) });
+        openEdit({ title: id ? "Edit assignment" : "Add assignment", fields: assignmentFields(), initial: { ...item, status: normalizedAssignmentStatus(item.status) }, onSubmit: (values) => upsert(appData.school.assignments, id, { ...values, status: normalizedAssignmentStatus(values.status) }) });
         break;
       }
       case "delete-assignment":
@@ -4202,7 +4284,7 @@
     if (target.dataset.assignmentStatus) {
       const item = findById(appData.school.assignments, target.dataset.assignmentStatus);
       if (item) {
-        item.status = target.value;
+        item.status = normalizedAssignmentStatus(target.value);
         saveData();
         render({ quiet: true });
       }
