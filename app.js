@@ -1391,6 +1391,34 @@
     `;
   }
 
+  // Collapsible finance history entry. Collapsed view shows just the colored
+  // amount headline (green for income, red for spending) with the source/date
+  // underneath; expanding reveals the full breakdown and actions.
+  function financeEntryCard({ sign = "income", amount, name, date, details = [], note = "", actions = "", attrs = "" }) {
+    const signSymbol = sign === "expense" ? "−" : "+";
+    const sub = [name, date].filter(Boolean).join(" · ");
+    const detailHtml = details.filter(Boolean).map((d) => `
+      <div class="fin-entry-detail">
+        <span class="fin-entry-detail-label">${escapeHtml(d.label)}</span>
+        <span class="fin-entry-detail-value ${d.money ? `fin-num ${sign}` : ""}">${escapeHtml(d.value)}</span>
+      </div>`).join("");
+    return `
+      <details class="fin-entry fin-entry-${escapeHtml(sign)}"${attrs ? ` ${attrs}` : ""}>
+        <summary class="fin-entry-summary">
+          <span class="fin-entry-headline">
+            <span class="fin-entry-amount fin-num ${escapeHtml(sign)}">${signSymbol}${escapeHtml(amount)}</span>
+            ${sub ? `<span class="fin-entry-sub">${escapeHtml(sub)}</span>` : ""}
+          </span>
+        </summary>
+        <div class="fin-entry-body details-body">
+          ${detailHtml ? `<div class="fin-entry-details">${detailHtml}</div>` : ""}
+          ${note ? `<p class="fin-entry-note">${escapeHtml(note)}</p>` : ""}
+          ${actions ? `<div class="fin-entry-actions">${actions}</div>` : ""}
+        </div>
+      </details>
+    `;
+  }
+
   function recentCompletionClass(id, isComplete) {
     if (recentCompletion?.id !== id) return "";
     return isComplete ? "just-completed" : "just-uncompleted";
@@ -2193,13 +2221,14 @@
     const list = app.querySelector(`.finance-hist-list[data-hist-scope="${scope}"]`);
     if (!list) return;
     let shown = 0;
-    list.querySelectorAll(".item-card").forEach((row) => {
+    const rows = list.querySelectorAll(".item-card, .fin-entry");
+    rows.forEach((row) => {
       const ok = financeSpanMatch(row.dataset.when, span);
       row.style.display = ok ? "" : "none";
       if (ok) shown++;
     });
     let empty = list.querySelector(".finance-hist-empty");
-    if (shown === 0 && list.querySelector(".item-card")) {
+    if (shown === 0 && rows.length) {
       if (!empty) { empty = document.createElement("div"); empty.className = "empty finance-hist-empty"; list.appendChild(empty); }
       empty.textContent = "Nothing in this range.";
       empty.style.display = "";
@@ -2270,11 +2299,20 @@
         ? `Tax estimate: ${formatCurrency(tax.total)} (${formatNumber(tax.effectiveRate, 1)}%) · Fed ${formatCurrency(tax.federal)}, SS ${formatCurrency(tax.socialSecurity)}, Medicare ${formatCurrency(tax.medicare)}, OH ${formatCurrency(tax.ohio)}, municipal ${formatCurrency(tax.municipal)}${tax.schoolDistrict ? `, school ${formatCurrency(tax.schoolDistrict)}` : ""}`
         : "Tax not calculated for this entry.";
     const estimateAction = mode === "auto" ? "" : actionButton("estimate-income-tax", entry.id, "Estimate tax", "chart");
-    return itemCard({
-      title: entry.source || "Income",
-      meta: [entry.type === "hourly" ? "Hourly" : "Manual", taxModeLabel, `Gross ${formatCurrency(gross)}`, `Net ${formatCurrency(net)}`, formatDate(incomeDate(entry))],
-      attrs: `data-when="${escapeHtml(incomeDate(entry) || "")}"`,
+    return financeEntryCard({
+      sign: "income",
+      amount: formatCurrency(net),
+      name: entry.source || "Income",
+      date: formatDate(incomeDate(entry)),
+      details: [
+        { label: "Type", value: entry.type === "hourly" ? "Hourly" : "Manual" },
+        { label: "Tax", value: taxModeLabel },
+        { label: "Gross", value: formatCurrency(gross), money: true },
+        { label: "Net (take-home)", value: formatCurrency(net), money: true },
+        { label: "Date", value: formatDate(incomeDate(entry)) }
+      ],
       note: [taxNote, entry.notes].filter(Boolean).join(" · "),
+      attrs: `data-when="${escapeHtml(incomeDate(entry) || "")}"`,
       actions: `${estimateAction}${actionButton("edit-income", entry.id, "Edit", "edit")}${actionButton("delete-income", entry.id, "Delete", "trash")}`
     });
   }
@@ -2598,16 +2636,19 @@
     const linkedDebt = entry.debtId ? findById(appData.finance.debts, entry.debtId) : null;
     const linkedAccount = entry.accountId && !spendingUsesCredit(entry) ? findById(appData.finance.accounts, entry.accountId) : null;
     const method = normalizedPaymentMethod(entry.paymentMethod, entry.debtId);
-    return itemCard({
-      title: entry.note || entry.category || "Spending",
-      meta: [
-        formatCurrency(entry.amount),
-        entry.category,
-        entry.necessary !== false ? "Necessary" : "Unnecessary",
-        method,
-        formatDate(entry.date),
-        linkedAccount ? `Paid from ${linkedAccount.name}` : "",
-        linkedDebt ? `Charged to ${linkedDebt.name}` : ""
+    return financeEntryCard({
+      sign: "expense",
+      amount: formatCurrency(entry.amount),
+      name: entry.note || entry.category || "Spending",
+      date: formatDate(entry.date),
+      details: [
+        { label: "Amount", value: formatCurrency(entry.amount), money: true },
+        { label: "Category", value: entry.category || "—" },
+        { label: "Type", value: entry.necessary !== false ? "Necessary" : "Unnecessary" },
+        { label: "Method", value: method },
+        { label: "Date", value: formatDate(entry.date) },
+        linkedAccount ? { label: "Paid from", value: linkedAccount.name } : null,
+        linkedDebt ? { label: "Charged to", value: linkedDebt.name } : null
       ],
       attrs: `data-when="${escapeHtml(entry.date || "")}"`,
       actions: `${actionButton("edit-spending", entry.id, "Edit", "edit")}${actionButton("delete-spending", entry.id, "Delete", "trash")}`
