@@ -3489,7 +3489,7 @@
       const timed = Boolean(t.startTime);
       events.push({
         id: t.id, kind: timed ? "meeting" : "task", date: t.dueDate, title: t.title,
-        color: timed ? CALENDAR_KIND_COLORS.meeting : CALENDAR_KIND_COLORS.task,
+        color: t.color ? safeHexColor(t.color, timed ? CALENDAR_KIND_COLORS.meeting : CALENDAR_KIND_COLORS.task) : (timed ? CALENDAR_KIND_COLORS.meeting : CALENDAR_KIND_COLORS.task),
         start: t.startTime || "", end: t.endTime || "",
         complete: Boolean(t.completed), overdue: !t.completed && isBeforeToday(t.dueDate),
         meta: [t.classId ? className(t.classId) : (t.category || ""), timed ? "" : "Task"].filter(Boolean).join(" · "),
@@ -3886,7 +3886,7 @@
     appData.tasks.forEach((t) => {
       if (!t.dueDate || t.completed || !dateInRange(t.dueDate, horizon)) return;
       const timed = Boolean(t.startTime);
-      events.push({ id: t.id, kind: timed ? "meeting" : "task", date: t.dueDate, start: t.startTime || "", title: t.title, color: timed ? CALENDAR_KIND_COLORS.meeting : CALENDAR_KIND_COLORS.task, meta: timed ? "Meeting" : (t.category || "Task") });
+      events.push({ id: t.id, kind: timed ? "meeting" : "task", date: t.dueDate, start: t.startTime || "", title: t.title, color: t.color ? safeHexColor(t.color, timed ? CALENDAR_KIND_COLORS.meeting : CALENDAR_KIND_COLORS.task) : (timed ? CALENDAR_KIND_COLORS.meeting : CALENDAR_KIND_COLORS.task), meta: timed ? "Meeting" : (t.category || "Task") });
     });
     appData.reminders.forEach((r) => {
       if (!r.date || r.completed || !dateInRange(r.date, horizon)) return;
@@ -4635,6 +4635,10 @@
     });
   }
 
+  function workoutDotColor(w) {
+    return isRunWorkout(w) ? "#25d8ff" : "#34d399";
+  }
+
   function renderHealthPlanner() {
     const weekStart = startOfWeek(new Date());
     const todayStr = today();
@@ -4646,37 +4650,106 @@
       const ws = workoutsForDate(ds);
       const isPlanDay = planDays.includes(dateObj.getDay());
       const dow = new Intl.DateTimeFormat(undefined, { weekday: "short" }).format(dateObj);
-      const blocks = ws.length
-        ? ws.map((w) => {
-            const label = isRunWorkout(w) ? "Run" : (w.split || "Workout");
-            return `
-            <button type="button" class="planner-block" data-action="edit-workout" data-id="${escapeHtml(w.id)}" title="${escapeHtml(label)}">
-              <span class="planner-block-time">${escapeHtml(workoutTimeLabel(w) || "Anytime")}</span>
-              <span class="planner-block-title">${escapeHtml(label)}</span>
-            </button>`;
-          }).join("")
-        : (isPlanDay ? `<button type="button" class="planner-plan-hint" data-action="schedule-workout" data-date="${escapeHtml(ds)}">Plan day · add</button>` : `<span class="planner-empty">Rest</span>`);
+      let marker;
+      if (ws.length) {
+        const dots = ws.slice(0, 4).map((w) => `<i class="planner-dot" style="--dot:${escapeHtml(workoutDotColor(w))}"></i>`).join("");
+        marker = `<span class="planner-dots">${dots}</span>`;
+      } else if (isPlanDay) {
+        marker = `<span class="planner-dots"><i class="planner-dot is-plan"></i></span>`;
+      } else {
+        marker = `<span class="planner-dots"><i class="planner-rest-dot"></i></span>`;
+      }
+      const stateLabel = ws.length ? `${ws.length} workout${ws.length === 1 ? "" : "s"}` : (isPlanDay ? "Plan day" : "Rest");
       cols.push(`
-        <div class="planner-day ${ds === todayStr ? "is-today" : ""} ${isPlanDay ? "is-plan" : ""}">
+        <button type="button" class="planner-day ${ds === todayStr ? "is-today" : ""} ${isPlanDay ? "is-plan" : ""} ${ws.length ? "has-workouts" : ""}" data-action="planner-expand-day" data-date="${escapeHtml(ds)}" aria-label="${escapeHtml(dow + " — " + stateLabel)}">
           <div class="planner-day-head">
             <span class="planner-dow">${escapeHtml(dow)}</span>
             <span class="planner-dom">${Number(ds.slice(8))}</span>
           </div>
-          <div class="planner-day-body">${blocks}</div>
-        </div>`);
+          ${marker}
+        </button>`);
     }
     return `
       <section class="card panel section health-planner">
         <div class="section-header">
           <div>
             <h2>This week's plan</h2>
-            <span class="tiny">Scheduled workouts across the week</span>
+            <span class="tiny">Tap a day to see planned workouts</span>
           </div>
           ${actionButton("schedule-workout", "", "Schedule", "plus", "secondary")}
         </div>
         <div class="planner-week">${cols.join("")}</div>
+        <div class="planner-zoom-layer" data-planner-zoom hidden></div>
       </section>
     `;
+  }
+
+  function closePlannerDay() {
+    const layer = app.querySelector("[data-planner-zoom]");
+    if (!layer) return;
+    const card = layer.querySelector(".planner-zoom-card");
+    layer.classList.remove("is-open");
+    if (card) card.classList.remove("is-open");
+    window.setTimeout(() => {
+      if (layer.isConnected) { layer.innerHTML = ""; layer.hidden = true; }
+    }, 240);
+  }
+
+  function openPlannerDay(ds, dayEl) {
+    const section = dayEl ? dayEl.closest(".health-planner") : app.querySelector(".health-planner");
+    const layer = section ? section.querySelector("[data-planner-zoom]") : null;
+    if (!layer) return;
+    const dateObj = parseDate(ds) || new Date();
+    const ws = workoutsForDate(ds);
+    const isPlanDay = (appData.gym.planDays || []).includes(dateObj.getDay());
+    const longLabel = new Intl.DateTimeFormat(undefined, { weekday: "long", month: "short", day: "numeric" }).format(dateObj);
+
+    const body = ws.length
+      ? `<div class="planner-zoom-list">${ws.map((w) => {
+          const label = isRunWorkout(w) ? "Run" : (w.split || "Workout");
+          const meta = [workoutTimeLabel(w) || "Anytime", w.duration ? `${w.duration} min` : "", isRunWorkout(w) && w.distance ? `${formatNumber(w.distance, 1)} mi` : ""].filter(Boolean).join(" · ");
+          return `
+            <button type="button" class="planner-zoom-item" data-action="edit-workout" data-id="${escapeHtml(w.id)}" style="--dot:${escapeHtml(workoutDotColor(w))}">
+              <span class="planner-zoom-item-bar"></span>
+              <span class="planner-zoom-item-main">
+                <span class="planner-zoom-item-title">${escapeHtml(label)}</span>
+                <span class="planner-zoom-item-meta">${escapeHtml(meta)}</span>
+              </span>
+              <span class="planner-zoom-item-go">${icon("chevron")}</span>
+            </button>`;
+        }).join("")}</div>`
+      : `<p class="planner-zoom-empty">${isPlanDay ? "Plan day — nothing scheduled yet." : "Rest day. Nothing planned."}</p>`;
+
+    layer.hidden = false;
+    layer.innerHTML = `
+      <div class="planner-zoom-backdrop" data-planner-close></div>
+      <div class="planner-zoom-card">
+        <div class="planner-zoom-head">
+          <div>
+            <span class="planner-zoom-dow">${escapeHtml(longLabel)}</span>
+            <span class="planner-zoom-count">${ws.length ? `${ws.length} workout${ws.length === 1 ? "" : "s"} planned` : (isPlanDay ? "Plan day" : "Rest day")}</span>
+          </div>
+          <button type="button" class="planner-zoom-close" data-planner-close aria-label="Close">${icon("x")}</button>
+        </div>
+        ${body}
+        <button type="button" class="planner-zoom-add primary" data-action="schedule-workout" data-date="${escapeHtml(ds)}">${icon("plus")}<span>Schedule workout</span></button>
+      </div>
+    `;
+
+    // Zoom origin = center of the tapped day, so it appears to grow out of it.
+    const card = layer.querySelector(".planner-zoom-card");
+    if (card && dayEl) {
+      const lr = layer.getBoundingClientRect();
+      const dr = dayEl.getBoundingClientRect();
+      const ox = ((dr.left + dr.width / 2) - lr.left) / lr.width * 100;
+      const oy = ((dr.top + dr.height / 2) - lr.top) / lr.height * 100;
+      card.style.transformOrigin = `${ox.toFixed(1)}% ${oy.toFixed(1)}%`;
+    }
+    layer.querySelectorAll("[data-planner-close]").forEach((el) => el.addEventListener("click", closePlannerDay));
+
+    void layer.offsetWidth; // force reflow so the transition runs
+    layer.classList.add("is-open");
+    if (card) card.classList.add("is-open");
   }
 
   function workoutKind(w) {
@@ -5981,7 +6054,8 @@
     return (exercises || []).map((ex) => `${ex.name}, ${ex.sets}, ${ex.reps}, ${ex.weight}`).join("\n");
   }
 
-  function openForm({ title, fields, initial = {}, submitLabel = "Save", onSubmit, livePreview = null }) {
+  function openForm({ title, fields, initial = {}, submitLabel = "Save", onSubmit, livePreview = null, deleteAction = null, deleteId = "", deleteLabel = "Delete" }) {
+    const showDelete = Boolean(deleteAction && deleteId);
     modalRoot.innerHTML = `
       <div class="modal-backdrop">
         <form class="modal" id="active-form">
@@ -5994,6 +6068,10 @@
               ${fields.map((field) => renderField(field, initial[field.name])).join("")}
             </div>
             ${livePreview ? `<div class="form-live-preview" data-form-live-preview>${livePreview(initial)}</div>` : ""}
+            ${showDelete ? `
+            <div class="modal-delete-zone">
+              <button type="button" class="modal-delete-btn" data-form-delete>${icon("trash")}<span>${escapeHtml(deleteLabel)}</span></button>
+            </div>` : ""}
           </div>
           <div class="modal-footer">
             <button type="button" class="secondary" data-action="close-modal">Cancel</button>
@@ -6003,6 +6081,13 @@
       </div>
     `;
     const form = document.getElementById("active-form");
+    if (showDelete) {
+      const delBtn = form.querySelector("[data-form-delete]");
+      if (delBtn) delBtn.addEventListener("click", () => {
+        closeModal();
+        window.setTimeout(() => handleAction(deleteAction, { dataset: { id: deleteId }, closest: () => null }), 10);
+      });
+    }
     if (livePreview) {
       const updatePreview = () => {
         const preview = form.querySelector("[data-form-live-preview]");
@@ -6200,6 +6285,7 @@
       { name: "endTime", label: "End time", type: "time", default: initial.endTime || "", help: "Optional. Set with a start time for a scheduled block (e.g. a meeting)." },
       { name: "classId", label: "Class (optional)", type: "select", options: [{ value: "", label: "No class" }, ...appData.school.classes.map((klass) => ({ value: klass.id, label: klass.name || "Class" }))], default: initial.classId || "" },
       { name: "priority", label: "Priority", type: "select", options: [{ value: "", label: "No priority" }, "Low", "Medium", "High"], default: initial.priority || "" },
+      { name: "color", label: "Calendar color", type: "color-swatches", options: [{ value: "", label: "Auto" }, ...colorSwatches.map((color) => ({ value: color, label: color }))], default: initial.color || "", help: "Pick a color for this item on the calendar. Auto uses the default type color." },
       { name: "notes", label: "Notes", type: "textarea" }
     ];
   }
@@ -6700,6 +6786,10 @@
       ui.calendarView = ["month", "week", "day"].includes(button.dataset.view) ? button.dataset.view : "month";
       return refreshCalendarBody();
     }
+    if (action === "planner-expand-day") {
+      openPlannerDay(button.dataset.date || today(), button);
+      return;
+    }
     if (action === "set-workout-mode") {
       ui.workoutMode = button.dataset.workoutMode === "run" ? "run" : "lift";
       app.querySelectorAll(".seg-toggle [data-action='set-workout-mode']").forEach((b) => b.classList.toggle("active", b.dataset.workoutMode === ui.workoutMode));
@@ -6830,7 +6920,7 @@
       case "add-task":
       case "edit-task": {
         const item = id ? findById(appData.tasks, id) : {};
-        openEdit({ title: id ? "Edit task" : "Add task", fields: taskFields(item), initial: item, onSubmit: (values) => upsert(appData.tasks, id, { ...values, completed: item.completed || false }) });
+        openEdit({ title: id ? "Edit task" : "Add task", fields: taskFields(item), initial: item, onSubmit: (values) => upsert(appData.tasks, id, { ...values, completed: item.completed || false }), deleteAction: id ? "delete-task" : null, deleteId: id });
         break;
       }
       case "toggle-task": {
@@ -6959,7 +7049,7 @@
       case "add-bill":
       case "edit-bill": {
         const item = id ? findById(appData.finance.bills, id) : { frequency: "monthly", billType: "bill", paid: false };
-        openEdit({ title: id ? "Edit bill" : "Add bill", fields: billFields(), initial: normalizeBill({ ...(item || {}) }), onSubmit: (values) => upsert(appData.finance.bills, id, normalizeBill({ ...(id ? item : {}), ...values })) });
+        openEdit({ title: id ? "Edit bill" : "Add bill", fields: billFields(), initial: normalizeBill({ ...(item || {}) }), onSubmit: (values) => upsert(appData.finance.bills, id, normalizeBill({ ...(id ? item : {}), ...values })), deleteAction: id ? "delete-bill" : null, deleteId: id });
         break;
       }
       case "toggle-bill-paid": {
@@ -7040,7 +7130,9 @@
           onSubmit(values) {
             const originalBalance = values.originalBalance || values.balance;
             upsert(appData.finance.debts, id, { ...values, debtType: normalizedDebtType(values), originalBalance, paymentHistory: item.paymentHistory || [] });
-          }
+          },
+          deleteAction: id ? "delete-debt" : null,
+          deleteId: id
         });
         break;
       }
@@ -7134,7 +7226,7 @@
       case "add-assignment":
       case "edit-assignment": {
         const item = id ? findById(appData.school.assignments, id) : { status: "not started", type: "assignment" };
-        openEdit({ title: id ? "Edit assignment" : "Add assignment", fields: assignmentFields(), initial: { ...item, status: normalizedAssignmentStatus(item.status) }, onSubmit: (values) => upsert(appData.school.assignments, id, { ...values, status: normalizedAssignmentStatus(values.status) }) });
+        openEdit({ title: id ? "Edit assignment" : "Add assignment", fields: assignmentFields(), initial: { ...item, status: normalizedAssignmentStatus(item.status) }, onSubmit: (values) => upsert(appData.school.assignments, id, { ...values, status: normalizedAssignmentStatus(values.status) }), deleteAction: id ? "delete-assignment" : null, deleteId: id });
         break;
       }
       case "delete-assignment":
@@ -7166,7 +7258,9 @@
           onSubmit(values) {
             const { exerciseText, ...rest } = values;
             upsert(appData.gym.workouts, id, { ...rest, exercises: parseExercises(exerciseText) });
-          }
+          },
+          deleteAction: id ? "delete-workout" : null,
+          deleteId: id
         });
         break;
       }
@@ -7369,7 +7463,7 @@
       case "add-reminder":
       case "edit-reminder": {
         const item = id ? findById(appData.reminders, id) : {};
-        openEdit({ title: id ? "Edit reminder" : "Add reminder", fields: reminderFields(), initial: item, onSubmit: (values) => upsert(appData.reminders, id, values) });
+        openEdit({ title: id ? "Edit reminder" : "Add reminder", fields: reminderFields(), initial: item, onSubmit: (values) => upsert(appData.reminders, id, values), deleteAction: id ? "delete-reminder" : null, deleteId: id });
         break;
       }
       case "toggle-reminder": {
