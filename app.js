@@ -112,7 +112,17 @@
     },
     shopping: [],
     reminders: [],
-    inbox: []
+    inbox: [],
+    notes: {
+      items: [],
+      folders: []
+    },
+    travel: {
+      countries: {},
+      cities: {},
+      states: {}
+    },
+    bucketList: []
   });
 
   const demoData = () => {
@@ -190,10 +200,16 @@
   let syncInFlight = false;
   let undoState = null;
   let recentCompletion = null;
+  let recentPinId = null;
+  let lastTravelViewBox = null;
+  let travelManualVB = null;
+  let travelTweenRAF = null;
+  let recentVisitKey = null;
   let moreSwitchTimer = null;
   let morePendingView = null;
   let lastScrollY = window.scrollY || 0;
   let financeShortcutScrollTicking = false;
+  let financeShortcutHoldUntil = 0;
   const progressAnimationState = new Map();
   const numberAnimationState = new Map();
   const numberAnimationTokens = new Map();
@@ -212,26 +228,54 @@
 
   function loadUi() {
     try {
+      const stored = JSON.parse(localStorage.getItem(UI_KEY) || "{}");
+      // Gym + Nutrition moved into the Health tab and Reminders/Inbox were removed;
+      // migrate any stale More views back to the shopping list.
+      if (["gym", "nutrition", "reminders", "inbox"].includes(stored.moreView)) stored.moreView = "shopping";
       return {
         activeTab: "dashboard",
-        moreView: "gym",
+        moreView: "shopping",
+        healthView: "workouts",
+        workoutMode: "lift",
+        habitDay: "today",
+        notesFolderId: "all",
+        notesEditingId: "",
+        travelFocus: "",
+        travelStateFocus: "",
         dashboardSpan: "today",
         dashboardStyle: "cards",
         financeSpan: "30",
+        incomeHistorySpan: "month",
+        spendingHistorySpan: "month",
+        financeBarCollapsed: true,
         taskFilter: "All",
         schoolClassFilter: "all",
         schoolAssignmentFilter: "active",
+        schoolSpan: "all",
+        schoolView: "overview",
+        selectedClassId: "",
+        calendarMonth: "",
+        calendarView: "month",
+        calendarClasses: [],
+        calendarSelectedDate: "",
+        calendarKindFilter: "all",
         dashboardCustom: { start: today(), end: today() },
         financeCustom: { start: today(), end: dateString(addDays(new Date(), 30)) },
-        ...JSON.parse(localStorage.getItem(UI_KEY) || "{}")
+        schoolCustom: { start: today(), end: dateString(addDays(new Date(), 30)) },
+        ...stored
       };
     } catch {
       return {
         activeTab: "dashboard",
-        moreView: "gym",
+        moreView: "shopping",
+        healthView: "workouts",
+        calendarView: "month",
         dashboardSpan: "today",
         dashboardStyle: "cards",
         financeSpan: "30",
+        incomeHistorySpan: "month",
+        spendingHistorySpan: "month",
+        financeBarCollapsed: true,
         taskFilter: "All",
         schoolClassFilter: "all",
         schoolAssignmentFilter: "active",
@@ -319,17 +363,45 @@
     appData.dailyHabits = appData.dailyHabits || [];
     appData.habitCompletions = appData.habitCompletions || {};
     appData.tasks = appData.tasks || [];
+    appData.tasks.forEach((task) => {
+      if (task.startTime === undefined) task.startTime = task.reminderTime || "";
+      if (task.endTime === undefined) task.endTime = "";
+      if (task.classId === undefined) task.classId = "";
+      if (task.classId && !findById(appData.school.classes, task.classId)) task.classId = "";
+    });
     appData.goals = appData.goals || [];
     appData.goals.forEach((goal) => normalizeGoal(goal));
     appData.shopping = appData.shopping || [];
     appData.reminders = appData.reminders || [];
     appData.inbox = appData.inbox || [];
+    appData.travel = appData.travel || { countries: {}, cities: {}, states: {} };
+    appData.travel.countries = appData.travel.countries || {};
+    appData.travel.cities = appData.travel.cities || {};
+    appData.travel.states = appData.travel.states || {};
+    appData.bucketList = Array.isArray(appData.bucketList) ? appData.bucketList : [];
+    appData.notes = appData.notes || { items: [], folders: [] };
+    appData.notes.items = appData.notes.items || [];
+    appData.notes.folders = appData.notes.folders || [];
+    appData.notes.folders.forEach((folder) => {
+      folder.name = folder.name || "Folder";
+      folder.color = safeHexColor(folder.color, "");
+    });
+    appData.notes.items.forEach((note) => {
+      note.title = note.title || "";
+      note.body = note.body || "";
+      note.color = safeHexColor(note.color, "");
+      note.pinned = Boolean(note.pinned);
+      if (note.folderId && !findById(appData.notes.folders, note.folderId)) note.folderId = "";
+      note.folderId = note.folderId || "";
+      note.updatedAt = note.updatedAt || note.createdAt || nowIso();
+    });
     appData.finance.income.forEach((entry) => {
       if (!entry.taxMode) entry.taxMode = Number(entry.deductionPercent) > 0 ? "manual" : "auto";
     });
     appData.finance.bills.forEach((bill) => normalizeBill(bill));
     appData.finance.debts.forEach((debt) => {
       debt.debtType = normalizedDebtType(debt);
+      debt.color = safeHexColor(debt.color, "");
       debt.paymentHistory = debt.paymentHistory || [];
       debt.paymentHistory.forEach((payment) => {
         payment.amount = Math.max(0, Number(payment.amount) || 0);
@@ -353,6 +425,14 @@
     });
     appData.finance.savings.forEach((entry) => normalizeSavingEntry(entry));
     appData.finance.savingsGoals.forEach((goal) => normalizeSavingsGoal(goal));
+    appData.school.classes.forEach((klass) => {
+      // Migrate any old percentage grade to the nearest letter, then use letters.
+      if (typeof klass.gradeLetter !== "string") {
+        const oldPct = Number(klass.gradeManual);
+        klass.gradeLetter = (klass.gradeManual !== "" && klass.gradeManual != null && !isNaN(oldPct)) ? pctToLetter(oldPct) : "";
+      }
+      klass.notes = klass.notes || "";
+    });
     appData.school.assignments.forEach((assignment) => {
       assignment.status = normalizedAssignmentStatus(assignment.status);
     });
@@ -409,8 +489,10 @@
   }
 
   function startOfWeek(date) {
+    // Weeks run Monday–Sunday everywhere in the app.
     const d = new Date(date);
-    d.setDate(d.getDate() - d.getDay());
+    const diff = (d.getDay() + 6) % 7; // days since Monday (Sunday=6)
+    d.setDate(d.getDate() - diff);
     return d;
   }
 
@@ -434,6 +516,8 @@
     if (span === "today") return { start: startToday, end: startToday, label: "Today" };
     if (span === "week") return { start: dateString(startOfWeek(now)), end: dateString(endOfWeek(now)), label: "This week" };
     if (span === "month") return { start: dateString(startOfMonth(now)), end: dateString(endOfMonth(now)), label: "This month" };
+    if (span === "year") return currentYearRange();
+    if (span === "all") return { start: "1900-01-01", end: "2999-12-31", label: "All" };
     if (span === "paycheck") return { start: startToday, end: dateString(addDays(now, 13)), label: "Paycheck cycle" };
     if (span === "7") return { start: startToday, end: dateString(addDays(now, 6)), label: "7 days" };
     if (span === "14") return { start: startToday, end: dateString(addDays(now, 13)), label: "14 days" };
@@ -490,6 +574,25 @@
     const date = parseDate(value);
     if (!date) return "No date";
     return new Intl.DateTimeFormat(undefined, { weekday: "long", month: "long", day: "numeric" }).format(date);
+  }
+
+  function formatTime(value) {
+    const text = String(value || "").trim();
+    const match = text.match(/^(\d{1,2}):(\d{2})/);
+    if (!match) return "";
+    let hour = Number(match[1]);
+    const minute = match[2];
+    const period = hour >= 12 ? "PM" : "AM";
+    hour = hour % 12 || 12;
+    return `${hour}:${minute} ${period}`;
+  }
+
+  function taskTimeLabel(task = {}) {
+    const start = formatTime(task.startTime);
+    const end = formatTime(task.endTime);
+    if (start && end) return `${start} – ${end}`;
+    if (start) return start;
+    return "";
   }
 
   function escapeHtml(value) {
@@ -726,7 +829,16 @@
       settings: '<path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5z" /><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.05.05a2 2 0 0 1-2.83 2.83l-.05-.05A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6l-.03.04a2 2 0 0 1-3.94 0L10 20a1.7 1.7 0 0 0-1-.6 1.7 1.7 0 0 0-1.87.34l-.05.05a2 2 0 0 1-2.83-2.83l.05-.05A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1l-.04-.03a2 2 0 0 1 0-3.94L4 10a1.7 1.7 0 0 0 .6-1 1.7 1.7 0 0 0-.34-1.87l-.05-.05a2 2 0 0 1 2.83-2.83l.05.05A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6l.03-.04a2 2 0 0 1 3.94 0L14 4a1.7 1.7 0 0 0 1 .6 1.7 1.7 0 0 0 1.87-.34l.05-.05a2 2 0 0 1 2.83 2.83l-.05.05A1.7 1.7 0 0 0 19.4 9c.18.35.38.67.6 1l.04.03a2 2 0 0 1 0 3.94L20 14a1.7 1.7 0 0 0-.6 1z" />',
       circle: '<circle cx="12" cy="12" r="9" />',
       target: '<circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="3" />',
-      spark: '<path d="M12 2v6M12 16v6M4.93 4.93l4.24 4.24M14.83 14.83l4.24 4.24M2 12h6M16 12h6M4.93 19.07l4.24-4.24M14.83 9.17l4.24-4.24" />'
+      spark: '<path d="M12 2v6M12 16v6M4.93 4.93l4.24 4.24M14.83 14.83l4.24 4.24M2 12h6M16 12h6M4.93 19.07l4.24-4.24M14.83 9.17l4.24-4.24" />',
+      heart: '<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.29 1.51 4.04 3 5.5l7 7Z" />',
+      clock: '<circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" />',
+      dumbbell: '<path d="M6.5 6.5 17.5 17.5M3 8v8M8 4v16M16 4v16M21 8v8" />',
+      flame: '<path d="M12 2c1 4-2 5-2 8a4 4 0 0 0 8 0c0-1-1-2-1-2 0 2-1.5 2.5-1.5 2.5C16 6 12 5 12 2Z" /><path d="M8.5 11c-.5 1-1 2-1 3a4.5 4.5 0 0 0 9 0" />',
+      note: '<path d="M5 3h10l4 4v14a0 0 0 0 1 0 0H5a0 0 0 0 1 0 0V3z" /><path d="M14 3v5h5" /><path d="M8 13h8M8 17h5" />',
+      folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" />',
+      pin: '<path d="M9 3h6l-1 6 3 3v2h-4v5l-1 2-1-2v-5H6v-2l3-3-1-6z" />',
+      globe: '<circle cx="12" cy="12" r="9" /><path d="M3 12h18" /><path d="M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18z" />',
+      activity: '<path d="M3 12h4l2.5 7 5-16 2.5 9h4" />'
     };
     return `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name] || icons.circle}</svg>`;
   }
@@ -947,14 +1059,27 @@
     app.classList.toggle("is-school-filter-render", schoolFilterTransition);
     saveUi();
     document.querySelectorAll(".nav-item").forEach((button) => {
-      button.classList.toggle("active", button.dataset.tab === ui.activeTab);
+      const isActive = button.dataset.tab === ui.activeTab;
+      button.classList.toggle("active", isActive);
+      if (isActive && button.scrollIntoView) {
+        try { button.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" }); } catch {}
+      }
     });
 
     if (ui.activeTab === "dashboard") app.innerHTML = renderDashboard();
     if (ui.activeTab === "tasks") app.innerHTML = renderTasks();
     if (ui.activeTab === "finance") app.innerHTML = renderFinance();
     if (ui.activeTab === "school") app.innerHTML = renderSchool();
+    if (ui.activeTab === "calendar") app.innerHTML = renderCalendarPage();
+    if (ui.activeTab === "health") app.innerHTML = renderHealth();
+    if (ui.activeTab === "notes") app.innerHTML = renderNotes();
+    if (ui.activeTab === "travel") app.innerHTML = renderTravel();
     if (ui.activeTab === "more") app.innerHTML = renderMore();
+    if (ui.activeTab === "calendar") scrollCalendarTimeline();
+    if (ui.activeTab === "tasks") restoreHabitSwipe();
+    if (ui.activeTab === "notes") setupNotesEditor();
+    if (ui.activeTab === "travel") setupTravelMap();
+    if (ui.activeTab === "finance") setupFinanceHistory();
     animateProgressIndicators();
     animateCountElements(app, { force: periodTransition });
     if (ui.activeTab !== "finance") app.classList.remove("finance-shortcuts-hidden");
@@ -1008,8 +1133,11 @@
     const attrs = Object.entries(extra)
       .map(([key, value]) => `data-${key}="${escapeHtml(value)}"`)
       .join(" ");
-    const text = className === "icon-btn" ? "" : `<span>${escapeHtml(label)}</span>`;
-    return `<button type="button" class="${className}" data-action="${action}" data-id="${escapeHtml(id || "")}" ${attrs} title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}">${icon(iconName)}${text}</button>`;
+    const iconOnly = className.split(/\s+/).includes("icon-btn");
+    const text = iconOnly ? "" : `<span>${escapeHtml(label)}</span>`;
+    // Delete / trash actions get a subtle red treatment everywhere in the app.
+    const dangerClass = iconName === "trash" ? " danger-action" : "";
+    return `<button type="button" class="${className}${dangerClass}" data-action="${action}" data-id="${escapeHtml(id || "")}" ${attrs} title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}">${icon(iconName)}${text}</button>`;
   }
 
   function countableValueHtml(key, value) {
@@ -1179,6 +1307,13 @@
     window.requestAnimationFrame(tick);
   }
 
+  // The bar lives in normal flow after the headline metrics, then pins. We track
+  // a zero-height sentinel at its natural position so the bar stays visible
+  // through the whole top region and only hides once you've scrolled well past it.
+  const FINANCE_BAR_SHOW_AT = -32; // sentinel still at/near the top of the viewport -> visible
+  const FINANCE_BAR_HIDE_AT = -260; // scrolled well past the bar's anchor -> hide
+  const FINANCE_BAR_TOP_ZONE = 110; // px from top of the viewport that counts as "reaching for the bar"
+
   function updateFinanceShortcutVisibility() {
     financeShortcutScrollTicking = false;
     if (ui.activeTab !== "finance" || !app.querySelector(".finance-shortcuts")) {
@@ -1186,14 +1321,33 @@
       lastScrollY = window.scrollY || 0;
       return;
     }
-    const currentY = window.scrollY || 0;
-    const delta = currentY - lastScrollY;
-    if (currentY < 120 || delta < -18) {
+    const currentMoney = app.querySelector("#finance-section-current-money");
+    if (!currentMoney) {
       app.classList.remove("finance-shortcuts-hidden");
-    } else if (delta > 18) {
+      return;
+    }
+    // Show the bar while the Current money section is still in view; hide once
+    // you've scrolled past it, and bring it straight back when it re-enters.
+    const bottom = currentMoney.getBoundingClientRect().bottom;
+    if (bottom > 90) {
+      app.classList.remove("finance-shortcuts-hidden");
+      app.querySelector(".finance-jump")?.classList.remove("is-open");
+    } else {
       app.classList.add("finance-shortcuts-hidden");
     }
-    lastScrollY = currentY;
+    lastScrollY = window.scrollY || 0;
+  }
+
+  // Deliberately reaching toward the top edge of the screen (or the bar area)
+  // brings the bar back, even when scrolled down into content.
+  function revealFinanceShortcutsFromTop(event) {
+    if (ui.activeTab !== "finance" || !app.querySelector(".finance-shortcuts")) return;
+    if (!app.classList.contains("finance-shortcuts-hidden")) return;
+    const point = event.touches && event.touches[0] ? event.touches[0] : event;
+    const y = typeof point.clientY === "number" ? point.clientY : null;
+    if (y === null || y > FINANCE_BAR_TOP_ZONE) return;
+    financeShortcutHoldUntil = Date.now() + 1100; // brief hold so scroll jitter can't re-hide it
+    app.classList.remove("finance-shortcuts-hidden");
   }
 
   function scheduleFinanceShortcutVisibility() {
@@ -1223,10 +1377,10 @@
     return `${options.prefix || ""}${body}${options.suffix || ""}`;
   }
 
-  function itemCard({ title, meta = [], note = "", actions = "", className = "", style = "" }) {
+  function itemCard({ title, meta = [], note = "", actions = "", className = "", style = "", attrs = "" }) {
     const metaHtml = meta.filter(Boolean).map((m) => `<span>${escapeHtml(m)}</span>`).join("");
     return `
-      <article class="item-card ${className}"${style ? ` style="${escapeHtml(style)}"` : ""}>
+      <article class="item-card ${className}"${style ? ` style="${escapeHtml(style)}"` : ""}${attrs ? ` ${attrs}` : ""}>
         <div class="item-main">
           <p class="item-title">${escapeHtml(title)}</p>
           ${metaHtml ? `<div class="item-meta">${metaHtml}</div>` : ""}
@@ -1259,7 +1413,16 @@
   }
 
   function rangeToggle(kind, active) {
-    const spans = kind === "dashboard"
+    const spans = kind === "school"
+      ? [
+          ["today", "Today"],
+          ["week", "This week"],
+          ["month", "This month"],
+          ["year", "This year"],
+          ["all", "All"],
+          ["custom", "Custom"]
+        ]
+      : kind === "dashboard"
       ? [
           ["today", "Today"],
           ["week", "This week"],
@@ -1288,7 +1451,11 @@
   }
 
   function customRangeControls(kind, range) {
-    if ((kind === "dashboard" && ui.dashboardSpan !== "custom") || (kind === "finance" && ui.financeSpan !== "custom")) return "";
+    if (
+      (kind === "dashboard" && ui.dashboardSpan !== "custom") ||
+      (kind === "finance" && ui.financeSpan !== "custom") ||
+      (kind === "school" && ui.schoolSpan !== "custom")
+    ) return "";
     return `
       <div class="custom-range">
         <label class="field">
@@ -1314,6 +1481,7 @@
     const nutrition = nutritionStats(range);
     const reminders = remindersInRange(range).filter((item) => !item.completed);
     const todayFocus = getTodayFocus();
+    const todayFocusList = getTodayFocus(true);
     const weekly = weeklySummary();
     const openBills = safeFinance.billOccurrences.filter((bill) => !bill.paid);
     const obligationCount = openBills.length + safeFinance.debtPaymentOccurrences.length;
@@ -1407,6 +1575,8 @@
           </article>
         </section>
 
+        ${renderTodaySchedule()}
+
         ${renderDashboardMoneyGraph(moneyTrend)}
 
         <section class="${ui.dashboardStyle === "rings" ? "ring-grid" : "metric-grid"}">
@@ -1420,7 +1590,7 @@
               ${actionButton("add-task", "", "Add task", "plus", "secondary")}
             </div>
             <div class="list">
-              ${todayFocus.length ? todayFocus.map(renderFocusItem).join("") : emptyState("No open items due today.")}
+              ${todayFocusList.length ? todayFocusList.map(renderFocusItem).join("") : emptyState("No items due today.")}
             </div>
           </div>
 
@@ -1443,7 +1613,6 @@
           ${progressRow("Tasks", weekly.tasks.percent, `${weekly.tasks.completed}/${weekly.tasks.total}`)}
           ${progressRow("Habits", weekly.habits.percent, `${weekly.habits.completed}/${weekly.habits.total}`)}
           ${progressRow("School", weekly.school.percent, `${weekly.school.completed.length}/${weekly.school.total}`)}
-          ${progressRow("Nutrition", appData.settings.nutrition ? nutrition.caloriePercent : 0, appData.settings.nutrition ? `${formatNumber(nutrition.calories)} cal` : "Off")}
         </section>
 
         ${renderDashboardGoals()}
@@ -1549,64 +1718,92 @@
     `;
   }
 
-  function getTodayFocus() {
+  function getTodayFocus(includeCompleted = false) {
     const habitItems = appData.dailyHabits
-      .filter((habit) => !isHabitDone(habit.id, today()))
-      .map((habit) => ({ type: "habit", ...habit }));
+      .filter((habit) => includeCompleted || !isHabitDone(habit.id, today()))
+      .map((habit) => ({ ...habit, type: "habit", done: isHabitDone(habit.id, today()) }));
     const taskItems = appData.tasks
-      .filter((task) => !task.completed && task.dueDate === today())
-      .map((task) => ({ type: "task", ...task }));
+      .filter((task) => task.dueDate === today() && (includeCompleted || !task.completed))
+      .map((task) => ({ ...task, type: "task", done: Boolean(task.completed) }));
     const assignmentItems = appData.school.assignments
-      .filter((assignment) => !assignmentComplete(assignment) && assignment.dueDate === today())
-      .map((assignment) => ({ type: "assignment", ...assignment }));
+      .filter((assignment) => assignment.dueDate === today() && (includeCompleted || !assignmentComplete(assignment)))
+      .map((assignment) => ({ ...assignment, type: "assignment", done: assignmentComplete(assignment) }));
     return [...habitItems, ...taskItems, ...assignmentItems].slice(0, 6);
   }
 
   function renderFocusItem(item) {
+    const done = Boolean(item.done);
+    const cardClass = `${done ? "complete" : ""} ${recentCompletionClass(item.id, done)}`.trim();
     if (item.type === "habit") {
       return itemCard({
         title: item.title,
         meta: ["Daily habit"],
-        actions: actionButton("toggle-daily-habit", item.id, "Complete", "check")
+        className: cardClass,
+        actions: actionButton("toggle-daily-habit", item.id, done ? "Uncheck" : "Complete", done ? "undo" : "check", "icon-btn", { date: today() })
       });
     }
     if (item.type === "assignment") {
       return itemCard({
         title: item.title,
         meta: ["School", item.classId ? className(item.classId) : "", item.priority],
+        className: cardClass,
         actions: actionButton("edit-assignment", item.id, "Edit", "edit")
       });
     }
     return itemCard({
       title: item.title,
       meta: [item.category, item.priority],
-      actions: actionButton("toggle-task", item.id, "Complete", "check")
+      className: cardClass,
+      actions: actionButton("toggle-task", item.id, done ? "Uncomplete" : "Complete", done ? "undo" : "check")
     });
   }
 
+  function colorCardProps(color, extraClass = "") {
+    const c = safeHexColor(color, "");
+    const base = extraClass ? `${extraClass} ` : "";
+    if (!c) return { className: extraClass, style: "" };
+    return { className: `${base}has-bill-color`, style: `--bill-color:${c}; --bill-color-rgb:${rgbText(c)};` };
+  }
+
   function renderUpcomingDashboard(finance, school, reminders) {
-    const billCards = finance.billOccurrences.slice(0, 2).map((bill) =>
-      itemCard({
+    const billCards = finance.billOccurrences.filter((bill) => !bill.paid).slice(0, 2).map((bill) => {
+      const props = colorCardProps(bill.color, bill.paid ? "paid" : "");
+      return itemCard({
         title: bill.name,
         meta: [billTypeLabel(bill), formatCurrency(bill.amount), formatDate(bill.date)],
-        className: bill.paid ? "paid" : "",
+        className: props.className,
+        style: props.style,
         actions: actionButton("toggle-bill-paid", bill.id, bill.paid ? "Mark unpaid" : "Mark paid", bill.paid ? "undo" : "check")
-      })
-    );
-    const debtCards = finance.debtPaymentOccurrences.slice(0, 2).map((payment) =>
-      itemCard({
-        title: payment.name,
-        meta: ["Debt payment", formatCurrency(payment.amount), formatDate(payment.date)],
-        actions: actionButton("edit-debt", payment.debtId, "Edit debt", "edit")
-      })
-    );
-    const assignmentCards = school.openDue.slice(0, 2).map((assignment) =>
-      itemCard({
-        title: assignment.title,
-        meta: ["Assignment", assignment.classId ? className(assignment.classId) : "", formatDate(assignment.dueDate)],
-        actions: actionButton("edit-assignment", assignment.id, "Edit", "edit")
-      })
-    );
+      });
+    });
+    // Every credit card / debt that still has a balance, so all of them stay visible.
+    const debtCards = appData.finance.debts
+      .filter((debt) => (Number(debt.balance) || 0) > 0)
+      .map((debt) => {
+        const props = colorCardProps(debt.color);
+        const amount = Number(debt.minimumPayment) || 0;
+        return itemCard({
+          title: `${debt.name || "Debt"} payment`,
+          meta: ["Min payment", amount > 0 ? formatCurrency(amount) : "", debt.dueDate ? formatDate(debt.dueDate) : ""].filter(Boolean),
+          className: props.className,
+          style: props.style,
+          actions: actionButton("edit-debt", debt.id, "Edit debt", "edit")
+        });
+      });
+    // Soonest open assignments; as each is completed the next one fills its place.
+    const assignmentCards = sortByDate(appData.school.assignments.filter((a) => !assignmentComplete(a) && a.dueDate), "dueDate")
+      .slice(0, 3)
+      .map((assignment) => {
+        const klass = findById(appData.school.classes, assignment.classId);
+        const props = colorCardProps(klass?.accentColor);
+        return itemCard({
+          title: assignment.title,
+          meta: ["Assignment", assignment.classId ? className(assignment.classId) : "", formatDate(assignment.dueDate)],
+          className: props.className,
+          style: props.style,
+          actions: actionButton("edit-assignment", assignment.id, "Edit", "edit")
+        });
+      });
     const reminderCards = reminders.slice(0, 2).map((reminder) =>
       itemCard({
         title: reminder.title,
@@ -1615,13 +1812,13 @@
       })
     );
     const cards = [...billCards, ...debtCards, ...assignmentCards, ...reminderCards];
-    return cards.length ? cards.join("") : emptyState("No upcoming bills, debt payments, assignments, or reminders in this span.");
+    return cards.length ? cards.join("") : emptyState("No upcoming bills, debt payments, assignments, or reminders.");
   }
 
   function renderTasks() {
     const dayHabits = habitStats(calculateDateRange("today"));
-    const weekHabits = habitStats(calculateDateRange("week"));
-    const range = calculateDateRange("week");
+    const range = recentWeekRange();
+    const weekHabits = habitStats(range);
     const stats = taskStats(range);
     const filtered = ui.taskFilter === "All" ? appData.tasks : appData.tasks.filter((task) => task.category === ui.taskFilter);
     const todayTasks = filtered.filter((task) => task.dueDate === today() && !task.completed);
@@ -1651,10 +1848,7 @@
             <h2>Daily preset habits</h2>
             ${actionButton("add-daily-habit", "", "Add habit", "plus", "secondary")}
           </div>
-          ${progressRow("Today", dayHabits.percent, `${dayHabits.completed}/${dayHabits.total}`)}
-          <div class="list">
-            ${appData.dailyHabits.length ? appData.dailyHabits.map(renderDailyHabit).join("") : emptyState("Add recurring daily habits you do not want to rewrite.")}
-          </div>
+          ${appData.dailyHabits.length ? renderHabitSwipe() : `<div class="list">${emptyState("Add recurring daily habits you do not want to rewrite.")}</div>`}
         </section>
 
         <section class="card panel section">
@@ -1684,17 +1878,87 @@
     `;
   }
 
-  function renderDailyHabit(habit) {
-    const done = isHabitDone(habit.id, today());
+  function habitDayStats(dateStr) {
+    const habits = appData.dailyHabits || [];
+    const total = habits.length;
+    const completed = habits.filter((habit) => isHabitDone(habit.id, dateStr)).length;
+    return { total, completed, percent: pct(completed, total) };
+  }
+
+  function renderHabitSwipe() {
+    // Yesterday sits on the left, Today on the right. Opens on Today; swipe right for yesterday.
+    const slides = [
+      { pos: 0, label: "Yesterday", date: dateString(addDays(new Date(), -1)), isToday: false },
+      { pos: 1, label: "Today", date: today(), isToday: true }
+    ];
+    return `
+      <div class="habit-swipe" data-habit-swipe>
+        ${slides.map(renderHabitSlide).join("")}
+      </div>
+      <div class="habit-swipe-foot">
+        <span class="habit-swipe-hint">Swipe → to fix yesterday</span>
+        <div class="habit-swipe-dots">
+          ${slides.map((s) => `<i class="habit-dot ${s.isToday ? "active" : ""}" data-dot="${s.pos}"></i>`).join("")}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderHabitSlide(slide) {
+    const stats = habitDayStats(slide.date);
+    return `
+      <div class="habit-slide" data-day-offset="${slide.isToday ? 0 : 1}" data-date="${escapeHtml(slide.date)}">
+        <div class="habit-slide-head">
+          <span class="habit-slide-label">${escapeHtml(slide.label)}</span>
+          <span class="tiny">${escapeHtml(formatDate(slide.date))}</span>
+        </div>
+        ${progressRow(slide.label, stats.percent, `${stats.completed}/${stats.total}`, `habit-day-${slide.isToday ? 0 : 1}`)}
+        <div class="list">
+          ${appData.dailyHabits.map((habit) => renderDailyHabit(habit, slide.date)).join("")}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderDailyHabit(habit, dateStr = today()) {
+    const isToday = dateStr === today();
+    const done = isHabitDone(habit.id, dateStr);
     return itemCard({
       title: habit.title,
       meta: [],
-      className: `daily-habit-card ${done ? "complete" : ""} ${recentCompletionClass(habit.id, done)}`,
+      className: `daily-habit-card ${done ? "complete" : ""} ${isToday ? recentCompletionClass(habit.id, done) : ""}`,
       actions: `
-        ${actionButton("toggle-daily-habit", habit.id, done ? "Uncheck" : "Complete", done ? "undo" : "check")}
+        ${actionButton("toggle-daily-habit", habit.id, done ? "Uncheck" : "Complete", done ? "undo" : "check", "icon-btn", { date: dateStr })}
         ${actionButton("edit-daily-habit", habit.id, "Edit", "edit")}
         ${actionButton("delete-daily-habit", habit.id, "Delete", "trash")}
       `
+    });
+  }
+
+  function restoreHabitSwipe() {
+    const swipe = app.querySelector("[data-habit-swipe]");
+    if (!swipe) return;
+    const slides = [...swipe.querySelectorAll(".habit-slide")];
+    if (!slides.length) return;
+    const todayStr = today();
+    const syncDots = () => {
+      const idx = swipe.clientWidth ? Math.round(swipe.scrollLeft / swipe.clientWidth) : 0;
+      const clamped = Math.max(0, Math.min(slides.length - 1, idx));
+      const slide = slides[clamped];
+      ui.habitDay = slide && slide.dataset.date !== todayStr ? "yesterday" : "today";
+      app.querySelectorAll(".habit-dot").forEach((dot, i) => dot.classList.toggle("active", i === clamped));
+    };
+    swipe.addEventListener("scroll", () => {
+      window.clearTimeout(swipe._snapTimer);
+      swipe._snapTimer = window.setTimeout(() => { syncDots(); saveUi(); }, 90);
+    }, { passive: true });
+    window.requestAnimationFrame(() => {
+      const wantYesterday = ui.habitDay === "yesterday";
+      let targetIndex = slides.findIndex((s) => (s.dataset.date !== todayStr) === wantYesterday);
+      if (targetIndex < 0) targetIndex = slides.findIndex((s) => s.dataset.date === todayStr);
+      if (targetIndex < 0) targetIndex = slides.length - 1;
+      swipe.scrollLeft = targetIndex * swipe.clientWidth;
+      syncDots();
     });
   }
 
@@ -1724,9 +1988,10 @@
   }
 
   function renderTaskItem(task) {
+    const timeLabel = taskTimeLabel(task);
     return itemCard({
       title: task.title,
-      meta: [task.category, task.priority, task.dueDate ? formatDate(task.dueDate) : "No due date", task.reminderTime ? `Reminder ${task.reminderTime}` : ""],
+      meta: [task.category, task.classId ? className(task.classId) : "", task.priority, task.dueDate ? formatDate(task.dueDate) : "No date", timeLabel],
       note: task.notes,
       className: `${task.completed ? "complete" : ""} ${recentCompletionClass(task.id, task.completed)}`,
       actions: `
@@ -1775,15 +2040,11 @@
           </div>
         </section>
 
-        <section class="metric-grid">
-          ${metric("Total current money", formatCurrency(finance.currentMoney), "After cash/debit spending logged through today")}
-          ${metric("Upcoming bills", formatCurrency(finance.billsDue), `${finance.billOccurrences.length} due in range`)}
-          ${metric("Debt payments", formatCurrency(safeFinance.debtPayments), `${safeFinance.debtPaymentOccurrences.length} due in ${safetyRange.label.toLowerCase()}`)}
+        <section class="metric-grid finance-headline-grid">
+          ${metric("Total current money", formatCurrency(finance.currentMoney), "Balances + income received − spending")}
           ${metric("Safe-to-spend", formatCurrency(safeFinance.safeToSpend), `Protected through ${formatDate(safetyRange.end)}`)}
-          ${metric("Savings", formatCurrency(finance.savingsBalance), `${formatCurrency(finance.savings)} saved in range`)}
-          ${metric("Investments", formatCurrency(finance.investmentValue), `${formatCurrency(finance.investmentGain)} gain/loss`)}
-          ${metric("Net worth estimate", formatCurrency(finance.netWorth), "Money + investments - debt")}
-          ${metric("Daily spending limit", formatCurrency(safeFinance.dailyLimit), `${daysBetween(safetyRange.start, safetyRange.end)} protected days`)}
+          ${metric("Upcoming bills", formatCurrency(finance.billsDue), `${finance.billOccurrences.length} due in range`)}
+          ${metric("Net worth estimate", formatCurrency(finance.netWorth), "Money + investments − debt")}
         </section>
 
         ${financeShortcutNav(sections)}
@@ -1796,18 +2057,22 @@
   }
 
   function financeShortcutNav(sections) {
+    const collapsed = ui.financeBarCollapsed !== false; // default collapsed (small corner button)
     return `
-      <nav class="finance-shortcuts" aria-label="Finance section shortcuts">
-        <span class="finance-shortcuts-label">Jump to</span>
-        <button type="button" class="finance-shortcuts-toggle" data-action="toggle-finance-shortcuts" aria-label="Hide finance shortcuts" title="Hide shortcuts">
-          ${icon("chevron")}
+      <nav class="finance-shortcuts ${collapsed ? "is-collapsed" : ""}" data-finance-bar aria-label="Finance section shortcuts">
+        <button type="button" class="finance-bar-toggle" data-action="toggle-finance-bar" aria-label="Toggle jump menu">
+          <span class="fb-icon fb-grid">${icon("grid")}</span>
+          <span class="fb-icon fb-x">${icon("x")}</span>
         </button>
-        <div class="finance-shortcut-list">
-          ${sections.map((section) => `
-            <button type="button" class="finance-shortcut" data-action="jump-finance-section" data-section="${escapeHtml(section.key)}">
-              ${escapeHtml(section.title)}
-            </button>
-          `).join("")}
+        <div class="finance-bar-full">
+          <span class="finance-shortcuts-label">Jump to</span>
+          <div class="finance-shortcut-list">
+            ${sections.map((section) => `
+              <button type="button" class="finance-shortcut" data-action="jump-finance-section" data-section="${escapeHtml(section.key)}">
+                ${escapeHtml(section.title)}
+              </button>
+            `).join("")}
+          </div>
         </div>
       </nav>
     `;
@@ -1832,9 +2097,9 @@
   function renderAccounts(finance, safeFinance = finance, safetyRange = finance.range) {
     return `
       <div class="metric-grid">
-        ${metric("Available money", formatCurrency(finance.accountMoney), "Current account balance after tracked outflows")}
+        ${metric("Available money", formatCurrency(finance.accountMoney), "Balances + income received − spending")}
+        ${metric("Income received", formatCurrency(finance.postedIncome), "Added to your current money")}
         ${metric("Cash/debit spending", formatCurrency(finance.postedCashSpending), "Posted through today")}
-        ${metric("Debt/card payments", formatCurrency(finance.postedDebtPayments), "Paid from accounts")}
         ${metric("Safe-to-spend", formatCurrency(safeFinance.safeToSpend), `After obligations through ${formatDate(safetyRange.end)}`)}
       </div>
       <div class="list">
@@ -1861,7 +2126,7 @@
 
   function renderIncome(finance, range) {
     const incomeInRange = appData.finance.income.filter((entry) => dateInRange(incomeDate(entry), range));
-    const outsideRange = appData.finance.income.filter((entry) => !dateInRange(incomeDate(entry), range));
+    const allIncome = appData.finance.income;
     const bySource = groupTotals(incomeInRange, "source", entryNetIncome);
     const yearFinance = calculateFinance(currentYearRange());
     const monthFinance = calculateFinance(calculateDateRange("month"));
@@ -1879,22 +2144,85 @@
       </div>
       ${renderBarChart(bySource, finance.netIncome)}
       ${renderTaxCalculatorDetails(finance, range, yearFinance, monthFinance)}
-      <div class="section-header income-history-header">
-        <h3>Income history</h3>
-        ${actionButton("add-income", "", "Add income", "plus", "secondary")}
-      </div>
-      <div class="list">
-        ${incomeInRange.length ? sortIncomeEntries(incomeInRange).map((entry) => renderIncomeItem(entry, range)).join("") : emptyState("No income logged in this range.")}
-      </div>
-      ${outsideRange.length ? `
-        <div class="mini-section">
-          <h3>Outside this range</h3>
-          <div class="list">
-            ${sortIncomeEntries(outsideRange).map((entry) => renderIncomeItem(entry, range)).join("")}
+      <details class="finance-history" open>
+        <summary>
+          <span>Income history</span>
+          <span class="tiny">${allIncome.length} ${allIncome.length === 1 ? "entry" : "entries"}</span>
+        </summary>
+        <div class="details-body">
+          <div class="finance-hist-toolbar">
+            ${financeHistChips("income", ui.incomeHistorySpan || "month")}
+            ${actionButton("add-income", "", "Add income", "plus", "secondary")}
+          </div>
+          <div class="list finance-hist-list" data-hist-scope="income">
+            ${allIncome.length ? sortIncomeEntries(allIncome).map((entry) => renderIncomeItem(entry)).join("") : emptyState("No income logged yet.")}
           </div>
         </div>
-      ` : ""}
+      </details>
     `;
+  }
+
+  function financeHistChips(scope, active) {
+    const opts = [["today", "Today"], ["week", "Week"], ["month", "Month"], ["all", "All"]];
+    return `
+      <div class="assignment-status-filter finance-hist-chips" data-scope="${scope}" role="group" aria-label="History range">
+        ${opts.map(([id, label]) => `<button type="button" class="status-chip finance-hist-chip ${active === id ? "active" : ""}" data-hspan="${id}"><span>${label}</span></button>`).join("")}
+      </div>
+    `;
+  }
+
+  function mondayWeekRange() {
+    const now = new Date();
+    const diffToMonday = (now.getDay() + 6) % 7; // days since Monday (Sun=6)
+    const monday = addDays(now, -diffToMonday);
+    const sunday = addDays(monday, 6);
+    return { start: dateString(monday), end: dateString(sunday), label: "This week" };
+  }
+
+  function financeSpanMatch(dateStr, span) {
+    if (span === "all") return true;
+    if (!dateStr) return false;
+    if (span === "today") return dateStr === today();
+    // Week = Monday–Sunday inclusive; Month = 1st–last day inclusive (dateInRange is inclusive).
+    if (span === "week") return dateInRange(dateStr, mondayWeekRange());
+    if (span === "month") return dateInRange(dateStr, calculateDateRange("month"));
+    return true;
+  }
+
+  function applyFinanceHistoryFilter(scope, span) {
+    const list = app.querySelector(`.finance-hist-list[data-hist-scope="${scope}"]`);
+    if (!list) return;
+    let shown = 0;
+    list.querySelectorAll(".item-card").forEach((row) => {
+      const ok = financeSpanMatch(row.dataset.when, span);
+      row.style.display = ok ? "" : "none";
+      if (ok) shown++;
+    });
+    let empty = list.querySelector(".finance-hist-empty");
+    if (shown === 0 && list.querySelector(".item-card")) {
+      if (!empty) { empty = document.createElement("div"); empty.className = "empty finance-hist-empty"; list.appendChild(empty); }
+      empty.textContent = "Nothing in this range.";
+      empty.style.display = "";
+    } else if (empty) {
+      empty.style.display = "none";
+    }
+  }
+
+  function setupFinanceHistory() {
+    app.querySelectorAll(".finance-hist-chips").forEach((group) => {
+      const scope = group.dataset.scope;
+      group.querySelectorAll(".finance-hist-chip").forEach((chip) => {
+        chip.addEventListener("click", () => {
+          const span = chip.dataset.hspan;
+          if (scope === "income") ui.incomeHistorySpan = span; else ui.spendingHistorySpan = span;
+          group.querySelectorAll(".finance-hist-chip").forEach((c) => c.classList.toggle("active", c === chip));
+          applyFinanceHistoryFilter(scope, span);
+          saveUi();
+        });
+      });
+    });
+    applyFinanceHistoryFilter("income", ui.incomeHistorySpan || "month");
+    applyFinanceHistoryFilter("spending", ui.spendingHistorySpan || "month");
   }
 
   function renderTaxCalculatorDetails(finance, range, yearFinance, monthFinance) {
@@ -1930,11 +2258,10 @@
     `;
   }
 
-  function renderIncomeItem(entry, range = null) {
+  function renderIncomeItem(entry) {
     const gross = entryGrossIncome(entry);
     const net = entryNetIncome(entry);
     const tax = entryTaxEstimate(entry);
-    const outsideRange = range && !dateInRange(incomeDate(entry), range);
     const mode = normalizedIncomeTaxMode(entry);
     const taxModeLabel = mode === "auto" ? "Auto tax estimate" : mode === "manual" ? "Manual tax" : "No tax calculation";
     const taxNote = mode === "manual"
@@ -1942,10 +2269,11 @@
       : mode === "auto"
         ? `Tax estimate: ${formatCurrency(tax.total)} (${formatNumber(tax.effectiveRate, 1)}%) · Fed ${formatCurrency(tax.federal)}, SS ${formatCurrency(tax.socialSecurity)}, Medicare ${formatCurrency(tax.medicare)}, OH ${formatCurrency(tax.ohio)}, municipal ${formatCurrency(tax.municipal)}${tax.schoolDistrict ? `, school ${formatCurrency(tax.schoolDistrict)}` : ""}`
         : "Tax not calculated for this entry.";
-    const estimateAction = mode === "auto" ? "" : actionButton("estimate-income-tax", entry.id, "Estimate tax", "chart", "secondary compact-action");
+    const estimateAction = mode === "auto" ? "" : actionButton("estimate-income-tax", entry.id, "Estimate tax", "chart");
     return itemCard({
       title: entry.source || "Income",
-      meta: [entry.type === "hourly" ? "Hourly" : "Manual", taxModeLabel, `Gross ${formatCurrency(gross)}`, `Net ${formatCurrency(net)}`, formatDate(incomeDate(entry)), outsideRange ? "Outside selected range" : ""],
+      meta: [entry.type === "hourly" ? "Hourly" : "Manual", taxModeLabel, `Gross ${formatCurrency(gross)}`, `Net ${formatCurrency(net)}`, formatDate(incomeDate(entry))],
+      attrs: `data-when="${escapeHtml(incomeDate(entry) || "")}"`,
       note: [taxNote, entry.notes].filter(Boolean).join(" · "),
       actions: `${estimateAction}${actionButton("edit-income", entry.id, "Edit", "edit")}${actionButton("delete-income", entry.id, "Delete", "trash")}`
     });
@@ -2119,9 +2447,76 @@
         ${metric("Subscriptions", formatCurrency(subscriptionsDue), `${subscriptions.length} optional`)}
         ${metric("After bills", formatCurrency(finance.currentMoney - finance.billsDue), "Current minus unpaid bills")}
       </div>
+      ${renderUpcomingBills()}
       <div class="bill-groups">
         ${renderBillGroup("Bills", mandatoryBills, "Must-pay obligations like phone, rent, insurance, school, and debt.", mandatoryDue)}
         ${renderBillGroup("Subscriptions", subscriptions, "Optional monthly charges like DoorDash, Netflix, Amazon Prime, or ChatGPT Plus.", subscriptionsDue)}
+      </div>
+    `;
+  }
+
+  function billStatus(occ) {
+    if (occ.paid) return { key: "paid", label: "Paid" };
+    const days = daysUntil(occ.date);
+    if (days < 0) return { key: "overdue", label: `${Math.abs(days)}d overdue` };
+    if (days === 0) return { key: "due-soon", label: "Due today" };
+    if (days <= 3) return { key: "due-soon", label: `Due in ${days}d` };
+    return { key: "upcoming", label: `In ${days}d` };
+  }
+
+  function daysUntil(dateStr) {
+    const target = parseDate(dateStr);
+    const now = parseDate(today());
+    if (!target || !now) return 0;
+    return Math.round((target - now) / 86400000);
+  }
+
+  function renderUpcomingBills() {
+    // Look back far enough to surface overdue unpaid bills, then forward for what's coming.
+    const horizon = { start: dateString(addDays(new Date(), -31)), end: dateString(addDays(new Date(), 45)), label: "upcoming" };
+    const todayStr = today();
+    const occurrences = appData.finance.bills
+      .map((bill) => {
+        const occ = billOccurrencesInRange(bill, horizon);
+        if (!occ.length) return null;
+        const future = occ.filter((o) => o.date >= todayStr);
+        // next upcoming occurrence, otherwise the most recent past-due one
+        return future.length ? future[0] : occ[occ.length - 1];
+      })
+      .filter(Boolean)
+      .sort((a, b) => String(a.date).localeCompare(String(b.date)))
+      .slice(0, 8);
+    const unpaidTotal = sum(occurrences.filter((o) => !o.paid), (o) => o.amount);
+    return `
+      <div class="upcoming-bills">
+        <div class="section-header upcoming-bills-header">
+          <div>
+            <h3>Upcoming bills</h3>
+            <span class="tiny">Next 45 days · ${formatCurrency(unpaidTotal)} unpaid</span>
+          </div>
+          ${actionButton("add-bill", "", "Add bill", "plus", "secondary")}
+        </div>
+        ${occurrences.length ? `<div class="list upcoming-bills-list">${occurrences.map(renderUpcomingBillItem).join("")}</div>` : emptyState("No bills due in the next 45 days.")}
+      </div>
+    `;
+  }
+
+  function renderUpcomingBillItem(occ) {
+    const status = billStatus(occ);
+    return `
+      <div class="upcoming-bill is-${status.key}">
+        <span class="upcoming-bill-status-dot" aria-hidden="true"></span>
+        <div class="upcoming-bill-main">
+          <span class="upcoming-bill-name">${escapeHtml(occ.name || "Bill")}</span>
+          <span class="upcoming-bill-meta">${escapeHtml(billTypeLabel(occ))} · ${escapeHtml(formatDate(occ.date))}</span>
+        </div>
+        <div class="upcoming-bill-right">
+          <span class="upcoming-bill-amount">${formatCurrency(occ.amount)}</span>
+          <span class="upcoming-bill-badge">${escapeHtml(status.label)}</span>
+        </div>
+        <div class="upcoming-bill-actions">
+          ${actionButton("toggle-bill-paid", occ.id, occ.paid ? "Mark unpaid" : "Mark paid", occ.paid ? "undo" : "check")}
+        </div>
       </div>
     `;
   }
@@ -2181,9 +2576,21 @@
         ${metric("Average daily", formatCurrency(total / daysBetween(range.start, range.end)), "Selected range")}
       </div>
       ${renderBarChart(byCategory, total)}
-      <div class="list">
-        ${entries.length ? sortByDate(entries, "date").map(renderSpendingItem).join("") : emptyState("No spending logged in this range.")}
-      </div>
+      <details class="card finance-history" open>
+        <summary>
+          <span>Transaction history</span>
+          <span class="tiny">${appData.finance.spending.length} ${appData.finance.spending.length === 1 ? "entry" : "entries"}</span>
+        </summary>
+        <div class="details-body">
+          <div class="finance-hist-toolbar">
+            ${financeHistChips("spending", ui.spendingHistorySpan || "month")}
+            ${actionButton("add-spending", "", "Add spending", "plus", "secondary")}
+          </div>
+          <div class="list finance-hist-list" data-hist-scope="spending">
+            ${appData.finance.spending.length ? sortByDate(appData.finance.spending, "date").reverse().map(renderSpendingItem).join("") : emptyState("No spending logged yet.")}
+          </div>
+        </div>
+      </details>
     `;
   }
 
@@ -2202,6 +2609,7 @@
         linkedAccount ? `Paid from ${linkedAccount.name}` : "",
         linkedDebt ? `Charged to ${linkedDebt.name}` : ""
       ],
+      attrs: `data-when="${escapeHtml(entry.date || "")}"`,
       actions: `${actionButton("edit-spending", entry.id, "Edit", "edit")}${actionButton("delete-spending", entry.id, "Delete", "trash")}`
     });
   }
@@ -2416,8 +2824,11 @@
     const targetPay = monthlyDebtTarget(debt);
     const reservedPayment = debtPaymentAmount(debt);
     const progressKey = `finance:debt-${debt.id}`;
+    const color = safeHexColor(debt.color, "");
+    const colorClass = color ? " has-bill-color" : "";
+    const colorStyle = color ? ` style="--bill-color:${color}; --bill-color-rgb:${rgbText(color)};"` : "";
     return `
-      <article class="item-card debt-card" data-progress-key="${escapeHtml(progressKey)}" data-progress-percent="${escapeHtml(clamp(progress))}">
+      <article class="item-card debt-card${colorClass}"${colorStyle} data-progress-key="${escapeHtml(progressKey)}" data-progress-percent="${escapeHtml(clamp(progress))}">
         <div class="debt-header">
           <p class="item-title debt-title">${escapeHtml(debt.name)}</p>
           <div class="item-actions debt-actions">
@@ -2525,61 +2936,185 @@
     `;
   }
 
+  function schoolRange() {
+    return calculateDateRange(ui.schoolSpan || "all", ui.schoolCustom);
+  }
+
   function renderSchool() {
-    const range = calculateDateRange("week");
-    const stats = schoolStats(range);
-    const byClass = appData.school.classes.map((klass) => classStats(klass.id));
     if (!validSchoolClassFilter(ui.schoolClassFilter)) ui.schoolClassFilter = "all";
     if (!validSchoolAssignmentFilter(ui.schoolAssignmentFilter)) ui.schoolAssignmentFilter = "active";
-    const classFilteredAssignments = filterAssignmentsByClass(appData.school.assignments);
-    const filteredAssignments = filterSchoolAssignments(appData.school.assignments);
-    const dueToday = classFilteredAssignments.filter((assignment) => !assignmentComplete(assignment) && assignment.dueDate === today());
-    const upcomingExams = sortByDate(classFilteredAssignments.filter((assignment) => !assignmentComplete(assignment) && assignment.type === "exam" && assignment.dueDate >= today())).slice(0, 5);
-    const filterLabel = schoolFilterLabel(ui.schoolClassFilter);
-    const statusFilterLabel = schoolAssignmentFilterLabel(ui.schoolAssignmentFilter);
+    if (ui.schoolView === "class" && findById(appData.school.classes, ui.selectedClassId)) {
+      return renderClassDetail(ui.selectedClassId);
+    }
+    if (ui.schoolView === "class") ui.schoolView = "overview";
+    return renderSchoolOverview();
+  }
+
+  function renderSchoolOverview() {
+    const range = schoolRange();
+    const stats = schoolStats(range);
+    const byClass = appData.school.classes.map((klass) => classStats(klass.id));
+    const inRange = appData.school.assignments.filter((a) => dateInRange(a.dueDate, range));
+    const dueToday = appData.school.assignments.filter((a) => !assignmentComplete(a) && a.dueDate === today());
+    const completedInRange = inRange.filter(assignmentComplete);
 
     return `
       <div class="view">
-        ${topbar("School", "Assignments and classes", actionButton("add-assignment", "", "Add assignment", "plus", "primary"))}
+        ${topbar("School", "Assignments, classes, and calendar", actionButton("add-assignment", "", "Add assignment", "plus", "primary"))}
+
+        <section class="card hero-card">
+          <div class="hero-content">
+            <div>
+              <p class="eyebrow">Time span</p>
+              <h2>${animatedRangeLabel("range", "school", range.label)}</h2>
+              <p class="muted">${ui.schoolSpan === "all" ? "Showing every assignment" : `${escapeHtml(formatDate(range.start))} to ${escapeHtml(formatDate(range.end))}`}</p>
+            </div>
+            ${rangeToggle("school", ui.schoolSpan)}
+            ${customRangeControls("school", range)}
+          </div>
+        </section>
 
         <section class="metric-grid">
-          ${metric("Due today", String(dueToday.length), "")}
-          ${metric("Due this week", String(stats.openDue.length), "All classes")}
-          ${metric("Overdue", String(stats.overdue.length), "Open assignments")}
-          ${metric("Completed", String(stats.completed.length), "Finished assignments")}
+          ${metric("Due today", String(dueToday.length), "Open assignments")}
+          ${metric("Due in range", String(stats.openDue.length), range.label)}
+          ${metric("Overdue", String(stats.overdue.length), "Open and past due")}
+          ${metric("Completed", String(completedInRange.length), range.label)}
         </section>
 
         <section class="card panel section">
           <div class="section-header">
-            <h2>Classes</h2>
+            <div>
+              <h2>Classes</h2>
+              <span class="tiny">Tap a class to open its dashboard</span>
+            </div>
             ${actionButton("add-class", "", "Add class", "plus", "secondary")}
           </div>
-          <div class="list">
-            ${appData.school.classes.length ? byClass.map(renderClassCard).join("") : emptyState("Add classes to group assignments and estimate grades.")}
+          <div class="list class-list">
+            ${appData.school.classes.length ? byClass.map(renderClassCard).join("") : emptyState("Add classes to group assignments, track grades, and build your calendar.")}
           </div>
         </section>
 
-        <section class="two-col">
-          <div class="card panel section">
-            <div class="section-header"><h2>Assignments</h2>${actionButton("add-assignment", "", "Add", "plus", "secondary")}</div>
-            <div class="assignment-tools">
-              ${schoolClassFilterToggle()}
-              ${schoolAssignmentFilterToggle()}
-              <p class="tiny">${escapeHtml(filterLabel)} · ${escapeHtml(statusFilterLabel)} · ${filteredAssignments.length} assignment${filteredAssignments.length === 1 ? "" : "s"}</p>
-            </div>
-            <div class="list assignment-list">
-              ${filteredAssignments.length ? sortAssignmentsForFilter(filteredAssignments).map(renderAssignmentItem).join("") : emptyState("No assignments match these filters.")}
-            </div>
-          </div>
+        ${renderSchoolCalendarCard({ scope: "school" })}
 
-          <div class="card panel section">
-            <h2>Upcoming exams</h2>
-            <div class="list">
-              ${upcomingExams.length ? upcomingExams.map(renderAssignmentItem).join("") : emptyState("No upcoming exams logged.")}
+        <section class="card panel section">
+          <div class="section-header">
+            <div>
+              <h2>Assignments</h2>
+              <span class="tiny">${escapeHtml(schoolFilterLabel(ui.schoolClassFilter))} · ${escapeHtml(schoolAssignmentFilterLabel(ui.schoolAssignmentFilter))}</span>
             </div>
+            ${actionButton("add-assignment", "", "Add", "plus", "secondary")}
+          </div>
+          <div class="assignment-tools">
+            ${schoolClassFilterToggle()}
+            ${schoolAssignmentFilterToggle()}
+          </div>
+          <div class="assignment-list">
+            ${renderAssignmentGroups(filterAssignmentsByClass(appData.school.assignments), range)}
           </div>
         </section>
       </div>
+    `;
+  }
+
+  function renderClassDetail(classId) {
+    const klass = findById(appData.school.classes, classId) || {};
+    const stats = classStats(classId);
+    const color = safeHexColor(klass.accentColor, "#7c5cff");
+    const assignments = appData.school.assignments.filter((a) => a.classId === classId);
+    const open = assignments.filter((a) => !assignmentComplete(a));
+    const overdue = open.filter((a) => isBeforeToday(a.dueDate));
+    const inProgress = assignments.filter((a) => normalizedAssignmentStatus(a.status) === "in progress");
+    const nextUp = sortByDate(open.filter((a) => !isBeforeToday(a.dueDate)))[0];
+    const meta = [klass.professor, klass.meetingDays].filter(Boolean);
+    return `
+      <div class="view" style="--class-color:${escapeHtml(color)}; --class-color-rgb:${rgbText(color)}">
+        <section class="topbar class-detail-topbar">
+          <div>
+            <button type="button" class="back-link" data-action="back-to-school">${icon("chevron")}<span>School</span></button>
+            <p class="eyebrow">Class dashboard</p>
+            <h1 class="class-detail-title">${escapeHtml(klass.name || "Class")}</h1>
+            ${meta.length ? `<p class="muted">${escapeHtml(meta.join(" · "))}</p>` : ""}
+          </div>
+          <div class="actions">
+            ${actionButton("add-assignment", "", "Add assignment", "plus", "primary")}
+          </div>
+        </section>
+
+        <section class="metric-grid">
+          ${metric("Current grade", stats.displayLetter || "—", stats.gradeSource)}
+          ${metric("Completed", `${stats.completed}/${stats.total}`, `${stats.percent}% done`)}
+          ${metric("In progress", String(inProgress.length), "Active now")}
+          ${metric("Overdue", String(overdue.length), nextUp ? `Next ${formatDate(nextUp.dueDate)}` : "Nothing past due")}
+        </section>
+
+        <section class="card panel section">
+          <div class="section-header">
+            <div>
+              <h2>Progress</h2>
+              <span class="tiny">${stats.completed} of ${stats.total} assignments complete</span>
+            </div>
+            <div class="actions">
+              ${actionButton("edit-class-grade", classId, "Edit grade", "spark", "secondary")}
+              ${actionButton("edit-class", classId, "Edit class", "edit", "secondary")}
+            </div>
+          </div>
+          ${progressRow("Completion", stats.percent, `${stats.completed}/${stats.total}`, `class-detail-${classId}`)}
+          ${klass.notes ? `<p class="tiny class-notes">${escapeHtml(klass.notes)}</p>` : ""}
+        </section>
+
+        ${renderSchoolCalendarCard({ scope: "class", classId })}
+
+        <details class="card panel section timeline-card">
+          <summary>
+            <span class="finance-section-heading"><span class="finance-section-title">Assignment timeline</span></span>
+            <span class="tiny">${assignments.length}</span>
+          </summary>
+          <div class="details-body">
+            ${renderClassTimeline(assignments)}
+          </div>
+        </details>
+
+        <section class="card panel section">
+          <div class="section-header">
+            <h2>Assignments</h2>
+            ${actionButton("add-assignment", "", "Add", "plus", "secondary")}
+          </div>
+          <div class="assignment-list">
+            ${renderAssignmentGroups(assignments, { start: "1900-01-01", end: "2999-12-31" }, { ignoreStatusFilter: true })}
+          </div>
+        </section>
+      </div>
+    `;
+  }
+
+  function renderClassTimeline(assignments) {
+    if (!assignments.length) return emptyState("No assignments for this class yet.");
+    const sorted = sortByDate(assignments);
+    const todayStr = today();
+    return `
+      <ol class="timeline">
+        ${sorted.map((a) => {
+          const status = normalizedAssignmentStatus(a.status);
+          const complete = status === "completed";
+          const overdue = !complete && isBeforeToday(a.dueDate);
+          const isToday = a.dueDate === todayStr;
+          const state = complete ? "complete" : overdue ? "overdue" : status === "in progress" ? "in-progress" : isToday ? "today" : "upcoming";
+          const statusLabel = complete ? "Completed" : overdue ? "Overdue" : status === "in progress" ? "In progress" : "Not started";
+          return `
+            <li class="timeline-item ${state}">
+              <span class="timeline-dot" aria-hidden="true"></span>
+              <div class="timeline-body">
+                <div class="timeline-top">
+                  <span class="timeline-date">${escapeHtml(formatDate(a.dueDate))}${a.dueTime ? ` · ${escapeHtml(a.dueTime)}` : ""}</span>
+                  <span class="timeline-status ${state}">${escapeHtml(statusLabel)}</span>
+                </div>
+                <p class="timeline-title">${escapeHtml(a.title)}</p>
+                ${a.type ? `<span class="timeline-type">${escapeHtml(a.type)}</span>` : ""}
+              </div>
+            </li>
+          `;
+        }).join("")}
+      </ol>
     `;
   }
 
@@ -2588,32 +3123,13 @@
   }
 
   function validSchoolAssignmentFilter(filter) {
-    return ["active", "all", "in-progress", "completed"].includes(filter);
-  }
-
-  function filterSchoolAssignments(assignments) {
-    return filterAssignmentsByStatus(filterAssignmentsByClass(assignments));
+    return ["active", "all", "not-started", "in-progress", "completed", "overdue"].includes(filter);
   }
 
   function filterAssignmentsByClass(assignments) {
     if (ui.schoolClassFilter === "unassigned") return assignments.filter((assignment) => !assignment.classId);
     if (ui.schoolClassFilter === "all") return assignments;
     return assignments.filter((assignment) => assignment.classId === ui.schoolClassFilter);
-  }
-
-  function filterAssignmentsByStatus(assignments) {
-    const filter = validSchoolAssignmentFilter(ui.schoolAssignmentFilter) ? ui.schoolAssignmentFilter : "active";
-    if (filter === "all") return assignments;
-    if (filter === "completed") return assignments.filter(assignmentComplete);
-    if (filter === "in-progress") return assignments.filter((assignment) => normalizedAssignmentStatus(assignment.status) === "in progress");
-    return assignments.filter((assignment) => !assignmentComplete(assignment));
-  }
-
-  function sortAssignmentsForFilter(assignments) {
-    if (ui.schoolAssignmentFilter === "completed") {
-      return [...assignments].sort((a, b) => String(b.dueDate || "").localeCompare(String(a.dueDate || "")));
-    }
-    return sortByDate(assignments);
   }
 
   function schoolFilterLabel(filter) {
@@ -2626,8 +3142,10 @@
     const labels = {
       active: "Active assignments",
       all: "All assignments",
+      "not-started": "Not started",
       "in-progress": "In progress",
-      completed: "Completed"
+      completed: "Completed",
+      overdue: "Overdue"
     };
     return labels[filter] || labels.active;
   }
@@ -2655,8 +3173,10 @@
   function schoolAssignmentFilterToggle() {
     const filters = [
       { id: "active", name: "Active" },
-      { id: "all", name: "All Assignments" },
+      { id: "all", name: "All" },
+      { id: "not-started", name: "Not Started" },
       { id: "in-progress", name: "In Progress" },
+      { id: "overdue", name: "Overdue" },
       { id: "completed", name: "Completed" }
     ];
     return `
@@ -2673,23 +3193,40 @@
   function renderClassCard(stats) {
     const color = safeHexColor(stats.color);
     const progressKey = `school:class-${stats.id}`;
+    const assignments = appData.school.assignments.filter((a) => a.classId === stats.id);
+    const open = assignments.filter((a) => !assignmentComplete(a));
+    const overdue = open.filter((a) => isBeforeToday(a.dueDate));
+    const upcoming = sortByDate(open.filter((a) => !isBeforeToday(a.dueDate)));
+    const nextUp = upcoming[0];
+    const gradeBadge = stats.displayLetter
+      ? `<button type="button" class="class-grade-badge" data-action="edit-class-grade" data-id="${escapeHtml(stats.id)}" title="Edit grade" aria-label="Edit grade">${escapeHtml(stats.displayLetter)}</button>`
+      : `<button type="button" class="class-grade-badge add" data-action="edit-class-grade" data-id="${escapeHtml(stats.id)}" title="Add grade" aria-label="Add grade">${icon("plus")}<span>Grade</span></button>`;
+    const deadlineMeta = overdue.length
+      ? `<span class="class-meta-overdue">${overdue.length} overdue</span>`
+      : nextUp
+        ? `<span>Next ${escapeHtml(formatDate(nextUp.dueDate))}</span>`
+        : `<span>No upcoming work</span>`;
     return `
-      <article class="item-card class-card" data-progress-key="${escapeHtml(progressKey)}" data-progress-percent="${escapeHtml(clamp(stats.percent))}" style="--class-color:${escapeHtml(color)}; --class-color-rgb:${rgbText(color)}">
+      <article class="item-card class-card" role="button" tabindex="0" data-action="open-class" data-id="${escapeHtml(stats.id)}" data-progress-key="${escapeHtml(progressKey)}" data-progress-percent="${escapeHtml(clamp(stats.percent))}" style="--class-color:${escapeHtml(color)}; --class-color-rgb:${rgbText(color)}">
         <div class="item-main">
-          <p class="item-title">${escapeHtml(stats.name)}</p>
+          <div class="class-card-head">
+            <p class="item-title">${escapeHtml(stats.name)}</p>
+            ${gradeBadge}
+          </div>
           <div class="item-meta">
-            <span>${countSpan(`${progressKey}:count`, stats.completed, { suffix: `/${stats.total} complete` })}</span>
-            ${stats.grade !== null ? `<span>${formatNumber(stats.grade, 1)}% grade estimate</span>` : ""}
+            <span>${countSpan(`${progressKey}:count`, stats.completed, { suffix: `/${stats.total} done` })}</span>
+            ${open.length ? `<span>${upcoming.length} upcoming</span>` : ""}
+            ${deadlineMeta}
           </div>
           <div class="class-progress-line">
             <div class="progress"><span style="width:${clamp(stats.percent)}%"></span></div>
             <span>${countSpan(`${progressKey}:percent`, stats.percent, { suffix: "%" })}</span>
           </div>
         </div>
-        <div class="item-actions">
-          ${actionButton("set-school-class-filter", stats.id, "Show assignments", "target")}
+        <div class="item-actions class-card-actions">
           ${actionButton("edit-class", stats.id, "Edit", "edit")}
           ${actionButton("delete-class", stats.id, "Delete", "trash")}
+          <span class="class-card-chevron" aria-hidden="true">${icon("chevron")}</span>
         </div>
       </article>
     `;
@@ -2699,33 +3236,741 @@
     const complete = assignmentComplete(assignment);
     const status = normalizedAssignmentStatus(assignment.status);
     const inProgress = status === "in progress";
+    const overdue = !complete && isBeforeToday(assignment.dueDate);
     const klass = findById(appData.school.classes, assignment.classId);
     const color = safeHexColor(klass?.accentColor, "#6f7685");
     const dueLabel = `${formatDate(assignment.dueDate)}${assignment.dueTime ? ` ${assignment.dueTime}` : ""}`;
     const classLabel = assignment.classId ? className(assignment.classId) : "No class";
+    const statusBadge = complete
+      ? `<span class="assignment-status-tag complete">Completed</span>`
+      : overdue
+        ? `<span class="assignment-status-tag overdue">Overdue</span>`
+        : inProgress
+          ? `<span class="assignment-status-tag in-progress">In Progress</span>`
+          : "";
     const meta = [
       `<span class="assignment-class-tag ${complete ? "complete" : ""}">${escapeHtml(classLabel)}</span>`,
       assignment.type ? `<span>${escapeHtml(assignment.type)}</span>` : "",
       assignment.dueDate ? `<span>${escapeHtml(dueLabel)}</span>` : "<span>No due date</span>",
       assignment.priority ? `<span>${escapeHtml(assignment.priority)}</span>` : "",
-      inProgress ? `<span class="assignment-status-tag in-progress">In Progress</span>` : "",
-      complete ? `<span class="assignment-status-tag complete">Completed</span>` : ""
+      statusBadge
     ];
+    const gradeLine = assignment.grade || (assignment.pointsPossible ? `${formatNumber(assignment.pointsEarned)} / ${formatNumber(assignment.pointsPossible)} pts` : "");
     return `
-      <article class="item-card assignment-card ${complete ? "complete" : ""} ${inProgress ? "in-progress" : ""} ${!complete && isBeforeToday(assignment.dueDate) ? "overdue" : ""}" data-assignment-card-id="${escapeHtml(assignment.id)}" style="--class-color:${escapeHtml(color)}; --class-color-rgb:${rgbText(color)}">
-        <div class="item-main">
-          <p class="item-title assignment-title">${escapeHtml(assignment.title)}</p>
-          <div class="item-meta">
-            ${meta.filter(Boolean).join("")}
-          </div>
+      <details class="assignment-card ${complete ? "complete" : ""} ${inProgress ? "in-progress" : ""} ${overdue ? "overdue" : ""}" data-assignment-card-id="${escapeHtml(assignment.id)}" style="--class-color:${escapeHtml(color)}; --class-color-rgb:${rgbText(color)}">
+        <summary>
+          <span class="assignment-summary">
+            <span class="item-title assignment-title">${escapeHtml(assignment.title)}</span>
+            <span class="item-meta">${meta.filter(Boolean).join("")}</span>
+          </span>
+        </summary>
+        <div class="details-body assignment-body">
           ${assignment.notes ? `<p class="tiny">${escapeHtml(assignment.notes)}</p>` : ""}
+          ${gradeLine ? `<p class="tiny assignment-grade-line">Grade: ${escapeHtml(gradeLine)}</p>` : ""}
+          ${assignment.link ? `<a class="assignment-link" href="${escapeHtml(assignment.link)}" target="_blank" rel="noopener">Open link</a>` : ""}
+          ${assignmentStatusControl(assignment.id, status)}
+          <div class="item-actions assignment-body-actions">
+            ${actionButton("edit-assignment", assignment.id, "Edit", "edit", "secondary")}
+            ${actionButton("delete-assignment", assignment.id, "Delete", "trash")}
+          </div>
         </div>
-        <div class="item-actions">
-          ${actionButton("edit-assignment", assignment.id, "Edit", "edit")}
-          ${actionButton("delete-assignment", assignment.id, "Delete", "trash")}
+      </details>
+    `;
+  }
+
+  function renderAssignmentGroups(assignments, range, options = {}) {
+    const filter = options.ignoreStatusFilter ? "all" : (validSchoolAssignmentFilter(ui.schoolAssignmentFilter) ? ui.schoolAssignmentFilter : "active");
+    const inRange = (a) => dateInRange(a.dueDate, range);
+    const overdue = sortByDate(assignments.filter((a) => !assignmentComplete(a) && isBeforeToday(a.dueDate)));
+    const notStarted = sortByDate(assignments.filter((a) => !isBeforeToday(a.dueDate) && normalizedAssignmentStatus(a.status) === "not started" && inRange(a)));
+    const inProgress = sortByDate(assignments.filter((a) => !isBeforeToday(a.dueDate) && normalizedAssignmentStatus(a.status) === "in progress" && inRange(a)));
+    const completed = [...assignments.filter((a) => assignmentComplete(a) && inRange(a))].sort((a, b) => String(b.dueDate || "").localeCompare(String(a.dueDate || "")));
+
+    const show = {
+      overdue: ["active", "all", "overdue"].includes(filter),
+      "not started": ["active", "all", "not-started"].includes(filter),
+      "in progress": ["active", "all", "in-progress"].includes(filter),
+      completed: ["all", "completed"].includes(filter)
+    };
+    const groups = [
+      { key: "overdue", title: "Overdue", items: overdue, open: true, visible: show.overdue },
+      { key: "not started", title: "Not started", items: notStarted, open: true, visible: show["not started"] },
+      { key: "in progress", title: "In progress", items: inProgress, open: true, visible: show["in progress"] },
+      { key: "completed", title: "Completed", items: completed, open: false, visible: show.completed }
+    ].filter((g) => g.visible);
+
+    const totalShown = groups.reduce((n, g) => n + g.items.length, 0);
+    if (!totalShown) return emptyState("No assignments match these filters.");
+
+    return groups.map((g) => {
+      if (!g.items.length) return "";
+      return `
+        <details class="card assignment-group assignment-group-${g.key.replace(/\s+/g, "-")}" ${g.open ? "open" : ""}>
+          <summary>
+            <span class="assignment-group-title">${escapeHtml(g.title)}</span>
+            <span class="tiny">${g.items.length}</span>
+          </summary>
+          <div class="details-body">
+            <div class="list assignment-list-inner">
+              ${g.items.map(renderAssignmentItem).join("")}
+            </div>
+          </div>
+        </details>
+      `;
+    }).join("");
+  }
+
+  // ---------- School calendar ----------
+  function currentCalendarMonth() {
+    const ym = String(ui.calendarMonth || "");
+    return /^\d{4}-\d{2}$/.test(ym) ? ym : today().slice(0, 7);
+  }
+
+  function shiftCalendarMonth(ym, delta) {
+    const [y, m] = ym.split("-").map(Number);
+    const d = new Date(y, (m - 1) + delta, 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  }
+
+  function calendarEvents(scope, classId) {
+    const events = [];
+    const selectedClasses = Array.isArray(ui.calendarClasses) ? ui.calendarClasses.filter((id) => findById(appData.school.classes, id)) : [];
+    appData.school.assignments.forEach((a) => {
+      if (!a.dueDate) return;
+      if (scope === "class" && a.classId !== classId) return;
+      if (scope === "school" && selectedClasses.length && !selectedClasses.includes(a.classId)) return;
+      const klass = findById(appData.school.classes, a.classId);
+      events.push({
+        date: a.dueDate,
+        title: a.title,
+        kind: "assignment",
+        classId: a.classId,
+        color: safeHexColor(klass?.accentColor, "#7c5cff"),
+        status: normalizedAssignmentStatus(a.status),
+        complete: assignmentComplete(a),
+        overdue: !assignmentComplete(a) && isBeforeToday(a.dueDate)
+      });
+    });
+    return events;
+  }
+
+  function renderSchoolCalendarCard({ scope = "school", classId = "" } = {}) {
+    const ym = currentCalendarMonth();
+    const [year, month] = ym.split("-").map(Number);
+    const monthStart = new Date(year, month - 1, 1);
+    const monthLabel = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" }).format(monthStart);
+    const events = calendarEvents(scope, classId);
+    const eventsByDate = events.reduce((map, ev) => {
+      (map[ev.date] = map[ev.date] || []).push(ev);
+      return map;
+    }, {});
+    const firstWeekday = (monthStart.getDay() + 6) % 7; // Monday-first
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const todayStr = today();
+    const selected = ui.calendarSelectedDate || "";
+
+    const cells = [];
+    for (let i = 0; i < firstWeekday; i++) cells.push(null);
+    for (let day = 1; day <= daysInMonth; day++) cells.push(`${ym}-${String(day).padStart(2, "0")}`);
+    while (cells.length % 7 !== 0) cells.push(null);
+
+    const weekdayHeader = ["M", "T", "W", "T", "F", "S", "S"]
+      .map((d) => `<span class="cal-weekday">${d}</span>`).join("");
+
+    const grid = cells.map((date) => {
+      if (!date) return `<span class="cal-cell cal-empty"></span>`;
+      const dayEvents = eventsByDate[date] || [];
+      const dots = dayEvents.slice(0, 3).map((ev) => `<i class="cal-dot ${ev.complete ? "complete" : ev.overdue ? "overdue" : ""}" style="--dot:${escapeHtml(ev.color)}"></i>`).join("");
+      const classes = ["cal-cell", "cal-day"];
+      if (date === todayStr) classes.push("is-today");
+      if (date === selected) classes.push("is-selected");
+      if (dayEvents.length) classes.push("has-events");
+      return `
+        <button type="button" class="${classes.join(" ")}" data-action="select-calendar-day" data-date="${escapeHtml(date)}">
+          <span class="cal-num">${Number(date.slice(8))}</span>
+          ${dots ? `<span class="cal-dots">${dots}</span>` : ""}
+        </button>
+      `;
+    }).join("");
+
+    const selectedEvents = selected ? (eventsByDate[selected] || []) : [];
+    const selectedPanel = selected ? `
+      <div class="cal-day-detail">
+        <div class="cal-day-detail-head">
+          <span>${escapeHtml(formatLongDate(selected))}</span>
+          ${actionButton("add-assignment", "", "Add", "plus", "secondary")}
         </div>
-        ${assignmentStatusControl(assignment.id, status)}
-      </article>
+        ${selectedEvents.length ? `<div class="list">${selectedEvents.map((ev) => `
+          <div class="cal-event" style="--class-color:${escapeHtml(ev.color)}; --class-color-rgb:${rgbText(ev.color)}">
+            <span class="cal-event-dot ${ev.complete ? "complete" : ev.overdue ? "overdue" : ""}"></span>
+            <span class="cal-event-title">${escapeHtml(ev.title)}</span>
+            <span class="cal-event-meta">${escapeHtml(ev.classId ? className(ev.classId) : "No class")}</span>
+          </div>
+        `).join("")}</div>` : `<p class="tiny">Nothing scheduled.</p>`}
+      </div>
+    ` : "";
+
+    const classFilter = scope === "school" ? renderCalendarClassFilter() : "";
+
+    return `
+      <details class="card panel section calendar-card" open>
+        <summary>
+          <span class="finance-section-heading"><span class="finance-section-title">Calendar</span></span>
+          <span class="tiny">${events.length} item${events.length === 1 ? "" : "s"}</span>
+        </summary>
+        <div class="details-body">
+          ${classFilter}
+          <div class="cal-header">
+            <button type="button" class="cal-nav" data-action="calendar-prev" aria-label="Previous month">${icon("chevron")}</button>
+            <span class="cal-month">${escapeHtml(monthLabel)}</span>
+            <button type="button" class="cal-nav cal-nav-next" data-action="calendar-next" aria-label="Next month">${icon("chevron")}</button>
+          </div>
+          <div class="cal-weekdays">${weekdayHeader}</div>
+          <div class="cal-grid">${grid}</div>
+          ${selectedPanel}
+        </div>
+      </details>
+    `;
+  }
+
+  function renderCalendarClassFilter() {
+    const selected = Array.isArray(ui.calendarClasses) ? ui.calendarClasses : [];
+    const chips = [
+      `<button type="button" class="class-chip ${selected.length === 0 ? "active" : ""}" data-action="set-calendar-class" data-class-id="all"><span>All classes</span></button>`,
+      ...appData.school.classes.map((klass) => {
+        const color = safeHexColor(klass.accentColor, "#7c5cff");
+        const active = selected.includes(klass.id);
+        return `<button type="button" class="class-chip ${active ? "active" : ""}" data-action="set-calendar-class" data-class-id="${escapeHtml(klass.id)}" style="--class-color:${escapeHtml(color)}; --class-color-rgb:${rgbText(color)}"><span>${escapeHtml(klass.name || "Class")}</span></button>`;
+      })
+    ].join("");
+    return `<div class="class-filter calendar-class-filter" role="group" aria-label="Filter calendar by class">${chips}</div>`;
+  }
+
+  // ---------- Unified calendar (Calendar tab) ----------
+  const CALENDAR_KIND_COLORS = {
+    assignment: "#7c5cff", // fallback only; assignments use their class color
+    task: "#32d98f",       // green
+    meeting: "#25d8ff",    // blue
+    bill: "#ffd166",       // fallback only; bills use their own finance color
+    reminder: "#ff9f43",   // orange
+    workout: "#f472b6"     // pink
+  };
+
+  function timeToMinutes(value) {
+    const m = String(value || "").match(/^(\d{1,2}):(\d{2})/);
+    if (!m) return null;
+    return Number(m[1]) * 60 + Number(m[2]);
+  }
+
+  function allCalendarEvents(ym) {
+    const [year, month] = ym.split("-").map(Number);
+    const monthRange = { start: `${ym}-01`, end: dateString(new Date(year, month, 0)), label: "month" };
+    const events = [];
+    const selectedClasses = Array.isArray(ui.calendarClasses) ? ui.calendarClasses.filter((id) => findById(appData.school.classes, id)) : [];
+    const classAllowed = (classId) => !selectedClasses.length || selectedClasses.includes(classId);
+
+    // Assignments (class deadlines)
+    appData.school.assignments.forEach((a) => {
+      if (!a.dueDate || !classAllowed(a.classId)) return;
+      const klass = findById(appData.school.classes, a.classId);
+      events.push({
+        id: a.id, kind: "assignment", date: a.dueDate, title: a.title,
+        color: safeHexColor(klass?.accentColor, CALENDAR_KIND_COLORS.assignment),
+        start: a.dueTime || "", end: "",
+        complete: assignmentComplete(a), overdue: !assignmentComplete(a) && isBeforeToday(a.dueDate),
+        meta: [a.classId ? className(a.classId) : "No class", a.type].filter(Boolean).join(" · "),
+        action: "edit-assignment"
+      });
+    });
+
+    // Tasks (untimed checklist) and meetings (timed blocks)
+    appData.tasks.forEach((t) => {
+      if (!t.dueDate || !classAllowed(t.classId)) return;
+      const timed = Boolean(t.startTime);
+      events.push({
+        id: t.id, kind: timed ? "meeting" : "task", date: t.dueDate, title: t.title,
+        color: timed ? CALENDAR_KIND_COLORS.meeting : CALENDAR_KIND_COLORS.task,
+        start: t.startTime || "", end: t.endTime || "",
+        complete: Boolean(t.completed), overdue: !t.completed && isBeforeToday(t.dueDate),
+        meta: [t.classId ? className(t.classId) : (t.category || ""), timed ? "" : "Task"].filter(Boolean).join(" · "),
+        action: "edit-task"
+      });
+    });
+
+    // Bills (occurrences this month)
+    appData.finance.bills.forEach((bill) => {
+      billOccurrencesInRange(bill, monthRange).forEach((occ) => {
+        events.push({
+          id: bill.id, kind: "bill", date: occ.date, title: bill.name || "Bill",
+          color: safeHexColor(bill.color, CALENDAR_KIND_COLORS.bill), start: "", end: "",
+          complete: Boolean(occ.paid), overdue: !occ.paid && isBeforeToday(occ.date),
+          meta: [formatCurrency(occ.amount), occ.paid ? "Paid" : billTypeLabel(bill)].filter(Boolean).join(" · "),
+          action: "edit-bill"
+        });
+      });
+    });
+
+    // Reminders
+    appData.reminders.forEach((r) => {
+      if (!r.date) return;
+      events.push({
+        id: r.id, kind: "reminder", date: r.date, title: r.title || "Reminder",
+        color: CALENDAR_KIND_COLORS.reminder, start: r.time || "", end: "",
+        complete: Boolean(r.completed), overdue: !r.completed && isBeforeToday(r.date),
+        meta: [r.type || "Reminder"].filter(Boolean).join(" · "),
+        action: "edit-reminder"
+      });
+    });
+
+    // Workouts (scheduled in the Health tab)
+    appData.gym.workouts.forEach((w) => {
+      if (!w.date || !dateInRange(w.date, monthRange)) return;
+      events.push({
+        id: w.id, kind: "workout", date: w.date, title: `${w.split || "Workout"}`,
+        color: CALENDAR_KIND_COLORS.workout, start: w.startTime || "", end: w.endTime || "",
+        complete: isBeforeToday(w.date), overdue: false,
+        meta: [w.duration ? `${w.duration} min` : "", "Workout"].filter(Boolean).join(" · "),
+        action: "edit-workout"
+      });
+    });
+
+    // Debt / credit-card minimum payments. Only shown while the card still has a
+    // balance, so they disappear once it's paid off and reappear if the balance
+    // goes back up. Not a fixed recurring bill — it's driven entirely by balance.
+    appData.finance.debts.forEach((debt) => {
+      if ((Number(debt.balance) || 0) <= 0 || !debt.dueDate) return;
+      const amount = Number(debt.minimumPayment) || 0;
+      billOccurrencesInRange({ id: debt.id, name: debt.name || "Debt", amount, dueDate: debt.dueDate, frequency: "monthly", paid: false }, monthRange).forEach((occ) => {
+        events.push({
+          id: debt.id, kind: "bill", date: occ.date, title: `${debt.name || "Debt"} payment`,
+          color: safeHexColor(debt.color, CALENDAR_KIND_COLORS.bill), start: "", end: "",
+          complete: false, overdue: false,
+          meta: [amount > 0 ? formatCurrency(amount) : "", "Min payment"].filter(Boolean).join(" · "),
+          action: "edit-debt"
+        });
+      });
+    });
+
+    const kind = ["all", "assignment", "task", "meeting", "bill", "reminder", "workout"].includes(ui.calendarKindFilter) ? ui.calendarKindFilter : "all";
+    return kind === "all" ? events : events.filter((ev) => ev.kind === kind);
+  }
+
+  function calendarKindFilterRow() {
+    const filters = [
+      ["all", "All"],
+      ["assignment", "Assignments"],
+      ["task", "Tasks"],
+      ["meeting", "Meetings"],
+      ["bill", "Bills"],
+      ["reminder", "Reminders"],
+      ["workout", "Workouts"]
+    ];
+    const active = ui.calendarKindFilter || "all";
+    return `
+      <div class="assignment-status-filter calendar-kind-filter" role="group" aria-label="Filter calendar by type">
+        ${filters.map(([id, label]) => `
+          <button type="button" class="status-chip ${active === id ? "active" : ""}" data-action="set-calendar-kind" data-kind="${id}"><span>${label}</span></button>
+        `).join("")}
+      </div>
+    `;
+  }
+
+  const CAL_HOUR_HEIGHT = 52;
+
+  function calendarAnchorDate() {
+    const sel = ui.calendarSelectedDate;
+    if (sel && parseDate(sel)) return sel;
+    return today();
+  }
+
+  function calendarViewToggle() {
+    const view = ["month", "week", "day"].includes(ui.calendarView) ? ui.calendarView : "month";
+    const opts = [["month", "Month"], ["week", "Week"], ["day", "Day"]];
+    return `
+      <div class="seg-toggle cal-view-toggle" role="group" aria-label="Calendar view">
+        ${opts.map(([id, label]) => `<button type="button" class="seg-btn cal-view-btn ${view === id ? "active" : ""}" data-action="set-calendar-view" data-view="${id}"><span>${label}</span></button>`).join("")}
+      </div>
+    `;
+  }
+
+  function calendarPeriodHeader(label) {
+    return `
+      <div class="cal-header">
+        <button type="button" class="cal-nav" data-action="calendar-prev" aria-label="Previous">${icon("chevron")}</button>
+        <span class="cal-month">${escapeHtml(label)}</span>
+        <button type="button" class="cal-nav cal-nav-next" data-action="calendar-next" aria-label="Next">${icon("chevron")}</button>
+      </div>
+    `;
+  }
+
+  function renderCalendarPage() {
+    // Assignments are colored per class and bills per their finance color, so they
+    // are not given a single legend key. Only fixed-color kinds appear here.
+    const legend = { Tasks: CALENDAR_KIND_COLORS.task, Meetings: CALENDAR_KIND_COLORS.meeting, Reminders: CALENDAR_KIND_COLORS.reminder, Workouts: CALENDAR_KIND_COLORS.workout };
+    return `
+      <div class="view">
+        ${topbar("Calendar", "Everything scheduled, in one place", actionButton("add-task", "", "Add to calendar", "plus", "primary"))}
+
+        <section class="card panel section calendar-page-card">
+          ${calendarKindFilterRow()}
+          ${appData.school.classes.length ? renderCalendarClassFilter() : ""}
+          ${calendarViewToggle()}
+          <div class="cal-body" data-cal-body>
+            ${renderCalendarBody()}
+          </div>
+          <div class="cal-legend">
+            ${Object.entries(legend).map(([label, color]) => `<span><i style="background:${color}"></i>${label}</span>`).join("")}
+          </div>
+        </section>
+      </div>
+    `;
+  }
+
+  function renderCalendarBody() {
+    const view = ["month", "week", "day"].includes(ui.calendarView) ? ui.calendarView : "month";
+    if (view === "day") return renderCalendarDayBody();
+    if (view === "week") return renderCalendarWeekBody();
+    return renderCalendarMonthBody();
+  }
+
+  function refreshCalendarBody() {
+    const body = app.querySelector("[data-cal-body]");
+    if (!body) return render({ quiet: true });
+    app.querySelectorAll(".calendar-kind-filter .status-chip").forEach((c) => c.classList.toggle("active", c.dataset.kind === (ui.calendarKindFilter || "all")));
+    app.querySelectorAll(".cal-view-toggle .cal-view-btn").forEach((b) => b.classList.toggle("active", b.dataset.view === (ui.calendarView || "month")));
+    body.innerHTML = renderCalendarBody();
+    body.classList.remove("cal-body-swap");
+    void body.offsetWidth;
+    body.classList.add("cal-body-swap");
+    saveUi();
+    scrollCalendarTimeline();
+  }
+
+  function renderCalendarMonthBody() {
+    const ym = currentCalendarMonth();
+    const [year, month] = ym.split("-").map(Number);
+    const monthStart = new Date(year, month - 1, 1);
+    const monthLabel = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" }).format(monthStart);
+    const events = allCalendarEvents(ym);
+    const eventsByDate = events.reduce((map, ev) => {
+      (map[ev.date] = map[ev.date] || []).push(ev);
+      return map;
+    }, {});
+    const firstWeekday = (monthStart.getDay() + 6) % 7; // Monday-first
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const todayStr = today();
+    const selected = ui.calendarSelectedDate || "";
+
+    const cells = [];
+    for (let i = 0; i < firstWeekday; i++) cells.push(null);
+    for (let day = 1; day <= daysInMonth; day++) cells.push(`${ym}-${String(day).padStart(2, "0")}`);
+    while (cells.length % 7 !== 0) cells.push(null);
+
+    const weekdayHeader = ["M", "T", "W", "T", "F", "S", "S"].map((d) => `<span class="cal-weekday">${d}</span>`).join("");
+    const grid = cells.map((date) => {
+      if (!date) return `<span class="cal-cell cal-empty"></span>`;
+      const dayEvents = eventsByDate[date] || [];
+      const dots = dayEvents.slice(0, 4).map((ev) => `<i class="cal-dot ${ev.complete ? "complete" : ev.overdue ? "overdue" : ""}" style="--dot:${escapeHtml(ev.color)}"></i>`).join("");
+      const classes = ["cal-cell", "cal-day"];
+      if (date === todayStr) classes.push("is-today");
+      if (date === selected) classes.push("is-selected");
+      if (dayEvents.length) classes.push("has-events");
+      return `
+        <button type="button" class="${classes.join(" ")}" data-action="select-calendar-day" data-date="${escapeHtml(date)}">
+          <span class="cal-num">${Number(date.slice(8))}</span>
+          ${dots ? `<span class="cal-dots">${dots}</span>` : ""}
+        </button>
+      `;
+    }).join("");
+
+    return `
+      ${calendarPeriodHeader(monthLabel)}
+      <div class="cal-weekdays">${weekdayHeader}</div>
+      <div class="cal-grid">${grid}</div>
+      <p class="tiny cal-hint">Tap a day to open its full schedule.</p>
+    `;
+  }
+
+  function layoutTimelineEvents(events) {
+    const allDay = [];
+    const timed = [];
+    (events || []).forEach((ev) => {
+      const s = timeToMinutes(ev.start);
+      if (s === null) { allDay.push(ev); return; }
+      let e = timeToMinutes(ev.end);
+      if (e === null || e <= s) e = Math.min(1440, s + 60);
+      timed.push({ ev, s, e, col: 0, cols: 1 });
+    });
+    timed.sort((a, b) => a.s - b.s || a.e - b.e);
+    let cluster = [];
+    let clusterEnd = -1;
+    const flush = () => {
+      const colsCount = Math.max(1, ...cluster.map((c) => c.col + 1));
+      cluster.forEach((c) => { c.cols = colsCount; });
+      cluster = [];
+    };
+    timed.forEach((item) => {
+      if (cluster.length && item.s >= clusterEnd) { flush(); clusterEnd = -1; }
+      const used = new Set(cluster.filter((c) => c.e > item.s).map((c) => c.col));
+      let col = 0;
+      while (used.has(col)) col++;
+      item.col = col;
+      cluster.push(item);
+      clusterEnd = Math.max(clusterEnd, item.e);
+    });
+    if (cluster.length) flush();
+    return { allDay, timed };
+  }
+
+  function formatHourLabel(h) {
+    const period = h < 12 ? "AM" : "PM";
+    const hh = h % 12 || 12;
+    return `${hh} ${period}`;
+  }
+
+  function renderHourGutter() {
+    let html = "";
+    for (let h = 0; h < 24; h++) html += `<div class="cal-hour-label"><span>${h === 0 ? "" : formatHourLabel(h)}</span></div>`;
+    return `<div class="cal-hour-gutter">${html}</div>`;
+  }
+
+  function renderNowLine() {
+    const now = new Date();
+    const mins = now.getHours() * 60 + now.getMinutes();
+    return `<div class="cal-now-line" style="top:${(mins / 1440 * 100).toFixed(3)}%"><span class="cal-now-dot"></span></div>`;
+  }
+
+  function renderTimelineEvent(t) {
+    const ev = t.ev;
+    const top = (t.s / 1440 * 100).toFixed(3);
+    const height = Math.max((t.e - t.s) / 1440 * 100, 2.4).toFixed(3);
+    const leftPct = (t.col / t.cols * 100).toFixed(3);
+    const widthPct = (1 / t.cols * 100).toFixed(3);
+    const state = ev.complete ? "complete" : ev.overdue ? "overdue" : "";
+    const time = formatTime(ev.start);
+    return `
+      <button type="button" class="cal-tl-event ${state}" data-action="${escapeHtml(ev.action)}" data-id="${escapeHtml(ev.id)}"
+        style="top:${top}%; height:${height}%; left:calc(${leftPct}% + 2px); width:calc(${widthPct}% - 4px); --class-color:${escapeHtml(ev.color)}; --class-color-rgb:${rgbText(ev.color)}">
+        <span class="cal-tl-event-title">${escapeHtml(ev.title)}</span>
+        ${time ? `<span class="cal-tl-event-time">${escapeHtml(time)}</span>` : ""}
+      </button>
+    `;
+  }
+
+  function renderAllDayStrip(allDay) {
+    if (!allDay.length) return "";
+    return `
+      <div class="cal-allday-strip">
+        <span class="cal-allday-label">All-day</span>
+        <div class="cal-allday-items">
+          ${allDay.map((ev) => `<button type="button" class="cal-allday-chip" data-action="${escapeHtml(ev.action)}" data-id="${escapeHtml(ev.id)}" style="--class-color:${escapeHtml(ev.color)}; --class-color-rgb:${rgbText(ev.color)}"><span>${escapeHtml(ev.title)}</span></button>`).join("")}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderCalendarDayBody() {
+    const dateStr = calendarAnchorDate();
+    const ym = dateStr.slice(0, 7);
+    const events = allCalendarEvents(ym).filter((ev) => ev.date === dateStr);
+    const { allDay, timed } = layoutTimelineEvents(events);
+    const todayStr = today();
+    const isToday = dateStr === todayStr;
+    const label = formatLongDate(dateStr) + (isToday ? " · Today" : "");
+    return `
+      ${calendarPeriodHeader(label)}
+      ${renderAllDayStrip(allDay)}
+      <div class="cal-timeline-scroll" data-timeline>
+        <div class="cal-timeline cal-timeline-day" style="--hour-h:${CAL_HOUR_HEIGHT}px; --tl-h:${CAL_HOUR_HEIGHT * 24}px">
+          ${renderHourGutter()}
+          <div class="cal-tl-cols">
+            ${isToday ? renderNowLine() : ""}
+            <div class="cal-tl-col">
+              ${timed.map(renderTimelineEvent).join("")}
+            </div>
+          </div>
+        </div>
+      </div>
+      ${timed.length || allDay.length ? "" : `<p class="tiny cal-hint">Nothing scheduled. Tap “Add to calendar” to plan this day.</p>`}
+    `;
+  }
+
+  function renderCalendarWeekBody() {
+    const weekStartDate = startOfWeek(parseDate(calendarAnchorDate()) || new Date());
+    const startStr = dateString(weekStartDate);
+    const endStr = dateString(addDays(weekStartDate, 6));
+    const months = new Set([startStr.slice(0, 7), endStr.slice(0, 7)]);
+    let events = [];
+    months.forEach((ym) => { events = events.concat(allCalendarEvents(ym)); });
+    const seen = new Set();
+    events = events.filter((ev) => {
+      if (ev.date < startStr || ev.date > endStr) return false;
+      const key = `${ev.kind}:${ev.id}:${ev.date}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    const byDate = {};
+    events.forEach((ev) => { (byDate[ev.date] = byDate[ev.date] || []).push(ev); });
+    const todayStr = today();
+    const days = [];
+    let anyToday = false;
+    for (let i = 0; i < 7; i++) {
+      const ds = dateString(addDays(weekStartDate, i));
+      const dateObj = parseDate(ds);
+      const layout = layoutTimelineEvents(byDate[ds] || []);
+      const isToday = ds === todayStr;
+      if (isToday) anyToday = true;
+      days.push({ ds, dateObj, layout, isToday });
+    }
+    const label = `${formatDate(startStr)} – ${formatDate(endStr)}`;
+    const dayHeads = days.map((d) => `
+      <button type="button" class="cal-week-dayhead ${d.isToday ? "is-today" : ""}" data-action="select-calendar-day" data-date="${escapeHtml(d.ds)}">
+        <span class="cal-week-dow">${new Intl.DateTimeFormat(undefined, { weekday: "narrow" }).format(d.dateObj)}</span>
+        <span class="cal-week-dom">${Number(d.ds.slice(8))}</span>
+      </button>`).join("");
+    const allDayCells = days.map((d) => `
+      <div class="cal-week-allday-cell">
+        ${d.layout.allDay.slice(0, 2).map((ev) => `<button type="button" class="cal-allday-chip mini" data-action="${escapeHtml(ev.action)}" data-id="${escapeHtml(ev.id)}" style="--class-color:${escapeHtml(ev.color)}; --class-color-rgb:${rgbText(ev.color)}"><span>${escapeHtml(ev.title)}</span></button>`).join("")}
+        ${d.layout.allDay.length > 2 ? `<span class="cal-week-more">+${d.layout.allDay.length - 2}</span>` : ""}
+      </div>`).join("");
+    const cols = days.map((d) => `
+      <div class="cal-tl-col ${d.isToday ? "is-today" : ""}">
+        ${d.layout.timed.map(renderTimelineEvent).join("")}
+      </div>`).join("");
+    return `
+      ${calendarPeriodHeader(label)}
+      <div class="cal-timeline-scroll cal-week-scroll" data-timeline>
+        <div class="cal-week-headrow">
+          <span class="cal-hour-spacer"></span>
+          <div class="cal-week-dayheads">${dayHeads}</div>
+        </div>
+        <div class="cal-week-alldayrow">
+          <span class="cal-hour-spacer">All</span>
+          <div class="cal-week-alldays">${allDayCells}</div>
+        </div>
+        <div class="cal-timeline cal-timeline-week" style="--hour-h:${CAL_HOUR_HEIGHT}px; --tl-h:${CAL_HOUR_HEIGHT * 24}px">
+          ${renderHourGutter()}
+          <div class="cal-tl-cols cal-tl-cols-week">
+            ${anyToday ? renderNowLine() : ""}
+            ${cols}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function scrollCalendarTimeline() {
+    const scroller = app.querySelector("[data-timeline]");
+    if (!scroller) return;
+    window.requestAnimationFrame(() => {
+      const nowLine = scroller.querySelector(".cal-now-line");
+      if (nowLine) {
+        const r1 = nowLine.getBoundingClientRect();
+        const r0 = scroller.getBoundingClientRect();
+        scroller.scrollTop += (r1.top - r0.top) - scroller.clientHeight * 0.38;
+      } else {
+        scroller.scrollTop = scroller.scrollHeight * (7 / 24);
+      }
+    });
+  }
+
+  function scheduleHorizonEvents(days = 45) {
+    const horizon = { start: today(), end: dateString(addDays(new Date(), days)), label: "horizon" };
+    const events = [];
+    appData.school.assignments.forEach((a) => {
+      if (!a.dueDate || assignmentComplete(a) || !dateInRange(a.dueDate, horizon)) return;
+      const klass = findById(appData.school.classes, a.classId);
+      events.push({ id: a.id, kind: "assignment", date: a.dueDate, start: a.dueTime || "", title: a.title, color: safeHexColor(klass?.accentColor, CALENDAR_KIND_COLORS.assignment), meta: a.classId ? className(a.classId) : "Assignment" });
+    });
+    appData.tasks.forEach((t) => {
+      if (!t.dueDate || t.completed || !dateInRange(t.dueDate, horizon)) return;
+      const timed = Boolean(t.startTime);
+      events.push({ id: t.id, kind: timed ? "meeting" : "task", date: t.dueDate, start: t.startTime || "", title: t.title, color: timed ? CALENDAR_KIND_COLORS.meeting : CALENDAR_KIND_COLORS.task, meta: timed ? "Meeting" : (t.category || "Task") });
+    });
+    appData.reminders.forEach((r) => {
+      if (!r.date || r.completed || !dateInRange(r.date, horizon)) return;
+      events.push({ id: r.id, kind: "reminder", date: r.date, start: r.time || "", title: r.title || "Reminder", color: CALENDAR_KIND_COLORS.reminder, meta: r.type || "Reminder" });
+    });
+    appData.finance.bills.forEach((bill) => {
+      billOccurrencesInRange(bill, horizon).forEach((occ) => {
+        if (occ.paid) return;
+        events.push({ id: bill.id, kind: "bill", date: occ.date, start: "", title: bill.name || "Bill", color: safeHexColor(bill.color, CALENDAR_KIND_COLORS.bill), meta: formatCurrency(occ.amount) });
+      });
+    });
+    appData.gym.workouts.forEach((w) => {
+      if (!w.date || !dateInRange(w.date, horizon)) return;
+      events.push({ id: w.id, kind: "workout", date: w.date, start: w.startTime || "", title: `${w.split || "Workout"}`, color: CALENDAR_KIND_COLORS.workout, meta: w.duration ? `${w.duration} min` : "Workout" });
+    });
+    return events.sort((a, b) => {
+      const byDate = String(a.date).localeCompare(String(b.date));
+      if (byDate !== 0) return byDate;
+      const am = timeToMinutes(a.start);
+      const bm = timeToMinutes(b.start);
+      if (am === null && bm === null) return 0;
+      if (am === null) return 1;
+      if (bm === null) return -1;
+      return am - bm;
+    });
+  }
+
+  function renderTodaySchedule() {
+    const events = scheduleHorizonEvents(45);
+    const todayStr = today();
+    const todayItems = events.filter((ev) => ev.date === todayStr);
+    const shown = (todayItems.length ? todayItems : events).slice(0, 4);
+    const heading = todayItems.length ? "Today's schedule" : "Up next";
+    return `
+      <section class="card panel section today-schedule-card" role="button" tabindex="0" data-action="go-calendar" aria-label="Open calendar">
+        <div class="section-header">
+          <div>
+            <h2>${heading}</h2>
+            <span class="tiny">${todayItems.length ? `${todayItems.length} scheduled today` : "Nothing today — next items"}</span>
+          </div>
+          <span class="today-schedule-link">Calendar ${icon("chevron")}</span>
+        </div>
+        ${shown.length ? `<div class="today-schedule-list">${shown.map((ev) => {
+          const time = formatTime(ev.start);
+          const when = ev.date === todayStr ? (time || "Today") : `${formatDate(ev.date)}${time ? ` · ${time}` : ""}`;
+          return `
+            <div class="today-schedule-item" style="--class-color:${escapeHtml(ev.color)}">
+              <span class="today-schedule-dot"></span>
+              <span class="today-schedule-when">${escapeHtml(when)}</span>
+              <span class="today-schedule-title">${escapeHtml(ev.title)}</span>
+              <span class="today-schedule-meta">${escapeHtml(ev.meta || "")}</span>
+            </div>
+          `;
+        }).join("")}</div>` : `<p class="tiny">No upcoming scheduled items. Add a task with a time or an assignment to see it here.</p>`}
+      </section>
+    `;
+  }
+
+  function sortCalendarEvents(events) {
+    return [...events].sort((a, b) => {
+      const am = timeToMinutes(a.start);
+      const bm = timeToMinutes(b.start);
+      if (am === null && bm === null) return 0;
+      if (am === null) return 1;
+      if (bm === null) return -1;
+      return am - bm;
+    });
+  }
+
+  function renderCalendarEventRow(ev) {
+    const start = formatTime(ev.start);
+    const end = formatTime(ev.end);
+    const timeLabel = start && end ? `${start} – ${end}` : start || "All day";
+    const state = ev.complete ? "complete" : ev.overdue ? "overdue" : "";
+    const kindLabel = { assignment: "Assignment", task: "Task", meeting: "Meeting", bill: "Bill", reminder: "Reminder", workout: "Workout" }[ev.kind] || "";
+    return `
+      <button type="button" class="cal-event cal-event-row ${state}" data-action="${escapeHtml(ev.action)}" data-id="${escapeHtml(ev.id)}" style="--class-color:${escapeHtml(ev.color)}; --class-color-rgb:${rgbText(ev.color)}">
+        <span class="cal-event-time">${escapeHtml(timeLabel)}</span>
+        <span class="cal-event-main">
+          <span class="cal-event-title">${escapeHtml(ev.title)}</span>
+          <span class="cal-event-meta">${escapeHtml([kindLabel, ev.meta].filter(Boolean).join(" · "))}</span>
+        </span>
+        <span class="cal-event-dot ${state}"></span>
+      </button>
     `;
   }
 
@@ -2744,19 +3989,545 @@
     `;
   }
 
+  let notesFocusPending = false;
+
+  function noteTimeLabel(iso) {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return "";
+    return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(d);
+  }
+
+  function notesFolderName(id) {
+    if (id === "all") return "All Notes";
+    if (id === "pinned") return "Pinned";
+    if (id === "unfiled") return "Unfiled";
+    return findById(appData.notes.folders, id)?.name || "All Notes";
+  }
+
+  function noteSnippet(note) {
+    const text = String(note.body || "").replace(/\s+/g, " ").trim();
+    return text.length > 100 ? `${text.slice(0, 100)}…` : text;
+  }
+
+  function renderNotes() {
+    const editing = ui.notesEditingId ? findById(appData.notes.items, ui.notesEditingId) : null;
+    if (editing) return renderNoteEditor(editing);
+    return renderNotesList();
+  }
+
+  function renderNotesList() {
+    const folders = appData.notes.folders || [];
+    const allNotes = appData.notes.items || [];
+    let filter = ui.notesFolderId || "all";
+    if (!["all", "pinned", "unfiled"].includes(filter) && !findById(folders, filter)) filter = "all";
+
+    let notes = allNotes;
+    if (filter === "pinned") notes = allNotes.filter((n) => n.pinned);
+    else if (filter === "unfiled") notes = allNotes.filter((n) => !n.folderId);
+    else if (filter !== "all") notes = allNotes.filter((n) => n.folderId === filter);
+
+    const sorted = [...notes].sort((a, b) => (Number(b.pinned) - Number(a.pinned)) || String(b.updatedAt).localeCompare(String(a.updatedAt)));
+    const pinned = sorted.filter((n) => n.pinned);
+    const others = sorted.filter((n) => !n.pinned);
+
+    const chips = [
+      { id: "all", label: "All Notes" },
+      { id: "pinned", label: "Pinned" },
+      ...folders.map((f) => ({ id: f.id, label: f.name, color: f.color, folder: true })),
+      { id: "unfiled", label: "Unfiled" }
+    ];
+    const chipRow = `
+      <div class="notes-folder-row" role="group" aria-label="Note folders">
+        ${chips.map((c) => `
+          <button type="button" class="note-chip ${filter === c.id ? "active" : ""}" data-action="set-notes-folder" data-folder="${escapeHtml(c.id)}" ${c.color ? `style="--class-color:${escapeHtml(c.color)}; --class-color-rgb:${rgbText(c.color)}"` : ""}>
+            ${c.folder ? icon("folder") : ""}<span>${escapeHtml(c.label)}</span>
+          </button>`).join("")}
+      </div>`;
+
+    const isFolder = !["all", "pinned", "unfiled"].includes(filter);
+    const listHtml = sorted.length ? `
+      ${pinned.length ? `<div class="notes-group-label">${icon("pin")}<span>Pinned</span></div><div class="notes-grid">${pinned.map(renderNoteCard).join("")}</div>` : ""}
+      ${others.length ? `${pinned.length ? `<div class="notes-group-label"><span>Notes</span></div>` : ""}<div class="notes-grid">${others.map(renderNoteCard).join("")}</div>` : ""}
+    ` : emptyState("No notes here yet. Tap “New note” to start one.");
+
+    return `
+      <div class="view">
+        ${topbar("Notes", notesFolderName(filter), `${actionButton("add-note-folder", "", "New folder", "folder", "secondary")}${actionButton("new-note", "", "New note", "plus", "primary")}`)}
+        ${chipRow}
+        ${isFolder ? `<div class="notes-folder-actions">${actionButton("edit-note-folder", filter, "Rename", "edit", "secondary")}${actionButton("delete-note-folder", filter, "Delete folder", "trash", "secondary")}</div>` : ""}
+        <section class="notes-list">${listHtml}</section>
+      </div>
+    `;
+  }
+
+  function renderNoteCard(note) {
+    const color = safeHexColor(note.color, "");
+    const folder = note.folderId ? findById(appData.notes.folders, note.folderId) : null;
+    const colorClass = color ? " has-bill-color" : "";
+    const colorStyle = color ? ` style="--bill-color:${color}; --bill-color-rgb:${rgbText(color)};"` : "";
+    const meta = [folder ? folder.name : "", noteTimeLabel(note.updatedAt)].filter(Boolean);
+    const snippet = noteSnippet(note);
+    return `
+      <article class="item-card note-card${colorClass}${recentPinId === note.id ? " just-toggled" : ""}"${colorStyle} role="button" tabindex="0" data-action="open-note" data-id="${escapeHtml(note.id)}">
+        <div class="item-main">
+          <p class="item-title">${note.pinned ? `<span class="note-pin-dot">${icon("pin")}</span>` : ""}${escapeHtml(note.title || "Untitled note")}</p>
+          ${snippet ? `<p class="tiny note-snippet">${escapeHtml(snippet)}</p>` : `<p class="tiny note-snippet muted-note">No additional text</p>`}
+          ${meta.length ? `<div class="item-meta">${meta.map((m) => `<span>${escapeHtml(m)}</span>`).join("")}</div>` : ""}
+        </div>
+        <div class="item-actions">
+          ${actionButton("toggle-note-pin", note.id, note.pinned ? "Unpin" : "Pin", "pin", `icon-btn note-pin-btn${note.pinned ? " pinned" : ""}${recentPinId === note.id ? " just-toggled" : ""}`)}
+          ${actionButton("delete-note", note.id, "Delete", "trash")}
+        </div>
+      </article>`;
+  }
+
+  function renderNoteEditor(note) {
+    const folders = appData.notes.folders || [];
+    const swatches = ["", ...colorSwatches];
+    return `
+      <div class="view note-editor-view${recentPinId === note.id ? " just-toggled" : ""}">
+        <div class="note-editor-bar">
+          <button type="button" class="back-link" data-action="notes-back">${icon("chevron")}<span>Notes</span></button>
+          <div class="note-editor-tools">
+            ${actionButton("toggle-note-pin", note.id, note.pinned ? "Unpin" : "Pin", "pin", `icon-btn note-pin-btn${note.pinned ? " pinned" : ""}${recentPinId === note.id ? " just-toggled" : ""}`)}
+            ${actionButton("delete-note", note.id, "Delete", "trash")}
+          </div>
+        </div>
+        <div class="note-color-row" role="group" aria-label="Note color">
+          ${swatches.map((c) => {
+            const active = safeHexColor(note.color, "") === c || (!note.color && !c);
+            return `<button type="button" class="note-swatch ${active ? "active" : ""} ${c ? "" : "note-swatch-none"}" data-action="set-note-color" data-id="${escapeHtml(note.id)}" data-color="${escapeHtml(c)}" ${c ? `style="background:${escapeHtml(c)}"` : ""} aria-label="${c ? c : "No color"}"></button>`;
+          }).join("")}
+        </div>
+        <input type="text" class="note-title-input" data-note-field="title" data-id="${escapeHtml(note.id)}" placeholder="Title" value="${escapeHtml(note.title)}">
+        <select class="note-folder-select" data-note-field="folderId" data-id="${escapeHtml(note.id)}" aria-label="Folder">
+          <option value="" ${!note.folderId ? "selected" : ""}>No folder</option>
+          ${folders.map((f) => `<option value="${escapeHtml(f.id)}" ${note.folderId === f.id ? "selected" : ""}>${escapeHtml(f.name)}</option>`).join("")}
+        </select>
+        <textarea class="note-body-input" data-note-field="body" data-id="${escapeHtml(note.id)}" placeholder="Start writing…">${escapeHtml(note.body)}</textarea>
+        <p class="tiny note-saved-hint" data-note-saved>Saved · ${escapeHtml(noteTimeLabel(note.updatedAt))}</p>
+        <button type="button" class="primary note-done-btn" data-action="notes-back">${icon("check")}<span>Done</span></button>
+      </div>
+    `;
+  }
+
+  function setupNotesEditor() {
+    const view = app.querySelector(".note-editor-view");
+    if (!view) return;
+    const noteId = view.querySelector("[data-note-field]")?.dataset.id;
+    const note = findById(appData.notes.items, noteId);
+    if (!note) return;
+    const hint = view.querySelector("[data-note-saved]");
+    const persist = () => {
+      note.updatedAt = nowIso();
+      saveData();
+      if (hint) hint.textContent = `Saved · ${noteTimeLabel(note.updatedAt)}`;
+    };
+    view.querySelectorAll("[data-note-field]").forEach((el) => {
+      const field = el.dataset.noteField;
+      const handler = () => { note[field] = el.value; persist(); };
+      el.addEventListener("input", handler);
+      el.addEventListener("change", handler);
+    });
+    if (notesFocusPending) {
+      notesFocusPending = false;
+      const target = note.title ? view.querySelector(".note-body-input") : view.querySelector(".note-title-input");
+      window.requestAnimationFrame(() => { try { target?.focus(); } catch {} });
+    }
+  }
+
+  const TRAVEL_WORLD_VB = "20 30 960 360";
+
+  function findGeoCountryByCsv(csv) {
+    if (!window.GEO) return null;
+    return window.GEO.countries.find((c) => c.csv === csv) || null;
+  }
+
+  function travelCountryViewBox(csv) {
+    const c = findGeoCountryByCsv(csv);
+    if (!c || !c.b) return TRAVEL_WORLD_VB;
+    let [x0, y0, x1, y1] = c.b;
+    let w = Math.max(8, x1 - x0), h = Math.max(8, y1 - y0);
+    const padX = w * 0.28 + 3, padY = h * 0.28 + 3;
+    x0 -= padX; y0 -= padY; w += padX * 2; h += padY * 2;
+    return `${x0.toFixed(1)} ${y0.toFixed(1)} ${w.toFixed(1)} ${h.toFixed(1)}`;
+  }
+
+  function travelCityKey(country, city) {
+    return `${country}::${city}`;
+  }
+
+  function travelCityCoord(key) {
+    const sep = key.indexOf("::");
+    if (sep < 0) return null;
+    const prefix = key.slice(0, sep), city = key.slice(sep + 2);
+    let ct = (window.GEO.cities[prefix] || []).find((x) => x.n === city);
+    if (!ct && window.GEO.usStates && window.GEO.usStates[prefix]) ct = window.GEO.usStates[prefix].cities.find((x) => x.n === city);
+    return ct || null;
+  }
+
+  function travelStateViewBox(state) {
+    const s = window.GEO.usStates && window.GEO.usStates[state];
+    if (!s || !s.b) return TRAVEL_WORLD_VB;
+    let [x0, y0, x1, y1] = s.b;
+    let w = Math.max(8, x1 - x0), h = Math.max(8, y1 - y0);
+    const padX = w * 0.3 + 4, padY = h * 0.3 + 4;
+    x0 -= padX; y0 -= padY; w += padX * 2; h += padY * 2;
+    return `${x0.toFixed(1)} ${y0.toFixed(1)} ${w.toFixed(1)} ${h.toFixed(1)}`;
+  }
+
+  function renderTravel() {
+    if (!window.GEO) {
+      return `<div class="view">${topbar("Travel", "Countries visited")}<p class="tiny">Map data is still loading. Pull to refresh if this persists.</p></div>`;
+    }
+    const visited = appData.travel.countries || {};
+    const total = window.GEO.countryList.length;
+    const visitedCount = window.GEO.countryList.filter((name) => visited[name]).length;
+    // A country can be focused even if it has no border polygon (tiny microstates);
+    // the map just stays at world view while its panel/cities still open.
+    const focus = ui.travelFocus && window.GEO.countryList.includes(ui.travelFocus) ? ui.travelFocus : "";
+
+    const paths = window.GEO.countries.map((c) => {
+      const csv = c.csv;
+      const isVisited = csv && visited[csv];
+      const classes = ["geo-country"];
+      if (isVisited) classes.push("visited");
+      if (focus && csv === focus) classes.push("focused");
+      if (focus && csv !== focus) classes.push("dimmed");
+      const act = csv ? ` data-action="travel-open" data-country="${escapeHtml(csv)}" role="button" tabindex="-1"` : "";
+      return `<path class="${classes.join(" ")}" d="${c.d}" vector-effect="non-scaling-stroke"${act}></path>`;
+    }).join("");
+
+    const isUS = focus === "United States";
+    const stateFocus = isUS && ui.travelStateFocus && window.GEO.usStates && window.GEO.usStates[ui.travelStateFocus] ? ui.travelStateFocus : "";
+
+    const targetVB = stateFocus ? travelStateViewBox(stateFocus) : (focus ? travelCountryViewBox(focus) : (travelManualVB || TRAVEL_WORLD_VB));
+    // Dot radius scales with the zoom so dots look the same size in any country,
+    // and stays small/subtle. Dots only render when a country/state is in focus.
+    const vbW = Number(targetVB.split(/\s+/)[2]) || 960;
+    const rBase = Math.max(0.35, vbW * 0.0085);
+    const dotFor = (ct) => {
+      const r = (ct.cap ? rBase * 1.25 : rBase).toFixed(2);
+      return `<circle class="geo-city ${ct.cap ? "capital" : ""}" cx="${ct.x}" cy="${ct.y}" r="${r}" vector-effect="non-scaling-stroke"></circle>`;
+    };
+    let dots = "";
+    if (stateFocus) {
+      const cities = window.GEO.usStates[stateFocus].cities || [];
+      dots = cities.filter((ct) => appData.travel.cities[travelCityKey(stateFocus, ct.n)]).map(dotFor).join("");
+    } else if (isUS) {
+      Object.keys(window.GEO.usStates || {}).forEach((st) => {
+        window.GEO.usStates[st].cities.forEach((ct) => {
+          if (appData.travel.cities[travelCityKey(st, ct.n)]) dots += dotFor(ct);
+        });
+      });
+    } else if (focus) {
+      const cities = window.GEO.cities[focus] || [];
+      dots = cities.filter((ct) => appData.travel.cities[travelCityKey(focus, ct.n)]).map(dotFor).join("");
+    }
+    // No dots on the full world map — only when focused on a country/state.
+
+    // US state borders — only drawn while the US is focused (never on the world map).
+    let statePaths = "";
+    if (isUS && window.GEO.usStates) {
+      statePaths = Object.keys(window.GEO.usStates).map((st) => {
+        const s = window.GEO.usStates[st];
+        if (!s.d) return "";
+        const cls = ["geo-state"];
+        if (appData.travel.states[st]) cls.push("visited");
+        if (stateFocus && st === stateFocus) cls.push("focused");
+        if (stateFocus && st !== stateFocus) cls.push("dimmed");
+        return `<path class="${cls.join(" ")}" d="${s.d}" vector-effect="non-scaling-stroke" data-action="travel-open-state" data-state="${escapeHtml(st)}" role="button" tabindex="-1"></path>`;
+      }).join("");
+    }
+    const map = `
+      <div class="travel-map-wrap">
+        <svg class="travel-map" viewBox="${targetVB}" data-target-vb="${escapeHtml(targetVB)}" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" aria-label="World map">
+          <g class="travel-map-g">${paths}${statePaths}${dots}</g>
+        </svg>
+        <div class="travel-zoom-controls">
+          <button type="button" class="travel-zoom-btn" data-action="travel-zoom-in" aria-label="Zoom in">${icon("plus")}</button>
+          <button type="button" class="travel-zoom-btn" data-action="travel-zoom-out" aria-label="Zoom out"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></svg></button>
+          <button type="button" class="travel-zoom-btn" data-action="travel-zoom-reset" aria-label="Reset view">${icon("globe")}</button>
+        </div>
+      </div>`;
+
+    return `
+      <div class="view travel-view">
+        ${focus ? `<button type="button" class="back-link" data-action="travel-back">${icon("chevron")}<span>World map</span></button>` : ""}
+        ${topbar("Travel", `${visitedCount} of ${total} countries visited`)}
+        <section class="card panel section travel-card">
+          ${map}
+          <p class="tiny travel-hint">${focus ? "Pinch or use +/− to zoom · drag to pan" : "Tap a country or use the list below · pinch/scroll to zoom"}</p>
+        </section>
+        ${focus ? renderTravelCountryPanel(focus) : ""}
+        ${renderTravelList()}
+      </div>
+    `;
+  }
+
+  function renderTravelList() {
+    const visited = appData.travel.countries || {};
+    const names = [...window.GEO.countryList].sort((a, b) => a.localeCompare(b));
+    return `
+      <section class="card panel section travel-list-card">
+        <div class="section-header"><h2>All countries</h2></div>
+        <input id="travel-search" class="travel-search" type="text" placeholder="Search countries…" autocomplete="off">
+        <div class="travel-list" data-travel-list>
+          ${names.map((name) => {
+            const v = visited[name];
+            return `<button type="button" class="travel-list-row ${v ? "visited" : ""} ${ui.travelFocus === name ? "active" : ""}" data-action="travel-open" data-country="${escapeHtml(name)}" data-name="${escapeHtml(name.toLowerCase())}">
+              <span class="travel-list-dot"></span>
+              <span class="travel-list-name">${escapeHtml(name)}</span>
+              ${v ? `<span class="travel-list-check">${icon("check")}</span>` : ""}
+            </button>`;
+          }).join("")}
+        </div>
+      </section>
+    `;
+  }
+
+  function travelVisitBtn(action, key, dataAttr, value, isVisited, animKey) {
+    const anim = recentVisitKey === animKey ? " just-visited" : "";
+    return `<button type="button" class="${isVisited ? "secondary active" : "primary"} travel-visit-btn${anim}" data-action="${action}" data-${dataAttr}="${escapeHtml(value)}">${icon(isVisited ? "done" : "plus")}<span>${isVisited ? "Visited" : "Mark visited"}</span></button>`;
+  }
+
+  function renderTravelCountryPanel(csv) {
+    if (csv === "United States" && window.GEO.usStates) return renderUSPanel();
+    const isVisited = Boolean(appData.travel.countries[csv]);
+    const cities = window.GEO.cities[csv] || [];
+    const visitedCityCount = cities.filter((ct) => appData.travel.cities[travelCityKey(csv, ct.n)]).length;
+    return `
+      <section class="card panel section travel-panel">
+        <div class="section-header">
+          <div>
+            <h2>${escapeHtml(csv)}</h2>
+            <span class="tiny">${isVisited ? "Visited" : "Not visited yet"}${visitedCityCount ? ` · ${visitedCityCount} cit${visitedCityCount === 1 ? "y" : "ies"}` : ""}</span>
+          </div>
+          ${travelVisitBtn("toggle-visit-country", csv, "country", csv, isVisited, "c:" + csv)}
+        </div>
+        <h3 class="travel-cities-title">Cities you've been to</h3>
+        <div class="travel-city-list">
+          ${cities.length ? cities.map((ct) => {
+            const on = Boolean(appData.travel.cities[travelCityKey(csv, ct.n)]);
+            return `<button type="button" class="travel-city-chip ${on ? "on" : ""}" data-action="toggle-visit-city" data-country="${escapeHtml(csv)}" data-city="${escapeHtml(ct.n)}">
+              <span class="travel-city-dot ${ct.cap ? "capital" : ""}"></span><span class="travel-city-name">${escapeHtml(ct.n)}</span>${ct.cap ? `<span class="travel-cap-tag">capital</span>` : ""}
+            </button>`;
+          }).join("") : `<p class="tiny">No cities listed for this country.</p>`}
+        </div>
+      </section>
+    `;
+  }
+
+  function renderUSPanel() {
+    if (ui.travelStateFocus && window.GEO.usStates[ui.travelStateFocus]) return renderStatePanel(ui.travelStateFocus);
+    const isVisited = Boolean(appData.travel.countries["United States"]);
+    const states = Object.keys(window.GEO.usStates).sort((a, b) => a.localeCompare(b));
+    const visitedStates = states.filter((s) => appData.travel.states[s]).length;
+    return `
+      <section class="card panel section travel-panel">
+        <div class="section-header">
+          <div>
+            <h2>United States</h2>
+            <span class="tiny">${isVisited ? "Visited" : "Not visited yet"} · ${visitedStates}/${states.length} states</span>
+          </div>
+          ${travelVisitBtn("toggle-visit-country", "United States", "country", "United States", isVisited, "c:United States")}
+        </div>
+        <h3 class="travel-cities-title">States — tap to open</h3>
+        <div class="travel-list travel-sub-list">
+          ${states.map((s) => {
+            const v = appData.travel.states[s];
+            return `<button type="button" class="travel-list-row ${v ? "visited" : ""}" data-action="travel-open-state" data-state="${escapeHtml(s)}">
+              <span class="travel-list-dot"></span><span class="travel-list-name">${escapeHtml(s)}</span>${v ? `<span class="travel-list-check">${icon("check")}</span>` : ""}
+            </button>`;
+          }).join("")}
+        </div>
+      </section>
+    `;
+  }
+
+  function renderStatePanel(state) {
+    const s = window.GEO.usStates[state];
+    const isVisited = Boolean(appData.travel.states[state]);
+    const cities = s.cities || [];
+    const visitedCities = cities.filter((ct) => appData.travel.cities[travelCityKey(state, ct.n)]).length;
+    return `
+      <section class="card panel section travel-panel">
+        <button type="button" class="back-link" data-action="travel-back-states">${icon("chevron")}<span>States</span></button>
+        <div class="section-header">
+          <div>
+            <h2>${escapeHtml(state)}</h2>
+            <span class="tiny">${isVisited ? "Visited" : "Not visited yet"}${visitedCities ? ` · ${visitedCities} cit${visitedCities === 1 ? "y" : "ies"}` : ""}</span>
+          </div>
+          ${travelVisitBtn("toggle-visit-state", state, "state", state, isVisited, "s:" + state)}
+        </div>
+        <h3 class="travel-cities-title">Cities you've been to</h3>
+        <div class="travel-city-list">
+          ${cities.map((ct) => {
+            const on = Boolean(appData.travel.cities[travelCityKey(state, ct.n)]);
+            return `<button type="button" class="travel-city-chip ${on ? "on" : ""}" data-action="toggle-visit-city" data-scope="state" data-country="${escapeHtml(state)}" data-city="${escapeHtml(ct.n)}">
+              <span class="travel-city-dot ${ct.cap ? "capital" : ""}"></span><span class="travel-city-name">${escapeHtml(ct.n)}</span>${ct.cap ? `<span class="travel-cap-tag">capital</span>` : ""}
+            </button>`;
+          }).join("")}
+        </div>
+      </section>
+    `;
+  }
+
+  function setupTravelMap() {
+    const svg = app.querySelector(".travel-map");
+    if (!svg) return;
+    setupTravelSearch();
+    setupTravelPanZoom(svg);
+    const target = svg.dataset.targetVb;
+    const from = lastTravelViewBox;
+    lastTravelViewBox = target;
+    if (!from || from === target) return;
+    if (travelTweenRAF) window.cancelAnimationFrame(travelTweenRAF);
+    const a = from.split(/\s+/).map(Number);
+    const b = target.split(/\s+/).map(Number);
+    if (a.length !== 4 || b.some((n) => isNaN(n))) { svg.setAttribute("viewBox", target); return; }
+    const start = performance.now();
+    const dur = 560;
+    const ease = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
+    svg.setAttribute("viewBox", from);
+    const step = (now) => {
+      const t = Math.min(1, (now - start) / dur);
+      const e = ease(t);
+      const vb = a.map((v, i) => v + (b[i] - v) * e);
+      svg.setAttribute("viewBox", vb.map((n) => n.toFixed(1)).join(" "));
+      if (t < 1) travelTweenRAF = window.requestAnimationFrame(step);
+    };
+    travelTweenRAF = window.requestAnimationFrame(step);
+  }
+
+  function travelGetVB(svg) {
+    const v = (svg.getAttribute("viewBox") || TRAVEL_WORLD_VB).split(/\s+/).map(Number);
+    return { x: v[0], y: v[1], w: v[2], h: v[3] };
+  }
+
+  function travelClampVB(vb) {
+    // Clamp zoom level and keep the view loosely within the world.
+    const minW = 40, maxW = 1200;
+    const w = Math.max(minW, Math.min(maxW, vb.w));
+    const h = w * (360 / 960); // keep world aspect ratio
+    const x = Math.max(-300, Math.min(1000 - w + 300, vb.x));
+    const y = Math.max(-150, Math.min(500 - h + 150, vb.y));
+    return { x, y, w, h };
+  }
+
+  function travelSetVB(svg, vb) {
+    const c = travelClampVB(vb);
+    const str = `${c.x.toFixed(1)} ${c.y.toFixed(1)} ${c.w.toFixed(1)} ${c.h.toFixed(1)}`;
+    svg.setAttribute("viewBox", str);
+    lastTravelViewBox = str;
+    if (!ui.travelFocus) travelManualVB = str;
+  }
+
+  function travelAnimateVB(svg, targetVb, dur = 320) {
+    if (travelTweenRAF) window.cancelAnimationFrame(travelTweenRAF);
+    const a = travelGetVB(svg);
+    const b = travelClampVB(targetVb);
+    const start = performance.now();
+    const ease = (p) => 1 - Math.pow(1 - p, 3);
+    const step = (now) => {
+      const p = Math.min(1, (now - start) / dur);
+      const e = ease(p);
+      travelSetVB(svg, { x: a.x + (b.x - a.x) * e, y: a.y + (b.y - a.y) * e, w: a.w + (b.w - a.w) * e, h: a.h + (b.h - a.h) * e });
+      if (p < 1) travelTweenRAF = window.requestAnimationFrame(step);
+    };
+    travelTweenRAF = window.requestAnimationFrame(step);
+  }
+
+  function travelZoomBy(factor, fx, fy, animate) {
+    const svg = app.querySelector(".travel-map");
+    if (!svg) return;
+    const vb = travelGetVB(svg);
+    const cx = fx == null ? vb.x + vb.w / 2 : fx;
+    const cy = fy == null ? vb.y + vb.h / 2 : fy;
+    const nw = vb.w * factor;
+    const nh = vb.h * factor;
+    // keep focal point stationary
+    const nx = cx - (cx - vb.x) * (nw / vb.w);
+    const ny = cy - (cy - vb.y) * (nh / vb.h);
+    if (animate) travelAnimateVB(svg, { x: nx, y: ny, w: nw, h: nh }, 300);
+    else { if (travelTweenRAF) window.cancelAnimationFrame(travelTweenRAF); travelSetVB(svg, { x: nx, y: ny, w: nw, h: nh }); }
+  }
+
+  function setupTravelPanZoom(svg) {
+    const pointers = new Map();
+    let panStart = null;
+    let pinchStart = null;
+    const toSvg = (clientX, clientY) => {
+      const r = svg.getBoundingClientRect();
+      const vb = travelGetVB(svg);
+      return { x: vb.x + ((clientX - r.left) / r.width) * vb.w, y: vb.y + ((clientY - r.top) / r.height) * vb.h };
+    };
+    svg.addEventListener("pointerdown", (e) => {
+      if (e.target.closest("[data-action]") && pointers.size === 0) return; // let taps through
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      try { svg.setPointerCapture(e.pointerId); } catch {}
+      if (pointers.size === 1) { const vb = travelGetVB(svg); panStart = { px: e.clientX, py: e.clientY, vb }; }
+      if (pointers.size === 2) {
+        const pts = [...pointers.values()];
+        pinchStart = { dist: Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y), vb: travelGetVB(svg), mid: toSvg((pts[0].x + pts[1].x) / 2, (pts[0].y + pts[1].y) / 2) };
+        panStart = null;
+      }
+    });
+    svg.addEventListener("pointermove", (e) => {
+      if (!pointers.has(e.pointerId)) return;
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pointers.size === 2 && pinchStart) {
+        const pts = [...pointers.values()];
+        const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+        // Dampen so a small finger movement doesn't zoom dramatically.
+        const factor = Math.pow(pinchStart.dist / Math.max(1, dist), 0.55);
+        const nw = pinchStart.vb.w * factor;
+        const nh = pinchStart.vb.h * factor;
+        const nx = pinchStart.mid.x - (pinchStart.mid.x - pinchStart.vb.x) * (nw / pinchStart.vb.w);
+        const ny = pinchStart.mid.y - (pinchStart.mid.y - pinchStart.vb.y) * (nh / pinchStart.vb.h);
+        travelSetVB(svg, { x: nx, y: ny, w: nw, h: nh });
+      } else if (pointers.size === 1 && panStart) {
+        const r = svg.getBoundingClientRect();
+        const dx = (e.clientX - panStart.px) / r.width * panStart.vb.w;
+        const dy = (e.clientY - panStart.py) / r.height * panStart.vb.h;
+        travelSetVB(svg, { x: panStart.vb.x - dx, y: panStart.vb.y - dy, w: panStart.vb.w, h: panStart.vb.h });
+      }
+    });
+    const end = (e) => {
+      pointers.delete(e.pointerId);
+      if (pointers.size < 2) pinchStart = null;
+      if (pointers.size === 0) panStart = null;
+    };
+    svg.addEventListener("pointerup", end);
+    svg.addEventListener("pointercancel", end);
+    svg.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      const f = toSvg(e.clientX, e.clientY);
+      travelZoomBy(e.deltaY > 0 ? 1.08 : 0.93, f.x, f.y);
+    }, { passive: false });
+  }
+
+  function setupTravelSearch() {
+    const input = app.querySelector("#travel-search");
+    if (!input) return;
+    input.addEventListener("input", () => {
+      const q = input.value.trim().toLowerCase();
+      app.querySelectorAll("[data-travel-list] .travel-list-row").forEach((row) => {
+        row.style.display = (!q || (row.dataset.name || "").includes(q)) ? "" : "none";
+      });
+    });
+  }
+
   function renderMore() {
     const views = [
-      { key: "gym", label: "Gym", icon: "target" },
-      { key: "nutrition", label: "Nutrition", icon: "spark" },
       { key: "shopping", label: "Shopping List", icon: "wallet" },
-      { key: "reminders", label: "Calendar / Reminders", icon: "calendar" },
-      { key: "inbox", label: "Inbox / Quick Capture", icon: "plus" },
+      { key: "bucket", label: "Bucket List", icon: "spark" },
       { key: "review", label: "Weekly Review", icon: "done" },
       { key: "settings", label: "Settings", icon: "settings" }
     ];
     return `
       <div class="view">
-        ${topbar("More", "Additional tools", actionButton("open-quick-add", "", "Quick capture", "plus", "primary"))}
+        ${topbar("More", "Additional tools")}
         <section class="more-list" aria-label="More sections">
           ${views.map((view) => `
             <button type="button" class="more-row ${ui.moreView === view.key ? "active" : ""}" data-action="set-more-view" data-view="${escapeHtml(view.key)}">
@@ -2774,13 +4545,50 @@
   }
 
   function renderMoreView() {
-    if (ui.moreView === "gym") return renderGym();
-    if (ui.moreView === "nutrition") return renderNutrition();
-    if (ui.moreView === "shopping") return renderShopping();
-    if (ui.moreView === "reminders") return renderReminders();
-    if (ui.moreView === "inbox") return renderInbox();
     if (ui.moreView === "review") return renderWeeklyReview();
-    return renderSettings();
+    if (ui.moreView === "settings") return renderSettings();
+    if (ui.moreView === "bucket") return renderBucketList();
+    return renderShopping();
+  }
+
+  function renderBucketList() {
+    const items = appData.bucketList || [];
+    const active = items.filter((i) => !i.done);
+    const done = items.filter((i) => i.done);
+    const renderItem = (item) => itemCard({
+      title: item.text,
+      meta: item.done && item.completedAt ? [`Done ${formatDate(dateString(new Date(item.completedAt)))}`] : [],
+      className: item.done ? "complete" : "",
+      actions: `${actionButton("toggle-bucket", item.id, item.done ? "Mark not done" : "Mark done", item.done ? "undo" : "check")}${actionButton("delete-bucket", item.id, "Delete", "trash")}`
+    });
+    return `
+      <section class="section">
+        <div class="section-header">
+          <div>
+            <h2>Bucket List</h2>
+            <span class="tiny">${active.length} to do · ${done.length} done</span>
+          </div>
+        </div>
+        <div class="card panel section">
+          <div class="inline-form">
+            <input id="bucket-input" type="text" placeholder="Something you want to do…" autocomplete="off">
+            <button type="button" class="primary" data-action="add-bucket">${icon("plus")}<span>Add</span></button>
+          </div>
+        </div>
+        <div class="card panel section">
+          <h2>To do</h2>
+          <div class="list">
+            ${active.length ? active.map(renderItem).join("") : emptyState("Add something you'd love to do one day.")}
+          </div>
+        </div>
+        <div class="card panel section">
+          <h2>Completed</h2>
+          <div class="list">
+            ${done.length ? done.map(renderItem).join("") : emptyState("Completed bucket-list items will appear here.")}
+          </div>
+        </div>
+      </section>
+    `;
   }
 
   function selectMoreRow(view, button = null) {
@@ -2796,49 +4604,213 @@
     }, 320);
   }
 
-  function renderGym() {
-    const week = gymStats(calculateDateRange("week"));
-    const month = gymStats(calculateDateRange("month"));
-    const planText = appData.gym.planDays?.length ? appData.gym.planDays.map(dayName).join(", ") : "No plan days set";
+  function renderHealth() {
+    const view = ["workouts", "nutrition"].includes(ui.healthView) ? ui.healthView : "workouts";
+    return `
+      <div class="view">
+        ${topbar("Health", "Workouts & nutrition, together", actionButton("schedule-workout", "", "Schedule workout", "clock", "primary"))}
+        <div class="seg-toggle health-toggle" role="group" aria-label="Health view">
+          <button type="button" class="seg-btn ${view === "workouts" ? "active" : ""}" data-action="set-health-view" data-health-view="workouts">${icon("dumbbell")}<span>Workouts</span></button>
+          <button type="button" class="seg-btn ${view === "nutrition" ? "active" : ""}" data-action="set-health-view" data-health-view="nutrition">${icon("flame")}<span>Nutrition</span></button>
+        </div>
+        <div class="health-body" data-health-body>
+          ${view === "nutrition" ? renderNutrition() : renderWorkoutsSection()}
+        </div>
+      </div>
+    `;
+  }
+
+  function workoutsForDate(ds) {
+    return sortByStartTime(appData.gym.workouts.filter((w) => w.date === ds));
+  }
+
+  function sortByStartTime(list) {
+    return [...list].sort((a, b) => {
+      const am = timeToMinutes(a.startTime);
+      const bm = timeToMinutes(b.startTime);
+      if (am === null && bm === null) return 0;
+      if (am === null) return 1;
+      if (bm === null) return -1;
+      return am - bm;
+    });
+  }
+
+  function renderHealthPlanner() {
+    const weekStart = startOfWeek(new Date());
+    const todayStr = today();
+    const planDays = appData.gym.planDays || [];
+    const cols = [];
+    for (let i = 0; i < 7; i++) {
+      const ds = dateString(addDays(weekStart, i));
+      const dateObj = parseDate(ds);
+      const ws = workoutsForDate(ds);
+      const isPlanDay = planDays.includes(dateObj.getDay());
+      const dow = new Intl.DateTimeFormat(undefined, { weekday: "short" }).format(dateObj);
+      const blocks = ws.length
+        ? ws.map((w) => {
+            const label = isRunWorkout(w) ? "Run" : (w.split || "Workout");
+            return `
+            <button type="button" class="planner-block" data-action="edit-workout" data-id="${escapeHtml(w.id)}" title="${escapeHtml(label)}">
+              <span class="planner-block-time">${escapeHtml(workoutTimeLabel(w) || "Anytime")}</span>
+              <span class="planner-block-title">${escapeHtml(label)}</span>
+            </button>`;
+          }).join("")
+        : (isPlanDay ? `<button type="button" class="planner-plan-hint" data-action="schedule-workout" data-date="${escapeHtml(ds)}">Plan day · add</button>` : `<span class="planner-empty">Rest</span>`);
+      cols.push(`
+        <div class="planner-day ${ds === todayStr ? "is-today" : ""} ${isPlanDay ? "is-plan" : ""}">
+          <div class="planner-day-head">
+            <span class="planner-dow">${escapeHtml(dow)}</span>
+            <span class="planner-dom">${Number(ds.slice(8))}</span>
+          </div>
+          <div class="planner-day-body">${blocks}</div>
+        </div>`);
+    }
+    return `
+      <section class="card panel section health-planner">
+        <div class="section-header">
+          <div>
+            <h2>This week's plan</h2>
+            <span class="tiny">Scheduled workouts across the week</span>
+          </div>
+          ${actionButton("schedule-workout", "", "Schedule", "plus", "secondary")}
+        </div>
+        <div class="planner-week">${cols.join("")}</div>
+      </section>
+    `;
+  }
+
+  function workoutKind(w) {
+    return (w.type || "lift").toLowerCase();
+  }
+
+  function isRunWorkout(w) {
+    return workoutKind(w) === "run";
+  }
+
+  function runStats(range) {
+    const runs = appData.gym.workouts.filter((w) => isRunWorkout(w) && dateInRange(w.date, range));
+    const miles = sum(runs, (w) => Number(w.distance) || 0);
+    const duration = sum(runs, (w) => Number(w.duration) || 0);
+    return { runs, miles, duration, count: runs.length };
+  }
+
+  function paceLabel(distance, duration) {
+    const d = Number(distance) || 0, m = Number(duration) || 0;
+    if (!d || !m) return "";
+    const p = m / d;
+    const mm = Math.floor(p);
+    const ss = Math.round((p - mm) * 60);
+    return `${mm}:${String(ss).padStart(2, "0")}/mi`;
+  }
+
+  function renderWorkoutsSection() {
+    const mode = ui.workoutMode === "run" ? "run" : "lift";
     return `
       <section class="section">
-        <div class="section-header">
-          <h2>Gym</h2>
-          <div class="actions">
-            ${actionButton("edit-gym-plan", "", "Plan days", "calendar", "secondary")}
-            ${actionButton("add-workout", "", "Add workout", "plus", "primary")}
-          </div>
+        ${renderHealthPlanner()}
+        <div class="seg-toggle" role="group" aria-label="Workout type">
+          <button type="button" class="seg-btn ${mode === "lift" ? "active" : ""}" data-action="set-workout-mode" data-workout-mode="lift">${icon("dumbbell")}<span>Lifting</span></button>
+          <button type="button" class="seg-btn ${mode === "run" ? "active" : ""}" data-action="set-workout-mode" data-workout-mode="run">${icon("activity")}<span>Running</span></button>
         </div>
-        <div class="metric-grid">
-          ${metric("Workouts this week", String(week.workouts.length), planText)}
-          ${metric("Workouts this month", String(month.workouts.length), "")}
-          ${metric("Workout streak", String(week.streak), "Consecutive workout days")}
-          ${metric("Total volume", formatNumber(week.volume), "Sets x reps x weight")}
-          ${metric("Missed planned", String(week.missedPlanned), "This week")}
-          ${metric("Most recent", week.lastWorkout ? formatDate(week.lastWorkout.date) : "None", week.lastWorkout?.split || "")}
-        </div>
-        <div class="card panel section">
-          <h2>Split history</h2>
-          ${renderBarChart(week.splitFrequency, Math.max(1, week.workouts.length), false)}
-        </div>
-        <div class="card panel section">
-          <h2>Workout log</h2>
-          <div class="list">
-            ${appData.gym.workouts.length ? sortByDate(appData.gym.workouts, "date").reverse().map(renderWorkoutItem).join("") : emptyState("Add workouts to track consistency and volume.")}
-          </div>
+        <div data-workout-body>
+          ${mode === "run" ? renderRunningSummary() : renderLiftingSummary()}
         </div>
       </section>
     `;
   }
 
+  function renderLiftingSummary() {
+    const lifts = sortByDate(appData.gym.workouts.filter((w) => !isRunWorkout(w)), "date");
+    const weekRange = calculateDateRange("week");
+    const monthRange = calculateDateRange("month");
+    const liftWeek = lifts.filter((w) => dateInRange(w.date, weekRange));
+    const liftMonth = lifts.filter((w) => dateInRange(w.date, monthRange));
+    const volume = sum(liftWeek, workoutVolume);
+    const splitFreq = groupTotals(liftWeek, "split", () => 1);
+    const lastLift = lifts.at(-1);
+    const missed = gymStats(weekRange).missedPlanned;
+    const planText = appData.gym.planDays?.length ? appData.gym.planDays.map(dayName).join(", ") : "No plan days set";
+    return `
+      <div class="section-header">
+        <h2>Lifting summary</h2>
+        <div class="actions">
+          ${actionButton("edit-gym-plan", "", "Plan days", "calendar", "secondary")}
+          ${actionButton("add-workout", "", "Add lift", "plus", "primary")}
+        </div>
+      </div>
+      <div class="metric-grid">
+        ${metric("Lifts this week", String(liftWeek.length), planText)}
+        ${metric("Lifts this month", String(liftMonth.length), "")}
+        ${metric("Workout streak", String(workoutStreak()), "Consecutive workout days")}
+        ${metric("Total volume", formatNumber(volume), "Sets x reps x weight")}
+        ${metric("Missed planned", String(missed), "This week")}
+        ${metric("Most recent", lastLift ? formatDate(lastLift.date) : "None", lastLift?.split || "")}
+      </div>
+      <div class="card panel section">
+        <h2>Split history</h2>
+        ${renderBarChart(splitFreq, Math.max(1, liftWeek.length), false)}
+      </div>
+      <div class="card panel section">
+        <h2>Lift log</h2>
+        <div class="list">
+          ${lifts.length ? lifts.slice().reverse().map(renderWorkoutItem).join("") : emptyState("Add a lift to track consistency and volume.")}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderRunningSummary() {
+    const todayRuns = runStats(calculateDateRange("today"));
+    const weekRuns = runStats(calculateDateRange("week"));
+    const monthRuns = runStats(calculateDateRange("month"));
+    const allRuns = sortByDate(appData.gym.workouts.filter(isRunWorkout), "date");
+    const totalMiles = sum(allRuns, (w) => Number(w.distance) || 0);
+    const longest = allRuns.reduce((m, w) => Math.max(m, Number(w.distance) || 0), 0);
+    const lastRun = allRuns.at(-1);
+    return `
+      <div class="section-header">
+        <h2>Running summary</h2>
+        <div class="actions">
+          ${actionButton("add-run", "", "Log run", "plus", "primary")}
+        </div>
+      </div>
+      <div class="metric-grid">
+        ${metric("Miles today", formatNumber(todayRuns.miles, 1), `${todayRuns.count} run${todayRuns.count === 1 ? "" : "s"}`)}
+        ${metric("Miles this week", formatNumber(weekRuns.miles, 1), `${weekRuns.count} run${weekRuns.count === 1 ? "" : "s"}`)}
+        ${metric("Miles this month", formatNumber(monthRuns.miles, 1), `${monthRuns.count} runs`)}
+        ${metric("Total miles", formatNumber(totalMiles, 1), `${allRuns.length} runs all-time`)}
+        ${metric("Longest run", `${formatNumber(longest, 1)} mi`, "")}
+        ${metric("Most recent", lastRun ? formatDate(lastRun.date) : "None", lastRun ? `${formatNumber(lastRun.distance || 0, 1)} mi` : "")}
+      </div>
+      <div class="card panel section">
+        <h2>Run log</h2>
+        <div class="list">
+          ${allRuns.length ? allRuns.slice().reverse().map(renderWorkoutItem).join("") : emptyState("Log a run to track your miles and pace.")}
+        </div>
+      </div>
+    `;
+  }
+
+  function workoutTimeLabel(workout = {}) {
+    const start = formatTime(workout.startTime);
+    const end = formatTime(workout.endTime);
+    if (start && end) return `${start} – ${end}`;
+    return start || "";
+  }
+
   function renderWorkoutItem(workout) {
+    const run = isRunWorkout(workout);
     const volume = workoutVolume(workout);
-    const exerciseText = appData.settings.gymDetails && workout.exercises?.length
+    const exerciseText = !run && appData.settings.gymDetails && workout.exercises?.length
       ? workout.exercises.map((ex) => `${ex.name}: ${ex.sets} x ${ex.reps} x ${ex.weight}`).join("; ")
       : "";
+    const timeLabel = workoutTimeLabel(workout);
+    const meta = run
+      ? [timeLabel, `${formatNumber(workout.distance || 0, 2)} mi`, workout.duration ? `${workout.duration} min` : "", paceLabel(workout.distance, workout.duration), `Energy ${workout.energy || "N/A"}`]
+      : [timeLabel, `${workout.duration || 0} min`, `Energy ${workout.energy || "N/A"}`, `Volume ${formatNumber(volume)}`];
     return itemCard({
-      title: `${workout.split || "Workout"} · ${formatDate(workout.date)}`,
-      meta: [`${workout.duration || 0} min`, `Energy ${workout.energy || "N/A"}`, `Volume ${formatNumber(volume)}`],
+      title: `${run ? "Run" : (workout.split || "Workout")} · ${formatDate(workout.date)}`,
+      meta: meta.filter(Boolean),
       note: [workout.notes, exerciseText].filter(Boolean).join(" "),
       actions: `${actionButton("edit-workout", workout.id, "Edit", "edit")}${actionButton("delete-workout", workout.id, "Delete", "trash")}`
     });
@@ -2898,12 +4870,16 @@
     });
   }
 
+  function isWishlistItem(item) {
+    return (item.listType || "grocery") === "wishlist";
+  }
+
   function renderShopping() {
     const stats = shoppingStats();
-    const finance = calculateFinance(calculateDateRange("paycheck"));
-    const unpurchased = appData.shopping.filter((item) => !item.purchased);
-    const purchased = appData.shopping.filter((item) => item.purchased);
-    const grouped = groupBy(unpurchased, "store");
+    const items = appData.shopping || [];
+    const grocery = items.filter((item) => !item.purchased && !isWishlistItem(item));
+    const wishlist = items.filter((item) => !item.purchased && isWishlistItem(item));
+    const got = items.filter((item) => item.purchased);
 
     return `
       <section class="section">
@@ -2912,25 +4888,37 @@
           ${actionButton("add-shopping", "", "Add item", "plus", "primary")}
         </div>
         <div class="metric-grid">
-          ${metric("Estimated total", formatCurrency(stats.remainingTotal), `${stats.remainingCount} unpurchased`)}
-          ${metric("Purchased total", formatCurrency(stats.purchasedTotal), `${purchased.length} purchased`)}
-          ${metric("After shopping", formatCurrency(finance.safeToSpend), "Paycheck cycle safe-to-spend")}
+          ${metric("Grocery cart", formatCurrency(stats.groceryTotal), `${stats.groceryCount} item${stats.groceryCount === 1 ? "" : "s"} to grab`)}
+          ${metric("Wishlist", formatCurrency(stats.wishlistTotal), `${stats.wishlistCount} item${stats.wishlistCount === 1 ? "" : "s"} you want`)}
         </div>
         <div class="card panel section">
-          <h2>Unpurchased</h2>
+          <div class="section-header">
+            <div>
+              <h2>Grocery cart</h2>
+              <span class="tiny">Everyday items — adds up to a full cart total</span>
+            </div>
+            <span class="cart-total">${formatCurrency(stats.groceryTotal)}</span>
+          </div>
           <div class="list">
-            ${Object.keys(grouped).length ? Object.entries(grouped).map(([store, items]) => `
-              <div class="section">
-                <h3>${escapeHtml(store || "No store")}</h3>
-                ${items.map(renderShoppingItem).join("")}
-              </div>
-            `).join("") : emptyState("No open shopping items.")}
+            ${grocery.length ? grocery.map(renderShoppingItem).join("") : emptyState("Add grocery items to build your cart.")}
           </div>
         </div>
         <div class="card panel section">
-          <h2>Purchased</h2>
+          <div class="section-header">
+            <div>
+              <h2>Wishlist</h2>
+              <span class="tiny">Bigger one-off things you're aiming to buy</span>
+            </div>
+            <span class="cart-total">${formatCurrency(stats.wishlistTotal)}</span>
+          </div>
           <div class="list">
-            ${purchased.length ? purchased.map(renderShoppingItem).join("") : emptyState("Purchased items will appear here.")}
+            ${wishlist.length ? wishlist.map(renderShoppingItem).join("") : emptyState("Add a bigger item you want to save up for.")}
+          </div>
+        </div>
+        <div class="card panel section">
+          <h2>Got it</h2>
+          <div class="list">
+            ${got.length ? got.map(renderShoppingItem).join("") : emptyState("Items you've picked up will appear here.")}
           </div>
         </div>
       </section>
@@ -2938,12 +4926,14 @@
   }
 
   function renderShoppingItem(item) {
+    const typeLabel = isWishlistItem(item) ? "Wishlist" : "Grocery";
     return itemCard({
       title: item.itemName,
-      meta: [formatCurrency(item.estimatedPrice), item.store, item.category, item.priority],
+      meta: [item.estimatedPrice ? formatCurrency(item.estimatedPrice) : "", typeLabel, item.store].filter(Boolean),
+      note: item.notes,
       className: item.purchased ? "purchased" : "",
       actions: `
-        ${actionButton("toggle-shopping", item.id, item.purchased ? "Unpurchase" : "Purchased", item.purchased ? "undo" : "check")}
+        ${actionButton("toggle-shopping", item.id, item.purchased ? "Not yet" : "Got it", item.purchased ? "undo" : "check")}
         ${actionButton("edit-shopping", item.id, "Edit", "edit")}
         ${actionButton("delete-shopping", item.id, "Delete", "trash")}
       `
@@ -3244,6 +5234,16 @@
     const netIncome = Math.max(0, grossIncome - taxBreakdown.total);
     const taxTotal = taxBreakdown.total;
     const workHours = sum(incomeEntries.filter((entry) => entry.type === "hourly"), (entry) => entry.hours);
+    // Income that has actually been received (pay date on or before today) is real
+    // money in hand, so it increases current money. Income dated in the future is
+    // only part of the forecast.
+    const postedIncomeEntries = appData.finance.income.filter((entry) => {
+      const when = incomeDate(entry);
+      return when && when <= today();
+    });
+    const postedIncome = sum(postedIncomeEntries, entryNetIncome);
+    const futureIncomeEntries = incomeEntries.filter((entry) => incomeDate(entry) > today());
+    const futureNetIncome = sum(futureIncomeEntries, entryNetIncome);
     const spendingEntries = appData.finance.spending.filter((entry) => dateInRange(entry.date, range));
     const spending = sum(spendingEntries, (entry) => entry.amount);
     const cashSpendingEntries = spendingEntries.filter((entry) => !spendingUsesCredit(entry));
@@ -3283,12 +5283,13 @@
     const investmentValue = sum(appData.finance.investments, (investment) => investment.currentValue);
     const investmentGain = investmentValue - invested;
     const shopping = shoppingStats().remainingTotal;
-    const accountMoney = rawAccountMoney + postedSavings - postedAccountOutflows;
+    const accountMoney = rawAccountMoney + postedIncome + postedSavings - postedAccountOutflows;
     const currentMoney = accountMoney;
     const futureCashSpending = sum(futureCashSpendingEntries, (entry) => entry.amount);
-    const projectedBalance = currentMoney + netIncome + futureSavings - billsDue - debtPayments - futureCashSpending - shopping;
+    // Posted income is already in currentMoney, so the forecast only adds income still to come.
+    const projectedBalance = currentMoney + futureNetIncome + futureSavings - billsDue - debtPayments - futureCashSpending - shopping;
     const netWorth = currentMoney + investmentValue - totalDebt;
-    const lowestBalance = projectedLowestBalance(currentMoney, incomeEntries, billOccurrences, debtPaymentOccurrences, futureCashSpendingEntries, futureSavingsEntries);
+    const lowestBalance = projectedLowestBalance(currentMoney, futureIncomeEntries, billOccurrences, debtPaymentOccurrences, futureCashSpendingEntries, futureSavingsEntries);
     const savingsAccountIds = new Set(savingsAccounts().map((account) => account.id));
     const savingsAccountBalance = sum(appData.finance.accounts.filter((account) => savingsAccountIds.has(account.id)), (account) => (Number(account.balance) || 0) + (accountInflowsById[account.id] || 0) - (accountOutflowsById[account.id] || 0));
     const postedSavingsOutsideSavingsAccounts = sum(postedSavingsEntries.filter((entry) => !entry.accountId || !savingsAccountIds.has(entry.accountId)), (entry) => entry.amount);
@@ -3304,6 +5305,8 @@
       incomeEntries,
       grossIncome,
       netIncome,
+      postedIncome,
+      futureNetIncome,
       taxTotal,
       taxBreakdown,
       workHours,
@@ -3635,6 +5638,7 @@
     }, range).map((payment) => ({
       ...payment,
       debtId: debt.id,
+      color: safeHexColor(debt.color, ""),
       minimumPayment: Number(debt.minimumPayment) || 0,
       targetPayment: monthlyDebtTarget(debt)
     }));
@@ -3661,8 +5665,11 @@
     const assignments = appData.school.assignments || [];
     const openDue = sortByDate(assignments.filter((assignment) => !assignmentComplete(assignment) && dateInRange(assignment.dueDate, range)));
     const overdue = sortByDate(assignments.filter((assignment) => !assignmentComplete(assignment) && isBeforeToday(assignment.dueDate)));
-    const completed = assignments.filter(assignmentComplete);
-    return { openDue, overdue, completed, percent: pct(completed.length, assignments.length), total: assignments.length };
+    // Completed / total are scoped to the range (by due date) so weekly/dashboard
+    // counts reflect only the assignments that actually fall inside the window.
+    const inRange = assignments.filter((assignment) => dateInRange(assignment.dueDate, range));
+    const completed = inRange.filter(assignmentComplete);
+    return { openDue, overdue, completed, percent: pct(completed.length, inRange.length), total: inRange.length };
   }
 
   function assignmentComplete(assignment) {
@@ -3710,6 +5717,26 @@
     }, 280);
   }
 
+  function animateTaskCompletion(item, card) {
+    card.querySelectorAll("button, select").forEach((control) => {
+      control.disabled = true;
+    });
+    const height = card.getBoundingClientRect().height;
+    card.style.height = `${height}px`;
+    card.style.maxHeight = `${height}px`;
+    card.style.willChange = "height, opacity, transform";
+    card.getBoundingClientRect();
+    window.requestAnimationFrame(() => {
+      card.classList.add("is-completing");
+    });
+    window.setTimeout(() => {
+      item.completed = true;
+      item.completedAt = nowIso();
+      saveData();
+      render({ quiet: true });
+    }, 300);
+  }
+
   function normalizedAssignmentStatus(status = "") {
     const value = String(status || "").toLowerCase();
     if (value === "submitted" || value === "graded" || value === "complete" || value === "completed") return "completed";
@@ -3736,6 +5763,10 @@
     const points = assignments.filter((assignment) => Number(assignment.pointsPossible) > 0);
     const earned = sum(points, (assignment) => assignment.pointsEarned);
     const possible = sum(points, (assignment) => assignment.pointsPossible);
+    const pointsGrade = possible ? (earned / possible) * 100 : null;
+    const manualLetter = SCHOOL_GRADES.includes(klass.gradeLetter) ? klass.gradeLetter : "";
+    const displayLetter = manualLetter || (pointsGrade !== null ? pctToLetter(pointsGrade) : null);
+    const gradeSource = manualLetter ? "Chosen grade" : pointsGrade !== null ? "Estimated from points" : "No grade set yet";
     return {
       id: classId,
       name: klass.name || "Class",
@@ -3743,8 +5774,29 @@
       total: assignments.length,
       completed,
       percent: pct(completed, assignments.length),
-      grade: possible ? (earned / possible) * 100 : null
+      grade: pointsGrade,
+      pointsGrade,
+      manualLetter,
+      displayLetter,
+      gradeSource
     };
+  }
+
+  const SCHOOL_GRADES = ["A", "A-", "B+", "B", "B-", "C+", "C", "C-", "D+", "D", "D-", "F"];
+
+  function pctToLetter(p) {
+    if (p >= 93) return "A";
+    if (p >= 90) return "A-";
+    if (p >= 87) return "B+";
+    if (p >= 83) return "B";
+    if (p >= 80) return "B-";
+    if (p >= 77) return "C+";
+    if (p >= 73) return "C";
+    if (p >= 70) return "C-";
+    if (p >= 67) return "D+";
+    if (p >= 63) return "D";
+    if (p >= 60) return "D-";
+    return "F";
   }
 
   function gymStats(range) {
@@ -3798,12 +5850,19 @@
   }
 
   function shoppingStats() {
-    const remaining = appData.shopping.filter((item) => !item.purchased);
-    const purchased = appData.shopping.filter((item) => item.purchased);
+    const items = appData.shopping || [];
+    const remaining = items.filter((item) => !item.purchased);
+    const purchased = items.filter((item) => item.purchased);
+    const groceryRemaining = remaining.filter((item) => !isWishlistItem(item));
+    const wishlistRemaining = remaining.filter(isWishlistItem);
     return {
       remainingCount: remaining.length,
       remainingTotal: sum(remaining, (item) => item.estimatedPrice),
-      purchasedTotal: sum(purchased, (item) => item.estimatedPrice)
+      purchasedTotal: sum(purchased, (item) => item.estimatedPrice),
+      groceryCount: groceryRemaining.length,
+      groceryTotal: sum(groceryRemaining, (item) => item.estimatedPrice),
+      wishlistCount: wishlistRemaining.length,
+      wishlistTotal: sum(wishlistRemaining, (item) => item.estimatedPrice)
     };
   }
 
@@ -3811,8 +5870,14 @@
     return sortByDate(appData.reminders.filter((reminder) => dateInRange(reminder.date, range)), "date");
   }
 
+  function recentWeekRange() {
+    // Rolling 7-day window ending today, so yesterday's completions still count
+    // even on the first day of a calendar week.
+    return { start: dateString(addDays(new Date(), -6)), end: today(), label: "Last 7 days" };
+  }
+
   function weeklySummary() {
-    const range = calculateDateRange("week");
+    const range = recentWeekRange();
     const tasks = taskStats(range);
     const habits = habitStats(range);
     const finance = calculateFinance(range);
@@ -3994,6 +6059,27 @@
         </fieldset>
       `;
     }
+    if (field.type === "chips") {
+      const current = String(value ?? field.default ?? "");
+      return `
+        <fieldset class="field chips-field">
+          <legend>${escapeHtml(field.label)}</legend>
+          <div class="chips-options">
+            ${field.options.map((option, index) => {
+              const opt = typeof option === "string" ? { value: option, label: option } : option;
+              const optionId = `field-${field.name}-${index}`;
+              const selected = current === String(opt.value);
+              return `
+                <label class="chip-choice" for="${escapeHtml(optionId)}">
+                  <input id="${escapeHtml(optionId)}" type="radio" name="${escapeHtml(field.name)}" value="${escapeHtml(opt.value)}" ${selected ? "checked" : ""}>
+                  <span>${escapeHtml(opt.label)}</span>
+                </label>`;
+            }).join("")}
+          </div>
+          ${field.help ? `<span class="tiny">${escapeHtml(field.help)}</span>` : ""}
+        </fieldset>
+      `;
+    }
     if (field.type === "textarea") {
       return `${label}<textarea ${common} ${placeholder}>${escapeHtml(value ?? field.default ?? "")}</textarea>${field.help ? `<span class="tiny">${escapeHtml(field.help)}</span>` : ""}</label>`;
     }
@@ -4033,30 +6119,36 @@
 
     event.preventDefault();
     if (details.classList.contains("is-closing")) return true;
+    toggleDetails(details, summary);
+    return true;
+  }
 
+  // One consistent, stable collapse used everywhere: the element height eases
+  // between the collapsed (summary-only) height and its full content height.
+  const DETAILS_ANIM_MS = 300;
+  function toggleDetails(details, summary = details.querySelector(":scope > summary")) {
     if (details.open) {
-      const summaryHeight = summary.offsetHeight;
+      const collapsedHeight = (summary?.offsetHeight || 0);
       const startHeight = details.offsetHeight;
       details.style.height = `${startHeight}px`;
-      details.classList.remove("is-opening");
       details.classList.add("is-details-animating", "is-closing");
-      details.offsetHeight;
+      details.offsetHeight; // force reflow so the start height is applied
       window.requestAnimationFrame(() => {
-        if (details.isConnected) details.style.height = `${summaryHeight}px`;
+        if (details.isConnected) details.style.height = `${collapsedHeight}px`;
       });
       window.setTimeout(() => {
         if (!details.isConnected) return;
         details.open = false;
         details.style.height = "";
         details.classList.remove("is-details-animating", "is-closing");
-      }, 380);
+      }, DETAILS_ANIM_MS + 20);
     } else {
       const startHeight = details.offsetHeight;
       details.open = true;
       const endHeight = details.scrollHeight;
       details.style.height = `${startHeight}px`;
       details.classList.add("is-details-animating", "is-opening");
-      details.offsetHeight;
+      details.offsetHeight; // force reflow
       window.requestAnimationFrame(() => {
         if (details.isConnected) details.style.height = `${endHeight}px`;
       });
@@ -4064,9 +6156,8 @@
         if (!details.isConnected) return;
         details.style.height = "";
         details.classList.remove("is-details-animating", "is-opening");
-      }, 440);
+      }, DETAILS_ANIM_MS + 20);
     }
-    return true;
   }
 
   function animateCompletionToggle(button, isComplete, completeLabel = "Uncomplete", openLabel = "Complete", completeMeta = "", openMeta = "") {
@@ -4104,9 +6195,11 @@
     return [
       { name: "title", label: "Title", required: true },
       { name: "category", label: "Category", type: "select", options: [{ value: "", label: "No category" }, ...appData.settings.taskCategories.map((category) => ({ value: category, label: category }))], default: initial.category || "" },
-      { name: "dueDate", label: "Due date", type: "date", default: initial.dueDate || today() },
+      { name: "dueDate", label: "Date", type: "date", default: initial.dueDate || today() },
+      { name: "startTime", label: "Start time", type: "time", default: initial.startTime || initial.reminderTime || "", help: "Optional. Add a time to place this on the calendar." },
+      { name: "endTime", label: "End time", type: "time", default: initial.endTime || "", help: "Optional. Set with a start time for a scheduled block (e.g. a meeting)." },
+      { name: "classId", label: "Class (optional)", type: "select", options: [{ value: "", label: "No class" }, ...appData.school.classes.map((klass) => ({ value: klass.id, label: klass.name || "Class" }))], default: initial.classId || "" },
       { name: "priority", label: "Priority", type: "select", options: [{ value: "", label: "No priority" }, "Low", "Medium", "High"], default: initial.priority || "" },
-      { name: "reminderTime", label: "Reminder time", type: "time" },
       { name: "notes", label: "Notes", type: "textarea" }
     ];
   }
@@ -4201,6 +6294,7 @@
       { name: "minimumPayment", label: "Minimum payment", type: "number", step: "0.01" },
       { name: "dueDate", label: "Payment due date", type: "date", default: today() },
       { name: "targetPayoffDate", label: "Target payoff date", type: "date" },
+      { name: "color", label: "Card color", type: "color-swatches", options: [{ value: "", label: "No color" }, ...colorSwatches.map((color) => ({ value: color, label: color }))], default: "", help: "Color-codes this debt on its card and the dashboard." },
       { name: "notes", label: "Notes", type: "textarea" }
     ];
   }
@@ -4326,7 +6420,11 @@
   function workoutFields(initial = {}) {
     return [
       { name: "date", label: "Date", type: "date", default: today(), required: true },
-      { name: "split", label: "Split", type: "select", options: ["Push", "Pull", "Legs", "Upper", "Lower", "Full Body", "Cardio", "Rest", "Custom"] },
+      { name: "type", label: "Type", type: "select", options: [{ value: "lift", label: "Lifting / Gym" }, { value: "run", label: "Run" }, { value: "other", label: "Other cardio" }], default: "lift", help: "Runs track distance & pace; lifts track sets and volume." },
+      { name: "split", label: "Split / focus", type: "select", options: ["Push", "Pull", "Legs", "Upper", "Lower", "Full Body", "Cardio", "Rest", "Custom"] },
+      { name: "distance", label: "Distance (miles)", type: "number", step: "0.01", help: "For runs and cardio." },
+      { name: "startTime", label: "Start time", type: "time", help: "Schedules this workout on your planner and calendar" },
+      { name: "endTime", label: "End time", type: "time" },
       { name: "duration", label: "Duration minutes", type: "number", step: "1" },
       { name: "energy", label: "Energy level", type: "number", min: 1, max: 5, step: "1" },
       { name: "exerciseText", label: "Exercises", type: "textarea", default: exercisesToText(initial.exercises), help: "One per line: Exercise name, sets, reps, weight" },
@@ -4349,11 +6447,11 @@
   function shoppingFields() {
     return [
       { name: "itemName", label: "Item name", required: true },
-      { name: "estimatedPrice", label: "Estimated price", type: "number", step: "0.01" },
-      { name: "store", label: "Store", type: "text" },
-      { name: "category", label: "Category", type: "text" },
-      { name: "priority", label: "Priority", type: "select", options: [{ value: "", label: "No priority" }, "Low", "Medium", "High"] },
-      { name: "purchased", label: "Purchased", type: "checkbox" }
+      { name: "estimatedPrice", label: "Price", type: "number", step: "0.01" },
+      { name: "listType", label: "List", type: "select", options: [{ value: "grocery", label: "Grocery cart" }, { value: "wishlist", label: "Wishlist item" }], default: "grocery", help: "Grocery items add into a cart total; wishlist items are bigger things you want to buy." },
+      { name: "store", label: "Store / source", type: "text" },
+      { name: "purchased", label: "Got it", type: "checkbox" },
+      { name: "notes", label: "Notes", type: "textarea" }
     ];
   }
 
@@ -4460,8 +6558,10 @@
   function handleAction(action, button) {
     const id = button.dataset.id;
     if (action === "close-modal") return closeModal();
-    if (action === "toggle-finance-shortcuts") {
-      app.classList.toggle("finance-shortcuts-hidden");
+    if (action === "toggle-finance-bar") {
+      ui.financeBarCollapsed = !ui.financeBarCollapsed;
+      app.querySelector("[data-finance-bar]")?.classList.toggle("is-collapsed", ui.financeBarCollapsed);
+      saveUi();
       return;
     }
     if (action === "jump-finance-section") {
@@ -4542,6 +6642,101 @@
       ui.schoolAssignmentFilter = button.dataset.assignmentFilter || "active";
       return render({ quiet: true, transition: "school-filter", schoolFilterState });
     }
+    if (action === "set-school-span") {
+      ui.schoolSpan = button.dataset.span || "all";
+      return render({ quiet: true, transition: "period" });
+    }
+    if (action === "open-class") {
+      ui.selectedClassId = id || button.dataset.id || "";
+      ui.schoolView = "class";
+      ui.calendarSelectedDate = "";
+      window.scrollTo({ top: 0, behavior: "auto" });
+      return render();
+    }
+    if (action === "back-to-school") {
+      ui.schoolView = "overview";
+      ui.calendarSelectedDate = "";
+      window.scrollTo({ top: 0, behavior: "auto" });
+      return render();
+    }
+    if (action === "calendar-prev" || action === "calendar-next") {
+      const dir = action === "calendar-next" ? 1 : -1;
+      const view = ui.calendarView || "month";
+      if (view === "day") {
+        ui.calendarSelectedDate = dateString(addDays(parseDate(calendarAnchorDate()), dir));
+      } else if (view === "week") {
+        ui.calendarSelectedDate = dateString(addDays(parseDate(calendarAnchorDate()), dir * 7));
+      } else {
+        ui.calendarMonth = shiftCalendarMonth(currentCalendarMonth(), dir);
+      }
+      return refreshCalendarBody();
+    }
+    if (action === "select-calendar-day") {
+      ui.calendarSelectedDate = button.dataset.date || "";
+      ui.calendarView = "day";
+      return refreshCalendarBody();
+    }
+    if (action === "set-calendar-class") {
+      const cid = button.dataset.classId || "";
+      if (cid === "all" || !cid) {
+        ui.calendarClasses = [];
+      } else {
+        const current = new Set(Array.isArray(ui.calendarClasses) ? ui.calendarClasses : []);
+        if (current.has(cid)) current.delete(cid); else current.add(cid);
+        ui.calendarClasses = [...current];
+      }
+      app.querySelectorAll(".class-chip").forEach((chip) => {
+        const cid = chip.dataset.classId;
+        const on = cid === "all" ? !(ui.calendarClasses || []).length : (ui.calendarClasses || []).includes(cid);
+        chip.classList.toggle("active", on);
+      });
+      return refreshCalendarBody();
+    }
+    if (action === "set-calendar-kind") {
+      ui.calendarKindFilter = button.dataset.kind || "all";
+      return refreshCalendarBody();
+    }
+    if (action === "set-calendar-view") {
+      ui.calendarView = ["month", "week", "day"].includes(button.dataset.view) ? button.dataset.view : "month";
+      return refreshCalendarBody();
+    }
+    if (action === "set-workout-mode") {
+      ui.workoutMode = button.dataset.workoutMode === "run" ? "run" : "lift";
+      app.querySelectorAll(".seg-toggle [data-action='set-workout-mode']").forEach((b) => b.classList.toggle("active", b.dataset.workoutMode === ui.workoutMode));
+      const body = app.querySelector("[data-workout-body]");
+      if (body) {
+        body.innerHTML = ui.workoutMode === "run" ? renderRunningSummary() : renderLiftingSummary();
+        body.classList.remove("cal-body-swap");
+        void body.offsetWidth;
+        body.classList.add("cal-body-swap");
+        animateProgressIndicators();
+      } else {
+        render({ quiet: true });
+      }
+      saveUi();
+      return;
+    }
+    if (action === "set-health-view") {
+      ui.healthView = button.dataset.healthView === "nutrition" ? "nutrition" : "workouts";
+      const body = app.querySelector("[data-health-body]");
+      app.querySelectorAll(".health-toggle .seg-btn").forEach((b) => b.classList.toggle("active", b.dataset.healthView === ui.healthView));
+      if (body) {
+        body.innerHTML = ui.healthView === "nutrition" ? renderNutrition() : renderWorkoutsSection();
+        body.classList.remove("cal-body-swap");
+        void body.offsetWidth;
+        body.classList.add("cal-body-swap");
+        animateProgressIndicators();
+      } else {
+        render({ quiet: true });
+      }
+      saveUi();
+      return;
+    }
+    if (action === "go-calendar") {
+      ui.activeTab = "calendar";
+      window.scrollTo({ top: 0, behavior: "auto" });
+      return render();
+    }
     if (action === "set-assignment-status") {
       const nextStatus = normalizedAssignmentStatus(button.getAttribute("data-assignment-next-status"));
       const visibleAssignmentFilter = app.querySelector(".assignment-status-filter .status-chip.active")?.getAttribute("data-assignment-filter") || ui.schoolAssignmentFilter;
@@ -4557,6 +6752,45 @@
     }
     if (action === "undo-finance-delete") return undoFinanceDelete();
     if (action === "open-quick-add") return openQuickAdd();
+    if (action === "travel-open") {
+      const c = button.dataset.country || "";
+      ui.travelStateFocus = "";
+      // Tapping the country that's already open de-selects it and returns to the world.
+      ui.travelFocus = ui.travelFocus === c ? "" : c;
+      window.scrollTo({ top: 0, behavior: "auto" });
+      return render();
+    }
+    if (action === "travel-back") {
+      ui.travelFocus = "";
+      ui.travelStateFocus = "";
+      window.scrollTo({ top: 0, behavior: "auto" });
+      return render();
+    }
+    if (action === "travel-open-state") {
+      const s = button.dataset.state || "";
+      ui.travelStateFocus = ui.travelStateFocus === s ? "" : s;
+      window.scrollTo({ top: 0, behavior: "auto" });
+      return render();
+    }
+    if (action === "travel-back-states") {
+      ui.travelStateFocus = "";
+      window.scrollTo({ top: 0, behavior: "auto" });
+      return render();
+    }
+    if (action === "travel-zoom-in") return travelZoomBy(0.8, null, null, true);
+    if (action === "travel-zoom-out") return travelZoomBy(1.25, null, null, true);
+    if (action === "travel-zoom-reset") {
+      const svg = app.querySelector(".travel-map");
+      if (svg && !ui.travelFocus) {
+        const w = TRAVEL_WORLD_VB.split(/\s+/).map(Number);
+        travelManualVB = null;
+        travelAnimateVB(svg, { x: w[0], y: w[1], w: w[2], h: w[3] }, 420);
+      } else {
+        ui.travelFocus = "";
+        return render();
+      }
+      return;
+    }
 
     const rerender = () => {
       saveData();
@@ -4573,9 +6807,12 @@
         break;
       }
       case "toggle-daily-habit": {
-        appData.habitCompletions[today()] = appData.habitCompletions[today()] || {};
-        appData.habitCompletions[today()][id] = !appData.habitCompletions[today()][id];
-        recentCompletion = { id, complete: Boolean(appData.habitCompletions[today()][id]) };
+        const habitDate = button.dataset.date || today();
+        appData.habitCompletions[habitDate] = appData.habitCompletions[habitDate] || {};
+        appData.habitCompletions[habitDate][id] = !appData.habitCompletions[habitDate][id];
+        if (habitDate === today()) {
+          recentCompletion = { id, complete: Boolean(appData.habitCompletions[habitDate][id]) };
+        }
         rerender();
         window.setTimeout(() => {
           if (recentCompletion?.id === id) recentCompletion = null;
@@ -4599,6 +6836,14 @@
       case "toggle-task": {
         const item = findById(appData.tasks, id);
         if (!item) break;
+        if (!item.completed && ui.activeTab === "tasks") {
+          const card = typeof button.closest === "function" ? button.closest(".item-card") : null;
+          const inHistory = card && card.closest(".task-history-group");
+          if (card && !inHistory) {
+            animateTaskCompletion(item, card);
+            break;
+          }
+        }
         item.completed = !item.completed;
         item.completedAt = item.completed ? nowIso() : "";
         recentCompletion = { id, complete: Boolean(item.completed) };
@@ -4862,6 +7107,21 @@
         openEdit({ title: id ? "Edit class" : "Add class", fields: classFields(), initial: item, onSubmit: (values) => upsert(appData.school.classes, id, values) });
         break;
       }
+      case "edit-class-grade": {
+        const klass = findById(appData.school.classes, id);
+        if (!klass) break;
+        openEdit({
+          title: `Grade · ${klass.name || "Class"}`,
+          fields: [
+            { name: "gradeLetter", label: "Letter grade", type: "chips", options: [{ value: "", label: "Auto" }, ...SCHOOL_GRADES.map((g) => ({ value: g, label: g }))], default: SCHOOL_GRADES.includes(klass.gradeLetter) ? klass.gradeLetter : "", help: "Auto uses the points-based estimate from graded assignments." }
+          ],
+          submitLabel: "Save grade",
+          onSubmit(values) {
+            klass.gradeLetter = SCHOOL_GRADES.includes(values.gradeLetter) ? values.gradeLetter : "";
+          }
+        });
+        break;
+      }
       case "delete-class":
         if (confirm("Delete this class? Assignments will stay but lose the class link.")) {
           deleteById(appData.school.classes, id);
@@ -4893,12 +7153,16 @@
         });
         break;
       case "add-workout":
+      case "add-run":
+      case "schedule-workout":
       case "edit-workout": {
         const item = id ? findById(appData.gym.workouts, id) : {};
+        const presetDate = button.dataset.date || "";
+        const presetType = action === "add-run" ? "run" : (item.type || "lift");
         openEdit({
-          title: id ? "Edit workout" : "Add workout",
+          title: id ? "Edit workout" : (action === "add-run" ? "Log run" : action === "schedule-workout" ? "Schedule workout" : "Add workout"),
           fields: workoutFields(item),
-          initial: { ...item, exerciseText: exercisesToText(item.exercises) },
+          initial: { ...item, type: presetType, exerciseText: exercisesToText(item.exercises), date: item.date || presetDate || today() },
           onSubmit(values) {
             const { exerciseText, ...rest } = values;
             upsert(appData.gym.workouts, id, { ...rest, exercises: parseExercises(exerciseText) });
@@ -4961,6 +7225,147 @@
           rerender();
         }
         break;
+      case "add-bucket": {
+        const input = document.getElementById("bucket-input");
+        const text = (input?.value || "").trim();
+        if (!text) return showToast("Type something first.");
+        appData.bucketList.push(makeItem({ text, done: false, completedAt: "" }));
+        rerender();
+        break;
+      }
+      case "toggle-bucket": {
+        const item = findById(appData.bucketList, id);
+        if (item) {
+          item.done = !item.done;
+          item.completedAt = item.done ? nowIso() : "";
+          rerender();
+        }
+        break;
+      }
+      case "delete-bucket":
+        if (confirm("Delete this bucket-list item?")) {
+          deleteById(appData.bucketList, id);
+          rerender();
+        }
+        break;
+      case "new-note": {
+        const folderId = (ui.notesFolderId && !["all", "pinned", "unfiled"].includes(ui.notesFolderId) && findById(appData.notes.folders, ui.notesFolderId)) ? ui.notesFolderId : "";
+        const note = makeItem({ title: "", body: "", folderId, color: "", pinned: false, updatedAt: nowIso() });
+        appData.notes.items.push(note);
+        ui.notesEditingId = note.id;
+        notesFocusPending = true;
+        saveData();
+        render();
+        break;
+      }
+      case "open-note":
+        ui.notesEditingId = id;
+        notesFocusPending = true;
+        render();
+        break;
+      case "notes-back":
+        ui.notesEditingId = "";
+        render();
+        break;
+      case "set-notes-folder":
+        ui.notesFolderId = button.dataset.folder || "all";
+        render({ quiet: true });
+        break;
+      case "toggle-note-pin": {
+        const note = findById(appData.notes.items, id);
+        if (note) {
+          note.pinned = !note.pinned;
+          note.updatedAt = nowIso();
+          recentPinId = id;
+          rerender();
+          window.setTimeout(() => { if (recentPinId === id) recentPinId = null; }, 500);
+        }
+        break;
+      }
+      case "set-note-color": {
+        const note = findById(appData.notes.items, id);
+        if (note) { note.color = button.dataset.color || ""; note.updatedAt = nowIso(); rerender(); }
+        break;
+      }
+      case "delete-note":
+        if (confirm("Delete this note?")) {
+          deleteById(appData.notes.items, id);
+          if (ui.notesEditingId === id) ui.notesEditingId = "";
+          rerender();
+        }
+        break;
+      case "add-note-folder":
+      case "edit-note-folder": {
+        const folder = id ? findById(appData.notes.folders, id) : {};
+        openEdit({
+          title: id ? "Rename folder" : "New folder",
+          fields: [
+            { name: "name", label: "Folder name", required: true },
+            { name: "color", label: "Folder color", type: "color-swatches", options: [{ value: "", label: "No color" }, ...colorSwatches.map((color) => ({ value: color, label: color }))], default: "" }
+          ],
+          initial: folder,
+          onSubmit(values) {
+            if (id && folder) {
+              folder.name = values.name;
+              folder.color = safeHexColor(values.color, "");
+            } else {
+              const created = makeItem({ name: values.name, color: safeHexColor(values.color, "") });
+              appData.notes.folders.push(created);
+              ui.notesFolderId = created.id;
+            }
+          }
+        });
+        break;
+      }
+      case "delete-note-folder":
+        if (confirm("Delete this folder? Notes inside it become unfiled.")) {
+          appData.notes.items.forEach((note) => { if (note.folderId === id) note.folderId = ""; });
+          deleteById(appData.notes.folders, id);
+          if (ui.notesFolderId === id) ui.notesFolderId = "all";
+          rerender();
+        }
+        break;
+      case "toggle-visit-country": {
+        const country = button.dataset.country;
+        if (!country) break;
+        appData.travel.countries[country] = !appData.travel.countries[country];
+        if (appData.travel.countries[country]) recentVisitKey = "c:" + country;
+        rerender();
+        const ck = "c:" + country;
+        window.setTimeout(() => { if (recentVisitKey === ck) recentVisitKey = null; }, 600);
+        break;
+      }
+      case "toggle-visit-state": {
+        const state = button.dataset.state;
+        if (!state) break;
+        appData.travel.states[state] = !appData.travel.states[state];
+        if (appData.travel.states[state]) {
+          appData.travel.countries["United States"] = true;
+          recentVisitKey = "s:" + state;
+        }
+        rerender();
+        const sk = "s:" + state;
+        window.setTimeout(() => { if (recentVisitKey === sk) recentVisitKey = null; }, 600);
+        break;
+      }
+      case "toggle-visit-city": {
+        const country = button.dataset.country;
+        const city = button.dataset.city;
+        if (!country || !city) break;
+        const key = travelCityKey(country, city);
+        const nowOn = !appData.travel.cities[key];
+        appData.travel.cities[key] = nowOn;
+        if (nowOn) {
+          if (button.dataset.scope === "state") {
+            appData.travel.states[country] = true;
+            appData.travel.countries["United States"] = true;
+          } else {
+            appData.travel.countries[country] = true;
+          }
+        }
+        rerender();
+        break;
+      }
       case "add-reminder":
       case "edit-reminder": {
         const item = id ? findById(appData.reminders, id) : {};
@@ -5171,6 +7576,12 @@
       render({ quiet: true, transition: "period" });
       return;
     }
+    if (target.dataset.schoolCustom) {
+      ui.schoolCustom = ui.schoolCustom || { start: today(), end: today() };
+      ui.schoolCustom[target.dataset.schoolCustom] = target.value;
+      render({ quiet: true, transition: "period" });
+      return;
+    }
     if (target.dataset.assignmentStatus) {
       setAssignmentStatus(target.dataset.assignmentStatus, target.value, target);
       return;
@@ -5209,10 +7620,17 @@
     if (event.key === "Escape") closeModal();
     if ((event.key === "Enter" || event.key === " ") && event.target?.matches?.("summary")) {
       handleDetailsSummaryClick(event);
+      return;
+    }
+    if (event.key === "Enter" || event.key === " ") {
+      const activatable = event.target?.closest?.('[data-action][role="button"]');
+      if (activatable) {
+        event.preventDefault();
+        handleAction(activatable.dataset.action, activatable);
+      }
     }
   });
 
-  window.addEventListener("scroll", scheduleFinanceShortcutVisibility, { passive: true });
 
   if ("serviceWorker" in navigator && location.protocol !== "file:") {
     window.addEventListener("load", () => {

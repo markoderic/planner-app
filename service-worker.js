@@ -1,9 +1,10 @@
-const CACHE_NAME = "planner-app-v34";
+const CACHE_NAME = "planner-app-v71";
 const APP_FILES = [
   "./",
   "./index.html",
   "./styles.css",
   "./app.js",
+  "./geo-data.js",
   "./manifest.json",
   "./icon.svg"
 ];

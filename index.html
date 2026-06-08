@@ -11,33 +11,52 @@
     <link rel="manifest" href="manifest.json">
     <link rel="apple-touch-icon" href="icon.svg">
     <link rel="icon" href="icon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="styles.css?v=20">
+    <link rel="stylesheet" href="styles.css?v=53">
   </head>
   <body class="app-loading">
     <div class="app-shell">
       <main id="app" class="app-main" aria-live="polite"></main>
 
       <nav class="bottom-nav" aria-label="Main navigation">
-        <button class="nav-item active" type="button" data-tab="dashboard" aria-label="Dashboard">
-          <span class="nav-icon" data-icon="grid"></span>
-          <span>Dashboard</span>
-        </button>
-        <button class="nav-item" type="button" data-tab="tasks" aria-label="Tasks">
-          <span class="nav-icon" data-icon="check"></span>
-          <span>Tasks</span>
-        </button>
-        <button class="nav-item" type="button" data-tab="finance" aria-label="Finance">
-          <span class="nav-icon" data-icon="wallet"></span>
-          <span>Finance</span>
-        </button>
-        <button class="nav-item" type="button" data-tab="school" aria-label="School">
-          <span class="nav-icon" data-icon="book"></span>
-          <span>School</span>
-        </button>
-        <button class="nav-item" type="button" data-tab="more" aria-label="More">
-          <span class="nav-icon" data-icon="more"></span>
-          <span>More</span>
-        </button>
+        <div class="bottom-nav-track">
+          <button class="nav-item active" type="button" data-tab="dashboard" aria-label="Dashboard">
+            <span class="nav-icon" data-icon="grid"></span>
+            <span>Dashboard</span>
+          </button>
+          <button class="nav-item" type="button" data-tab="tasks" aria-label="Tasks">
+            <span class="nav-icon" data-icon="check"></span>
+            <span>Tasks</span>
+          </button>
+          <button class="nav-item" type="button" data-tab="finance" aria-label="Finance">
+            <span class="nav-icon" data-icon="wallet"></span>
+            <span>Finance</span>
+          </button>
+          <button class="nav-item" type="button" data-tab="school" aria-label="School">
+            <span class="nav-icon" data-icon="book"></span>
+            <span>School</span>
+          </button>
+          <button class="nav-item" type="button" data-tab="calendar" aria-label="Calendar">
+            <span class="nav-icon" data-icon="calendar"></span>
+            <span>Calendar</span>
+          </button>
+          <button class="nav-item" type="button" data-tab="health" aria-label="Health">
+            <span class="nav-icon" data-icon="heart"></span>
+            <span>Health</span>
+          </button>
+          <button class="nav-item" type="button" data-tab="notes" aria-label="Notes">
+            <span class="nav-icon" data-icon="note"></span>
+            <span>Notes</span>
+          </button>
+          <button class="nav-item" type="button" data-tab="travel" aria-label="Travel">
+            <span class="nav-icon" data-icon="globe"></span>
+            <span>Travel</span>
+          </button>
+          <button class="nav-item" type="button" data-tab="more" aria-label="More">
+            <span class="nav-icon" data-icon="more"></span>
+            <span>More</span>
+          </button>
+        </div>
+        <span class="bottom-nav-edge" aria-hidden="true"></span>
       </nav>
     </div>
 
@@ -50,6 +69,7 @@
     <div id="modal-root"></div>
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-    <script src="app.js?v=20"></script>
+    <script src="geo-data.js?v=4"></script>
+    <script src="app.js?v=52"></script>
   </body>
 </html>
