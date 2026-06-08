@@ -1901,6 +1901,9 @@
               className: "task-history-group"
             })}
           </div>
+          <div class="task-add-footer">
+            ${actionButton("add-task", "", "Add task", "plus", "primary")}
+          </div>
         </section>
       </div>
     `;
@@ -7666,7 +7669,14 @@
     }
     const nav = event.target.closest("[data-tab]");
     if (nav) {
-      ui.activeTab = nav.dataset.tab;
+      const tab = nav.dataset.tab;
+      // Re-tapping the tab you're already on scrolls back to the top (a reset),
+      // like the iOS status-bar tap, instead of pointlessly re-rendering.
+      if (tab === ui.activeTab) {
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        return;
+      }
+      ui.activeTab = tab;
       render();
       return;
     }

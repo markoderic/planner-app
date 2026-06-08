@@ -1476,6 +1476,15 @@ h3 {
   gap: 10px;
 }
 
+.task-add-footer {
+  margin-top: 12px;
+}
+
+.task-add-footer .primary {
+  width: 100%;
+  justify-content: center;
+}
+
 .finance-shortcuts-sentinel {
   position: absolute;
   width: 0;
