@@ -1571,8 +1571,8 @@
         <div class="sec-head"><span class="sec-title">Snapshot</span></div>
         <section class="snap-grid">
           ${snapTile("Money", formatCompactCurrency(safeFinance.safeToSpend), "Safe to spend", "wallet", "var(--green)", "finance")}
-          ${snapTile("Tasks", String(todayFocus.length), "Open today", "check", "var(--blue)", "tasks")}
-          ${snapTile("School", String(school.openDue.length), `${school.overdue.length} overdue`, "book", "var(--purple)", "school")}
+          ${snapTile("Tasks", String(todayFocus.length), "Open today", "check", "var(--purple)", "tasks")}
+          ${snapTile("School", String(school.openDue.length), `${school.overdue.length} overdue`, "book", "var(--blue)", "school")}
           ${snapTile("Health", String(weekGym.workouts.length), "Workouts this week", "heart", "var(--pink)", "health")}
         </section>
 
@@ -3763,13 +3763,15 @@
   }
 
   // ---------- Unified calendar (Calendar tab) ----------
+  // One source of truth for kind accents so a task is the same color everywhere
+  // (up next, snapshot, calendar). Assignments keep their per-class color.
   const CALENDAR_KIND_COLORS = {
-    assignment: "#7c5cff", // fallback only; assignments use their class color
-    task: "#32d98f",       // green
-    meeting: "#25d8ff",    // blue
+    assignment: "#9d6fff", // fallback only; assignments use their class color
+    task: "#9d6fff",       // purple
+    meeting: "#4f8cff",    // blue
     bill: "#ffd166",       // fallback only; bills use their own finance color
-    reminder: "#ff9f43",   // orange
-    workout: "#f472b6"     // pink
+    reminder: "#ffae52",   // orange
+    workout: "#ff5c8a"     // pink
   };
 
   function timeToMinutes(value) {
