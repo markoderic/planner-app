@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root{
+    --bg:#0a0c10; --elevated:#14171f; --elevated-2:#1b1f29;
+    --glass:rgba(255,255,255,.055); --glass-strong:rgba(255,255,255,.10);
+    --border:rgba(255,255,255,.10); --border-glass:rgba(255,255,255,.16);
+    --text:#f5f7fa; --text-2:rgba(245,247,250,.62); --text-3:rgba(245,247,250,.40);
+    --blue:#4f8cff; --cyan:#36d3ff; --purple:#9d6fff; --green:#47dc9a; --orange:#ffae52; --pink:#ff5c8a; --red:#ff5c70;
+    --r-xl:30px; --r-lg:22px; --r-md:16px; --r-sm:12px;
+    --font:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","Inter","Helvetica Neue",Arial,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-font-smoothing:antialiased;}
+  body{background:#050608;font-family:var(--font);color:var(--text);padding:34px 24px 60px;}
+  .lab{font-size:13px;letter-spacing:.04em;color:rgba(255,255,255,.45);text-transform:uppercase;margin:0 0 14px;font-weight:600;}
+  .row{display:flex;gap:28px;align-items:flex-start;flex-wrap:wrap;}
+  .col{display:flex;flex-direction:column;align-items:center;gap:14px;}
+  .cap{max-width:390px;text-align:center;color:rgba(255,255,255,.55);font-size:13px;line-height:1.5;}
+  .cap b{color:#fff;font-weight:600;}
+
+  /* phone shell */
+  .phone{width:390px;height:838px;border-radius:46px;padding:11px;background:#000;
+    box-shadow:0 40px 90px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.06);position:relative;}
+  .screen{width:100%;height:100%;border-radius:36px;overflow:hidden;position:relative;background:var(--bg);}
+  .scroll{position:absolute;inset:0;overflow:hidden;}
+  .wall{position:absolute;inset:0;}
+  /* aurora wallpaper for glass directions */
+  .wall.aurora{
+    background:
+      radial-gradient(70% 50% at 18% 8%, rgba(79,140,255,.30), transparent 60%),
+      radial-gradient(60% 45% at 92% 14%, rgba(157,111,255,.26), transparent 60%),
+      radial-gradient(80% 50% at 80% 96%, rgba(54,211,255,.16), transparent 60%),
+      var(--bg);
+  }
+  .content{position:absolute;inset:0;padding:0 18px 0;display:flex;flex-direction:column;}
+
+  .statusbar{display:flex;justify-content:space-between;align-items:center;padding:14px 8px 6px;font-size:14px;font-weight:600;color:var(--text);}
+  .statusbar .dots{display:flex;gap:6px;align-items:center;opacity:.9;}
+  .statusbar svg{display:block;}
+
+  .topbar{display:flex;justify-content:space-between;align-items:flex-end;padding:8px 4px 16px;}
+  .eyebrow{font-size:14px;color:var(--text-2);font-weight:500;margin-bottom:3px;}
+  .h1{font-size:34px;font-weight:800;letter-spacing:-.02em;line-height:1;}
+  .avatar{width:42px;height:42px;border-radius:50%;background:var(--glass-strong);border:1px solid var(--border-glass);
+    backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);display:grid;place-items:center;color:var(--text);font-weight:700;font-size:15px;}
+
+  .sec-label{font-size:15px;font-weight:700;color:var(--text);margin:18px 4px 10px;letter-spacing:-.01em;display:flex;justify-content:space-between;align-items:center;}
+  .sec-label .more{font-size:13px;color:var(--text-2);font-weight:500;}
+
+  /* surfaces */
+  .card{border-radius:var(--r-lg);padding:18px;}
+  .solid{background:var(--elevated);border:1px solid var(--border);}
+  .glass{background:var(--glass);border:1px solid var(--border-glass);backdrop-filter:blur(26px) saturate(150%);-webkit-backdrop-filter:blur(26px) saturate(150%);box-shadow:0 18px 50px rgba(0,0,0,.38);}
+
+  /* hero */
+  .hero{display:flex;flex-direction:column;gap:16px;}
+  .hero-top{display:flex;justify-content:space-between;align-items:flex-start;}
+  .hero-greet{font-size:20px;font-weight:700;letter-spacing:-.01em;}
+  .hero-sub{font-size:14px;color:var(--text-2);margin-top:3px;}
+  .ring{width:62px;height:62px;flex:none;position:relative;}
+  .ring svg{transform:rotate(-90deg);}
+  .ring .rv{position:absolute;inset:0;display:grid;place-items:center;font-size:15px;font-weight:800;}
+  .hero-stats{display:flex;gap:10px;}
+  .stat{flex:1;border-radius:var(--r-md);padding:12px;background:rgba(255,255,255,.05);border:1px solid var(--border);}
+  .stat .n{font-size:19px;font-weight:800;letter-spacing:-.01em;}
+  .stat .l{font-size:12px;color:var(--text-2);margin-top:2px;}
+
+  /* inset grouped list */
+  .group{border-radius:var(--r-lg);overflow:hidden;}
+  .li{display:flex;align-items:center;gap:13px;padding:14px 16px;position:relative;}
+  .li + .li::before{content:"";position:absolute;top:0;left:54px;right:0;height:1px;background:rgba(255,255,255,.08);}
+  .ic{width:34px;height:34px;border-radius:11px;flex:none;display:grid;place-items:center;}
+  .li .tt{flex:1;min-width:0;}
+  .li .t1{font-size:15px;font-weight:600;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .li .t2{font-size:13px;color:var(--text-2);margin-top:2px;}
+  .li .tm{font-size:13px;color:var(--text-3);font-weight:600;font-variant-numeric:tabular-nums;}
+  .dot{width:9px;height:9px;border-radius:50%;flex:none;}
+
+  /* tiles */
+  .tiles{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .tile{border-radius:var(--r-lg);padding:16px;display:flex;flex-direction:column;gap:10px;min-height:104px;}
+  .tile .th{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-2);font-weight:600;}
+  .tile .tn{font-size:23px;font-weight:800;letter-spacing:-.02em;}
+  .tile .ts{font-size:12px;color:var(--text-3);}
+  .pill-ic{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;}
+
+  /* tab bar */
+  .tabbar{position:absolute;left:14px;right:14px;bottom:14px;height:66px;border-radius:26px;
+    display:flex;justify-content:space-around;align-items:center;padding:0 8px;
+    background:rgba(20,23,31,.72);border:1px solid var(--border-glass);
+    backdrop-filter:blur(30px) saturate(150%);-webkit-backdrop-filter:blur(30px) saturate(150%);
+    box-shadow:0 18px 50px rgba(0,0,0,.5);}
+  .tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;color:var(--text-3);font-size:10px;font-weight:600;}
+  .tab.active{color:var(--text);}
+  .tab .tabic{width:38px;height:30px;display:grid;place-items:center;border-radius:14px;}
+  .tab.active .tabic{background:rgba(255,255,255,.10);}
+  svg{stroke-linecap:round;stroke-linejoin:round;}
+  .fade-bottom{position:absolute;left:0;right:0;bottom:0;height:120px;background:linear-gradient(to top,var(--bg),transparent);pointer-events:none;}
+  .fade-bottom.tp{background:linear-gradient(to top,rgba(10,12,16,.9),transparent);}
+</style>
+</head>
+<body>
+<p class="cap" style="max-width:none;margin-bottom:26px;font-size:14px;">Three Dashboard directions — same dark system &amp; SF Pro type, different amount of glass. Pick one (or mix).</p>
+<div class="row">
+
+  <!-- ============ A · QUIET ============ -->
+  <div class="col">
+    <div class="phone"><div class="screen"><div class="scroll">
+      <div class="wall" style="background:var(--bg)"></div>
+      <div class="content">
+        <div class="statusbar"><span>14:25</span><span class="dots">
+          <svg width="18" height="12" viewBox="0 0 18 12" fill="none"><rect x="0" y="7" width="3" height="5" rx="1" fill="#fff"/><rect x="5" y="4" width="3" height="8" rx="1" fill="#fff"/><rect x="10" y="1" width="3" height="11" rx="1" fill="#fff" opacity=".5"/><rect x="15" y="1" width="3" height="11" rx="1" fill="#fff" opacity=".3"/></svg>
+          <svg width="22" height="12" viewBox="0 0 24 13" fill="none"><rect x="1" y="1" width="19" height="11" rx="3" stroke="#fff" opacity=".5"/><rect x="2.5" y="2.5" width="13" height="8" rx="1.5" fill="#fff"/><rect x="21" y="4" width="2" height="5" rx="1" fill="#fff" opacity=".5"/></svg>
+        </span></div>
+        <div class="topbar">
+          <div><div class="eyebrow">Sunday, June 21</div><div class="h1">Today</div></div>
+          <div class="avatar">M</div>
+        </div>
+
+        <div class="card solid hero">
+          <div class="hero-top">
+            <div><div class="hero-greet">Good afternoon, Marko</div><div class="hero-sub">3 tasks · 1 class · gym at 6:00</div></div>
+            <div class="ring"><svg width="62" height="62"><circle cx="31" cy="31" r="26" stroke="rgba(255,255,255,.10)" stroke-width="6" fill="none"/><circle cx="31" cy="31" r="26" stroke="#47dc9a" stroke-width="6" fill="none" stroke-dasharray="163" stroke-dashoffset="52" stroke-linecap="round"/></svg><div class="rv">68%</div></div>
+          </div>
+          <div class="hero-stats">
+            <div class="stat"><div class="n">3</div><div class="l">Tasks left</div></div>
+            <div class="stat"><div class="n">$2.5k</div><div class="l">This month</div></div>
+            <div class="stat"><div class="n">90</div><div class="l">Sleep</div></div>
+          </div>
+        </div>
+
+        <div class="sec-label">Up next <span class="more">See all</span></div>
+        <div class="group solid">
+          <div class="li"><div class="ic" style="background:rgba(157,111,255,.16);color:var(--purple)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg></div><div class="tt"><div class="t1">Lab report — stereochemistry</div><div class="t2">Organic Chemistry</div></div><div class="tm">11:30p</div></div>
+          <div class="li"><div class="ic" style="background:rgba(255,92,112,.16);color:var(--red)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 7v10M18 7v10M6 12h12M3 9v6M21 9v6"/></svg></div><div class="tt"><div class="t1">Push workout</div><div class="t2">Health · 60 min</div></div><div class="tm">6:00p</div></div>
+          <div class="li"><div class="ic" style="background:rgba(255,174,82,.16);color:var(--orange)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg></div><div class="tt"><div class="t1">Rent due</div><div class="t2">Finance · $1,200</div></div><div class="tm">Jun 28</div></div>
+        </div>
+
+        <div class="sec-label">Snapshot</div>
+        <div class="tiles">
+          <div class="tile solid"><div class="th"><span class="pill-ic" style="background:rgba(71,220,154,.16);color:var(--green)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l6-6 4 4 7-7"/></svg></span>Finance</div><div class="tn" style="color:var(--green)">+$2,530</div><div class="ts">Net this month</div></div>
+          <div class="tile solid"><div class="th"><span class="pill-ic" style="background:rgba(255,92,138,.16);color:var(--pink)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-7-4.5-9.5-9C1 9 2.5 5.5 6 5.5c2 0 3 1.2 3.8 2.3C10.7 6.7 11.8 5.5 13.8 5.5c3.5 0 5 3.5 3.4 6.5C20.7 16.5 12 21 12 21z"/></svg></span>Health</div><div class="tn">90<span style="font-size:14px;color:var(--text-3)"> sleep</span></div><div class="ts">Steps 6,240</div></div>
+        </div>
+        <div class="fade-bottom"></div>
+      </div>
+      <div class="tabbar">
+        <div class="tab active"><span class="tabic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg></span>Home</div>
+        <div class="tab"><span class="tabic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3 8-8M3 12h4"/></svg></span>Tasks</div>
+        <div class="tab"><span class="tabic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="18" height="13" rx="3"/><path d="M3 10h18M16 14h2"/></svg></span>Finance</div>
+        <div class="tab"><span class="tabic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="3"/><path d="M3 9h18M8 2v4M16 2v4"/></svg></span>Calendar</div>
+        <div class="tab"><span class="tabic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-7-4.5-9.5-9C1 9 2.5 5.5 6 5.5c2 0 3 1.2 3.8 2.3C10.7 6.7 11.8 5.5 13.8 5.5c3.5 0 5 3.5 3.4 6.5C20.7 16.5 12 21 12 21z"/></svg></span>Health</div>
+      </div>
+    </div></div></div>
+    <div class="cap"><b>A · Quiet</b><br>Solid elevated surfaces, inset grouped lists, glass only on the tab bar. Most like Things / Apple Notes. Calmest, most legible.</div>
+  </div>
+
+  <!-- ============ B · LIQUID GLASS ============ -->
+  <div class="col">
+    <div class="phone"><div class="screen"><div class="scroll">
+      <div class="wall aurora"></div>
+      <div class="content">
+        <div class="statusbar"><span>14:25</span><span class="dots">
+          <svg width="18" height="12" viewBox="0 0 18 12" fill="none"><rect x="0" y="7" width="3" height="5" rx="1" fill="#fff"/><rect x="5" y="4" width="3" height="8" rx="1" fill="#fff"/><rect x="10" y="1" width="3" height="11" rx="1" fill="#fff" opacity=".5"/><rect x="15" y="1" width="3" height="11" rx="1" fill="#fff" opacity=".3"/></svg>
+          <svg width="22" height="12" viewBox="0 0 24 13" fill="none"><rect x="1" y="1" width="19" height="11" rx="3" stroke="#fff" opacity=".5"/><rect x="2.5" y="2.5" width="13" height="8" rx="1.5" fill="#fff"/><rect x="21" y="4" width="2" height="5" rx="1" fill="#fff" opacity=".5"/></svg>
+        </span></div>
+        <div class="topbar">
+          <div><div class="eyebrow">Sunday, June 21</div><div class="h1">Today</div></div>
+          <div class="avatar">M</div>
+        </div>
+
+        <div class="card glass hero">
+          <div class="hero-top">
+            <div><div class="hero-greet">Good afternoon, Marko</div><div class="hero-sub">3 tasks · 1 class · gym at 6:00</div></div>
+            <div class="ring"><svg width="62" height="62"><circle cx="31" cy="31" r="26" stroke="rgba(255,255,255,.16)" stroke-width="6" fill="none"/><circle cx="31" cy="31" r="26" stroke="#36d3ff" stroke-width="6" fill="none" stroke-dasharray="163" stroke-dashoffset="52" stroke-linecap="round"/></svg><div class="rv">68%</div></div>
+          </div>
+          <div class="hero-stats">
+            <div class="stat" style="background:rgba(255,255,255,.07)"><div class="n">3</div><div class="l">Tasks left</div></div>
+            <div class="stat" style="background:rgba(255,255,255,.07)"><div class="n">$2.5k</div><div class="l">This month</div></div>
+            <div class="stat" style="background:rgba(255,255,255,.07)"><div class="n">90</div><div class="l">Sleep</div></div>
+          </div>
+        </div>
+
+        <div class="sec-label">Up next <span class="more">See all</span></div>
+        <div class="group glass" style="padding:4px 0">
+          <div class="li"><div class="ic" style="background:rgba(157,111,255,.22);color:#c6b0ff"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg></div><div class="tt"><div class="t1">Lab report — stereochemistry</div><div class="t2">Organic Chemistry</div></div><div class="tm">11:30p</div></div>
+          <div class="li"><div class="ic" style="background:rgba(255,92,112,.22);color:#ff9aa8"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 7v10M18 7v10M6 12h12M3 9v6M21 9v6"/></svg></div><div class="tt"><div class="t1">Push workout</div><div class="t2">Health · 60 min</div></div><div class="tm">6:00p</div></div>
+          <div class="li"><div class="ic" style="background:rgba(255,174,82,.22);color:#ffce96"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg></div><div class="tt"><div class="t1">Rent due</div><div class="t2">Finance · $1,200</div></div><div class="tm">Jun 28</div></div>
+        </div>
+
+        <div class="sec-label">Snapshot</div>
+        <div class="tiles">
+          <div class="tile glass"><div class="th"><span class="pill-ic" style="background:rgba(71,220,154,.22);color:#7df0bf"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l6-6 4 4 7-7"/></svg></span>Finance</div><div class="tn" style="color:#7df0bf">+$2,530</div><div class="ts">Net this month</div></div>
+          <div class="tile glass"><div class="th"><span class="pill-ic" style="background:rgba(255,92,138,.22);color:#ff9bbb"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-7-4.5-9.5-9C1 9 2.5 5.5 6 5.5c2 0 3 1.2 3.8 2.3C10.7 6.7 11.8 5.5 13.8 5.5c3.5 0 5 3.5 3.4 6.5C20.7 16.5 12 21 12 21z"/></svg></span>Health</div><div class="tn">90<span style="font-size:14px;color:var(--text-3)"> sleep</span></div><div class="ts">Steps 6,240</div></div>
+        </div>
+        <div class="fade-bottom tp"></div>
+      </div>
+      <div class="tabbar">
+        <div class="tab active"><span class="tabic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg></span>Home</div>
+        <div class="tab"><span class="tabic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3 8-8M3 12h4"/></svg></span>Tasks</div>
+        <div class="tab"><span class="tabic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="18" height="13" rx="3"/><path d="M3 10h18M16 14h2"/></svg></span>Finance</div>
+        <div class="tab"><span class="tabic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="3"/><path d="M3 9h18M8 2v4M16 2v4"/></svg></span>Calendar</div>
+        <div class="tab"><span class="tabic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-7-4.5-9.5-9C1 9 2.5 5.5 6 5.5c2 0 3 1.2 3.8 2.3C10.7 6.7 11.8 5.5 13.8 5.5c3.5 0 5 3.5 3.4 6.5C20.7 16.5 12 21 12 21z"/></svg></span>Health</div>
+      </div>
+    </div></div></div>
+    <div class="cap"><b>B · Liquid Glass</b><br>Translucent panels over a faint aurora, like your lock-screen notifications. Most "iOS 26". Richest depth — closest to what you said you liked.</div>
+  </div>
+
+  <!-- ============ C · COMMAND CENTER ============ -->
+  <div class="col">
+    <div class="phone"><div class="screen"><div class="scroll">
+      <div class="wall aurora" style="opacity:.7"></div>
+      <div class="content">
+        <div class="statusbar"><span>14:25</span><span class="dots">
+          <svg width="18" height="12" viewBox="0 0 18 12" fill="none"><rect x="0" y="7" width="3" height="5" rx="1" fill="#fff"/><rect x="5" y="4" width="3" height="8" rx="1" fill="#fff"/><rect x="10" y="1" width="3" height="11" rx="1" fill="#fff" opacity=".5"/><rect x="15" y="1" width="3" height="11" rx="1" fill="#fff" opacity=".3"/></svg>
+          <svg width="22" height="12" viewBox="0 0 24 13" fill="none"><rect x="1" y="1" width="19" height="11" rx="3" stroke="#fff" opacity=".5"/><rect x="2.5" y="2.5" width="13" height="8" rx="1.5" fill="#fff"/><rect x="21" y="4" width="2" height="5" rx="1" fill="#fff" opacity=".5"/></svg>
+        </span></div>
+        <div class="topbar">
+          <div><div class="eyebrow">Sunday, June 21</div><div class="h1">Today</div></div>
+          <div class="avatar">M</div>
+        </div>
+
+        <div class="card glass" style="display:flex;align-items:center;gap:18px;">
+          <div class="ring" style="width:84px;height:84px"><svg width="84" height="84"><circle cx="42" cy="42" r="34" stroke="rgba(255,255,255,.14)" stroke-width="8" fill="none"/><circle cx="42" cy="42" r="34" stroke="#4f8cff" stroke-width="8" fill="none" stroke-dasharray="214" stroke-dashoffset="68" stroke-linecap="round"/></svg><div class="rv" style="font-size:20px">68%</div></div>
+          <div style="flex:1"><div class="hero-greet">Day progress</div><div class="hero-sub" style="margin-top:5px">3 of 9 done · gym at 6:00<br>You're on track for today.</div></div>
+        </div>
+
+        <div class="sec-label">Snapshot</div>
+        <div class="tiles">
+          <div class="tile glass"><div class="th"><span class="pill-ic" style="background:rgba(157,111,255,.22);color:#c6b0ff"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3 8-8M3 12h4"/></svg></span>Tasks</div><div class="tn">3 <span style="font-size:14px;color:var(--text-3)">left</span></div><div class="ts">2 due today</div></div>
+          <div class="tile glass"><div class="th"><span class="pill-ic" style="background:rgba(71,220,154,.22);color:#7df0bf"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l6-6 4 4 7-7"/></svg></span>Finance</div><div class="tn" style="color:#7df0bf">+$2.5k</div><div class="ts">Net this month</div></div>
+          <div class="tile glass"><div class="th"><span class="pill-ic" style="background:rgba(255,92,138,.22);color:#ff9bbb"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-7-4.5-9.5-9C1 9 2.5 5.5 6 5.5c2 0 3 1.2 3.8 2.3C10.7 6.7 11.8 5.5 13.8 5.5c3.5 0 5 3.5 3.4 6.5C20.7 16.5 12 21 12 21z"/></svg></span>Health</div><div class="tn">90</div><div class="ts">Sleep · 6,240 steps</div></div>
+          <div class="tile glass"><div class="th"><span class="pill-ic" style="background:rgba(255,174,82,.22);color:#ffce96"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg></span>Calendar</div><div class="tn">2</div><div class="ts">events today</div></div>
+        </div>
+
+        <div class="sec-label">Up next <span class="more">See all</span></div>
+        <div class="group glass" style="padding:4px 0">
+          <div class="li"><span class="dot" style="background:var(--purple)"></span><div class="tt"><div class="t1">Lab report — stereochemistry</div><div class="t2">Organic Chemistry</div></div><div class="tm">11:30p</div></div>
+          <div class="li"><span class="dot" style="background:var(--red)"></span><div class="tt"><div class="t1">Push workout</div><div class="t2">Health · 60 min</div></div><div class="tm">6:00p</div></div>
+        </div>
+        <div class="fade-bottom tp"></div>
+      </div>
+      <div class="tabbar">
+        <div class="tab active"><span class="tabic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg></span>Home</div>
+        <div class="tab"><span class="tabic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3 8-8M3 12h4"/></svg></span>Tasks</div>
+        <div class="tab"><span class="tabic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="18" height="13" rx="3"/><path d="M3 10h18M16 14h2"/></svg></span>Finance</div>
+        <div class="tab"><span class="tabic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="3"/><path d="M3 9h18M8 2v4M16 2v4"/></svg></span>Calendar</div>
+        <div class="tab"><span class="tabic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-7-4.5-9.5-9C1 9 2.5 5.5 6 5.5c2 0 3 1.2 3.8 2.3C10.7 6.7 11.8 5.5 13.8 5.5c3.5 0 5 3.5 3.4 6.5C20.7 16.5 12 21 12 21z"/></svg></span>Health</div>
+      </div>
+    </div></div></div>
+    <div class="cap"><b>C · Command Center</b><br>Glass progress hero + a 2×2 metric grid, then a compact up-next. Most data-forward — feels like a control center.</div>
+  </div>
+
+</div>
+</body>
+</html>

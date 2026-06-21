@@ -1,27 +1,56 @@
 :root {
   color-scheme: dark;
-  --bg: #07070d;
-  --surface: #0d0d14;
-  --surface-2: #15151d;
-  --card: rgba(255, 255, 255, 0.055);
+  /* ---- Base canvas & solid elevated surfaces (direction A: quiet) ---- */
+  --bg: #0a0c10;
+  --surface: #0f1218;
+  --surface-2: #161a23;
+  --elevated: #161a22;
+  --elevated-2: #1c212c;
+  --card: rgba(255, 255, 255, 0.05);
   --card-soft: rgba(255, 255, 255, 0.075);
-  --line: rgba(255, 255, 255, 0.055);
-  --line-strong: rgba(255, 255, 255, 0.1);
-  --text: #f7f7ff;
-  --muted: #a7a8ba;
-  --subtle: #74768b;
-  --accent: #f7f7ff;
-  --accent-rgb: 247, 247, 255;
+  --line: rgba(255, 255, 255, 0.08);
+  --line-strong: rgba(255, 255, 255, 0.12);
+  --hairline: rgba(255, 255, 255, 0.07);
+  --text: #f5f7fa;
+  --muted: rgba(245, 247, 250, 0.62);
+  --subtle: rgba(245, 247, 250, 0.40);
+  /* Neutral interactive accent (kept restrained, Apple-like) */
+  --accent: #f5f7fa;
+  --accent-rgb: 245, 247, 250;
   --accent-2: #aeb3c2;
-  --accent-contrast: #050509;
+  --accent-contrast: #07090d;
   --accent-soft: rgba(var(--accent-rgb), 0.14);
+  /* Section / detail accents — used only for icons, charts, active states */
+  --blue: #4f8cff;   --blue-rgb: 79, 140, 255;
+  --cyan: #36d3ff;   --cyan-rgb: 54, 211, 255;
+  --purple: #9d6fff; --purple-rgb: 157, 111, 255;
+  --green: #47dc9a;  --green-rgb: 71, 220, 154;
+  --orange: #ffae52; --orange-rgb: 255, 174, 82;
+  --pink: #ff5c8a;   --pink-rgb: 255, 92, 138;
+  --teal: #2fd9c0;   --teal-rgb: 47, 217, 192;
   --good: #32d98f;
   --gold: #ffd166;
   --danger: #ff6b8a;
-  --shadow: 0 18px 54px rgba(0, 0, 0, 0.32);
-  --radius: 18px;
+  /* Elevation & shape */
+  --shadow: 0 18px 50px rgba(0, 0, 0, 0.42);
+  --shadow-soft: 0 8px 24px rgba(0, 0, 0, 0.30);
+  --radius: 20px;
+  --radius-lg: 24px;
+  --radius-md: 14px;
+  --radius-sm: 10px;
   --nav-height: 78px;
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  /* Glass material (restrained: nav, modals, floating controls) */
+  --glass: rgba(255, 255, 255, 0.06);
+  --glass-strong: rgba(255, 255, 255, 0.10);
+  --glass-border: rgba(255, 255, 255, 0.16);
+  --glass-blur: blur(26px) saturate(150%);
+  /* Motion */
+  --ease-spring: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-out: cubic-bezier(0.22, 0.72, 0.18, 1);
+  --dur-fast: 140ms;
+  --dur: 200ms;
+  --dur-slow: 280ms;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", Inter, "Helvetica Neue", Arial, sans-serif;
 }
 
 * {
@@ -229,12 +258,12 @@ body.app-ready .app-main {
 }
 
 .eyebrow {
-  margin: 0 0 6px;
-  color: var(--accent-2);
-  font-size: 0.75rem;
-  font-weight: 700;
+  margin: 0 0 7px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 600;
   letter-spacing: 0;
-  text-transform: uppercase;
+  text-transform: none;
 }
 
 h1,
@@ -247,22 +276,25 @@ p {
 h1 {
   margin-bottom: 6px;
   font-size: clamp(2rem, 1.7rem + 1.2vw, 3rem);
+  font-weight: 800;
   line-height: 1;
-  letter-spacing: 0;
+  letter-spacing: -0.02em;
 }
 
 h2 {
   margin-bottom: 10px;
-  font-size: 1.05rem;
+  font-size: 1.08rem;
+  font-weight: 700;
   line-height: 1.2;
-  letter-spacing: 0;
+  letter-spacing: -0.01em;
 }
 
 h3 {
   margin-bottom: 7px;
   font-size: 0.95rem;
+  font-weight: 700;
   line-height: 1.25;
-  letter-spacing: 0;
+  letter-spacing: -0.01em;
 }
 
 .muted {
@@ -330,14 +362,14 @@ h3 {
 }
 
 .card {
-  border: 1px solid rgba(255, 255, 255, 0.035);
-  border-radius: var(--radius);
-  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--elevated);
   box-shadow: none;
 }
 
 .panel {
-  padding: 16px;
+  padding: 18px;
 }
 
 .metric-grid {
@@ -348,14 +380,15 @@ h3 {
 
 .metric-card {
   min-height: 116px;
-  padding: 14px;
+  padding: 16px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   gap: 12px;
   overflow: hidden;
-  border-color: transparent;
-  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--elevated);
 }
 
 .metric-label {
@@ -757,7 +790,7 @@ h3 {
 .primary:active,
 .secondary:active,
 .ghost:active {
-  transform: scale(0.98);
+  transform: scale(0.96);
 }
 
 .actions {
@@ -782,9 +815,9 @@ h3 {
   min-height: 42px;
   flex: 0 0 auto;
   border: 1px solid transparent;
-  border-radius: var(--radius);
+  border-radius: var(--radius-md);
   cursor: pointer;
-  transition: transform 160ms ease, background 180ms ease, border-color 180ms ease, color 180ms ease, opacity 180ms ease;
+  transition: transform var(--dur-fast) var(--ease-spring), background var(--dur) var(--ease-out), border-color var(--dur) var(--ease-out), color var(--dur) var(--ease-out), opacity var(--dur) var(--ease-out);
 }
 
 .primary {
@@ -875,17 +908,36 @@ h3 {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
-  padding: 13px;
-  border: 1px solid transparent;
-  border-radius: var(--radius);
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
   background: var(--card);
   overflow: hidden;
   transition:
-    background 260ms ease,
-    border-color 260ms ease,
-    box-shadow 260ms ease,
-    transform 220ms ease,
-    opacity 220ms ease;
+    background var(--dur-slow) var(--ease-out),
+    border-color var(--dur-slow) var(--ease-out),
+    box-shadow var(--dur-slow) var(--ease-out),
+    transform var(--dur) var(--ease-spring),
+    opacity var(--dur) var(--ease-out);
+}
+
+/* iOS-style inset grouped list: one surface, hairline dividers, no per-row boxes. */
+.list.grouped {
+  gap: 0;
+  background: var(--elevated);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.list.grouped > .item-card {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.list.grouped > .item-card + .item-card {
+  box-shadow: inset 0 1px 0 var(--hairline);
 }
 
 .item-card.complete,
@@ -2766,11 +2818,12 @@ textarea:focus {
   bottom: 0;
   z-index: 20;
   min-height: calc(var(--nav-height) + env(safe-area-inset-bottom));
-  padding: 8px 0 calc(8px + env(safe-area-inset-bottom));
-  border-top: 1px solid rgba(255, 255, 255, 0.035);
-  background: rgba(8, 8, 13, 0.88);
-  box-shadow: none;
-  backdrop-filter: blur(20px) saturate(1.1);
+  padding: 9px 0 calc(9px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--hairline);
+  background: rgba(12, 14, 19, 0.72);
+  box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.40);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
 }
 
 .bottom-nav-track {
@@ -2796,41 +2849,50 @@ textarea:focus {
   top: 0;
   width: 26px;
   pointer-events: none;
-  background: linear-gradient(90deg, transparent, rgba(8, 8, 13, 0.92));
+  background: linear-gradient(90deg, transparent, rgba(12, 14, 19, 0.85));
   opacity: 0.9;
 }
 
 .nav-item {
   position: relative;
   flex: 1 0 auto;
-  min-width: 68px;
-  min-height: 58px;
+  min-width: 64px;
+  min-height: 56px;
   display: grid;
   place-items: center;
-  gap: 2px;
+  gap: 3px;
+  padding: 6px 4px;
   border: 1px solid transparent;
-  border-radius: var(--radius);
+  border-radius: 16px;
   background: transparent;
   color: var(--subtle);
   cursor: pointer;
   overflow: hidden;
   scroll-snap-align: center;
-  transition: color 180ms ease, transform 160ms ease;
+  transition: color var(--dur) var(--ease-out), transform var(--dur-fast) var(--ease-out), background var(--dur) var(--ease-out);
 }
 
 .nav-item span:last-child {
-  font-size: 0.7rem;
-  font-weight: 650;
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
   line-height: 1;
 }
 
 .nav-item .icon {
-  opacity: 0.78;
-  transition: opacity 180ms ease, transform 180ms ease;
+  opacity: 0.8;
+  transition: opacity var(--dur) var(--ease-out), transform var(--dur) var(--ease-spring);
 }
 
+.nav-item:active {
+  transform: scale(0.92);
+}
+
+/* The active section gets a soft glass pill behind it. */
 .nav-item.active {
-  color: rgba(247, 247, 255, 0.96);
+  color: var(--text);
+  background: var(--glass-strong);
+  border-color: var(--glass-border);
 }
 
 .nav-item.active .icon {

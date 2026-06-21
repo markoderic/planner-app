@@ -1621,7 +1621,7 @@
               <h2>Today focus</h2>
               ${actionButton("add-task", "", "Add task", "plus", "secondary")}
             </div>
-            <div class="list">
+            <div class="list ${todayFocusList.length ? "grouped" : ""}">
               ${todayFocusList.length ? todayFocusList.map(renderFocusItem).join("") : emptyState("No items due today.")}
             </div>
           </div>
@@ -1631,7 +1631,7 @@
               <h2>Upcoming</h2>
               ${actionButton("add-reminder", "", "Add reminder", "plus", "secondary")}
             </div>
-            <div class="list">
+            <div class="list grouped">
               ${renderUpcomingDashboard(safeFinance, school, reminders)}
             </div>
           </div>
