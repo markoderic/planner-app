@@ -4045,6 +4045,10 @@ body.modal-open {
   display: inline-flex;
   align-items: center;
   gap: 2px;
+  border: 0;
+  background: none;
+  padding: 4px 2px;
+  cursor: pointer;
   color: var(--accent-2);
   font-size: 0.78rem;
   font-weight: 700;
@@ -4063,14 +4067,19 @@ body.modal-open {
 
 .today-schedule-item {
   display: grid;
-  grid-template-columns: 8px 70px minmax(0, 1fr) auto;
+  grid-template-columns: 8px minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
-  padding: 9px 11px;
+  width: 100%;
+  text-align: left;
+  padding: 10px 11px;
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.04);
   box-shadow: 3px 0 0 var(--class-color, var(--accent)) inset;
+  transition: background 140ms ease, transform 120ms ease;
 }
+
+.today-schedule-item:active { transform: scale(0.99); background: rgba(255, 255, 255, 0.07); }
 
 .today-schedule-dot {
   width: 8px;
@@ -4079,12 +4088,10 @@ body.modal-open {
   background: var(--class-color, var(--accent));
 }
 
-.today-schedule-when {
-  color: var(--muted);
-  font-size: 0.72rem;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+.today-schedule-main {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
 }
 
 .today-schedule-title {
@@ -4095,11 +4102,73 @@ body.modal-open {
   white-space: nowrap;
 }
 
-.today-schedule-meta {
-  color: var(--subtle);
+.today-schedule-sub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.today-schedule-when {
+  color: var(--muted);
   font-size: 0.72rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+
+.today-schedule-sub .today-schedule-meta {
+  color: var(--subtle);
+  font-size: 0.72rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.today-schedule-sub .today-schedule-when + .today-schedule-meta::before {
+  content: "· ";
+}
+
+.today-schedule-go {
+  display: inline-grid;
+  place-items: center;
+  color: var(--subtle);
+}
+
+.today-schedule-go .icon { width: 16px; height: 16px; }
+
+/* Up Next detail popup */
+.up-next-detail {
+  display: grid;
+  gap: 14px;
+}
+
+.up-next-detail-title {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 760;
+  padding-left: 12px;
+  box-shadow: 3px 0 0 var(--class-color, var(--accent)) inset;
+}
+
+.up-next-detail-rows {
+  display: grid;
+  gap: 10px;
+}
+
+.up-next-detail-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.up-next-detail-row:last-child { border-bottom: 0; padding-bottom: 0; }
+
+.up-next-detail-row span { color: var(--muted); font-size: 0.82rem; }
+.up-next-detail-row strong { font-weight: 720; text-align: right; }
 
 /* ============ Segmented toggle (Health + Calendar views) ============ */
 .seg-toggle {
@@ -5426,6 +5495,131 @@ body.modal-open {
 }
 
 .weekday-choice span:active { transform: scale(0.94); }
+
+.form-field-wrap[hidden] { display: none; }
+
+/* Exercises field: name typed by keyboard, numbers chosen with steppers. */
+.exercises-field {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.exercises-field legend {
+  font-size: 0.8rem;
+  font-weight: 680;
+  color: var(--muted);
+  padding: 0;
+}
+
+.exercise-rows {
+  display: grid;
+  gap: 10px;
+}
+
+.exercise-row {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.exercise-row-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.exercise-name { flex: 1; min-width: 0; }
+
+.exercise-remove {
+  flex: 0 0 auto;
+  width: 38px;
+  height: 38px;
+  min-height: 38px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 107, 138, 0.28);
+  background: rgba(255, 107, 138, 0.1);
+  color: #ff9db1;
+}
+
+.exercise-remove .icon { width: 16px; height: 16px; }
+
+.exercise-steppers {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.stepper {
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+}
+
+.stepper-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--subtle);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.stepper-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+}
+
+.stepper-btn {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 38px;
+  min-height: 38px;
+  display: inline-grid;
+  place-items: center;
+  font-size: 1.2rem;
+  font-weight: 700;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  transition: background 140ms ease, transform 120ms ease;
+}
+
+.stepper-btn:active { transform: scale(0.9); background: rgba(var(--accent-rgb), 0.25); }
+
+.stepper-value {
+  flex: 1;
+  text-align: center;
+  font-weight: 760;
+  font-variant-numeric: tabular-nums;
+  min-width: 0;
+}
+
+.exercise-add {
+  width: 100%;
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border-radius: var(--radius);
+  border: 1px dashed var(--line);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--muted);
+  font-weight: 680;
+}
+
+.exercise-add .icon { width: 16px; height: 16px; }
+.exercise-add:active { transform: scale(0.99); }
 
 @media (prefers-reduced-motion: reduce) {
   *,

@@ -4210,28 +4210,98 @@
     const shown = (todayItems.length ? todayItems : events).slice(0, 4);
     const heading = todayItems.length ? "Today's schedule" : "Up next";
     return `
-      <section class="card panel section today-schedule-card" role="button" tabindex="0" data-action="go-calendar" aria-label="Open calendar">
+      <section class="card panel section today-schedule-card">
         <div class="section-header">
           <div>
             <h2>${heading}</h2>
             <span class="tiny">${todayItems.length ? `${todayItems.length} scheduled today` : "Nothing today — next items"}</span>
           </div>
-          <span class="today-schedule-link">Calendar ${icon("chevron")}</span>
+          <button type="button" class="today-schedule-link" data-action="go-calendar">Calendar ${icon("chevron")}</button>
         </div>
         ${shown.length ? `<div class="today-schedule-list">${shown.map((ev) => {
           const time = formatTime(ev.start);
           const when = ev.date === todayStr ? (time || "Today") : `${formatDate(ev.date)}${time ? ` · ${time}` : ""}`;
           return `
-            <div class="today-schedule-item" style="--class-color:${escapeHtml(ev.color)}">
+            <button type="button" class="today-schedule-item" style="--class-color:${escapeHtml(ev.color)}" data-action="show-up-next" data-id="${escapeHtml(ev.id)}" data-kind="${escapeHtml(ev.kind)}">
               <span class="today-schedule-dot"></span>
-              <span class="today-schedule-when">${escapeHtml(when)}</span>
-              <span class="today-schedule-title">${escapeHtml(ev.title)}</span>
-              <span class="today-schedule-meta">${escapeHtml(ev.meta || "")}</span>
-            </div>
+              <span class="today-schedule-main">
+                <span class="today-schedule-title">${escapeHtml(ev.title)}</span>
+                <span class="today-schedule-sub">
+                  <span class="today-schedule-when">${escapeHtml(when)}</span>
+                  ${ev.meta ? `<span class="today-schedule-meta">${escapeHtml(ev.meta)}</span>` : ""}
+                </span>
+              </span>
+              <span class="today-schedule-go">${icon("chevron")}</span>
+            </button>
           `;
         }).join("")}</div>` : `<p class="tiny">No upcoming scheduled items. Add a task with a time or an assignment to see it here.</p>`}
       </section>
     `;
+  }
+
+  const UP_NEXT_KIND_LABEL = { assignment: "Assignment", task: "Task", meeting: "Meeting", reminder: "Reminder", bill: "Bill", workout: "Workout" };
+
+  function openUpNextDetail(ev) {
+    const time = formatTime(ev.start);
+    const whenLine = `${formatLongDate(ev.date)}${time ? ` · ${time}` : ""}`;
+    const rows = [
+      ["Type", UP_NEXT_KIND_LABEL[ev.kind] || "Item"],
+      ["When", whenLine],
+      ev.meta ? ["Details", ev.meta] : null
+    ].filter(Boolean);
+    const body = `
+      <div class="up-next-detail" style="--class-color:${escapeHtml(ev.color || "var(--accent)")}">
+        <p class="up-next-detail-title">${escapeHtml(ev.title)}</p>
+        <div class="up-next-detail-rows">
+          ${rows.map(([label, value]) => `<div class="up-next-detail-row"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join("")}
+        </div>
+      </div>
+    `;
+    const footer = `
+      <button type="button" class="secondary" data-action="close-modal">Close</button>
+      <button type="button" class="primary" data-action="up-next-go" data-id="${escapeHtml(ev.id)}" data-kind="${escapeHtml(ev.kind)}">Take me there</button>
+    `;
+    openDetailModal(ev.title, body, footer);
+  }
+
+  function openDetailModal(title, bodyHtml, footerHtml = "") {
+    modalRoot.innerHTML = `
+      <div class="modal-backdrop">
+        <div class="modal modal-detail">
+          <div class="modal-header">
+            <h2 class="modal-title">${escapeHtml(title)}</h2>
+            ${actionButton("close-modal", "", "Close", "x")}
+          </div>
+          <div class="modal-body">${bodyHtml}</div>
+          ${footerHtml ? `<div class="modal-footer">${footerHtml}</div>` : ""}
+        </div>
+      </div>
+    `;
+    lockBodyScroll();
+  }
+
+  function navigateToKind(kind, id) {
+    window.scrollTo({ top: 0, behavior: "auto" });
+    if (kind === "assignment") {
+      ui.activeTab = "school";
+      const a = findById(appData.school.assignments, id);
+      if (a && a.classId && findById(appData.school.classes, a.classId)) {
+        ui.schoolView = "class";
+        ui.selectedClassId = a.classId;
+      } else {
+        ui.schoolView = "overview";
+      }
+    } else if (kind === "task" || kind === "meeting") {
+      ui.activeTab = "tasks";
+    } else if (kind === "bill") {
+      ui.activeTab = "finance";
+    } else if (kind === "workout") {
+      ui.activeTab = "health";
+      ui.healthView = "workouts";
+    } else {
+      ui.activeTab = "calendar";
+    }
+    render();
   }
 
   function sortCalendarEvents(events) {
@@ -6463,7 +6533,7 @@
           </div>
           <div class="modal-body">
             <div class="form-grid">
-              ${fields.map((field) => renderField(field, initial[field.name])).join("")}
+              ${fields.map((field) => `<div class="form-field-wrap" data-field-wrap="${escapeHtml(field.name)}">${renderField(field, initial[field.name])}</div>`).join("")}
             </div>
             ${livePreview ? `<div class="form-live-preview" data-form-live-preview>${livePreview(initial)}</div>` : ""}
             ${showDelete ? `
@@ -6480,6 +6550,28 @@
     `;
     lockBodyScroll();
     const form = document.getElementById("active-form");
+
+    // Progressive disclosure: fields with a showIf(values) predicate appear/hide
+    // as the controlling fields change, so the form only shows what's relevant.
+    const hasConditional = fields.some((field) => typeof field.showIf === "function");
+    const applyConditional = () => {
+      if (!hasConditional) return;
+      const values = collectFormValues(form, fields);
+      fields.forEach((field) => {
+        if (typeof field.showIf !== "function") return;
+        const wrap = form.querySelector(`[data-field-wrap="${field.name}"]`);
+        if (wrap) wrap.hidden = !field.showIf(values);
+      });
+    };
+    if (hasConditional) {
+      form.addEventListener("input", applyConditional);
+      form.addEventListener("change", applyConditional);
+      applyConditional();
+    }
+
+    // Stepper number pickers and add/remove exercise rows (used by the exercises field).
+    form.addEventListener("click", (event) => handleFormControlClick(event, form));
+
     if (showDelete) {
       const delBtn = form.querySelector("[data-form-delete]");
       if (delBtn) delBtn.addEventListener("click", () => {
@@ -6504,6 +6596,66 @@
       saveData();
       render({ quiet: true });
     });
+  }
+
+  // ---------- Stepper / exercise field helpers ----------
+  function stepperHtml(key, label, value, { min = 0, max = "", step = 1 } = {}) {
+    const val = Number(value) || 0;
+    return `
+      <div class="stepper" data-stepper="${escapeHtml(key)}" data-value="${val}" data-min="${min}" data-max="${max}" data-step="${step}">
+        <span class="stepper-label">${escapeHtml(label)}</span>
+        <div class="stepper-controls">
+          <button type="button" class="stepper-btn" data-stepper-dec aria-label="Decrease ${escapeHtml(label)}">−</button>
+          <span class="stepper-value">${val}</span>
+          <button type="button" class="stepper-btn" data-stepper-inc aria-label="Increase ${escapeHtml(label)}">+</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function exerciseRowHtml(ex = {}) {
+    return `
+      <div class="exercise-row" data-exercise-row>
+        <div class="exercise-row-top">
+          <input type="text" class="exercise-name" placeholder="Exercise name" value="${escapeHtml(ex.name && ex.name !== "Exercise" ? ex.name : "")}">
+          <button type="button" class="exercise-remove" data-exercise-remove aria-label="Remove exercise">${icon("trash")}</button>
+        </div>
+        <div class="exercise-steppers">
+          ${stepperHtml("sets", "Sets", ex.sets ?? 3, { min: 0, max: 20, step: 1 })}
+          ${stepperHtml("reps", "Reps", ex.reps ?? 10, { min: 0, max: 100, step: 1 })}
+          ${stepperHtml("weight", "Weight", ex.weight ?? 0, { min: 0, max: 2000, step: 5 })}
+        </div>
+      </div>
+    `;
+  }
+
+  function handleFormControlClick(event, form) {
+    const stepBtn = event.target.closest("[data-stepper-inc], [data-stepper-dec]");
+    if (stepBtn) {
+      const stepper = stepBtn.closest("[data-stepper]");
+      if (!stepper) return;
+      const min = stepper.dataset.min !== "" ? Number(stepper.dataset.min) : 0;
+      const max = stepper.dataset.max !== "" ? Number(stepper.dataset.max) : Infinity;
+      const step = Number(stepper.dataset.step) || 1;
+      let val = Number(stepper.dataset.value) || 0;
+      val += stepBtn.hasAttribute("data-stepper-inc") ? step : -step;
+      val = Math.max(min, Math.min(max, val));
+      stepper.dataset.value = String(val);
+      stepper.querySelector(".stepper-value").textContent = String(val);
+      return;
+    }
+    if (event.target.closest("[data-exercise-add]")) {
+      const rows = form.querySelector("[data-exercise-rows]");
+      if (rows) {
+        rows.insertAdjacentHTML("beforeend", exerciseRowHtml({}));
+        rows.lastElementChild?.querySelector(".exercise-name")?.focus();
+      }
+      return;
+    }
+    const removeBtn = event.target.closest("[data-exercise-remove]");
+    if (removeBtn) {
+      removeBtn.closest("[data-exercise-row]")?.remove();
+    }
   }
 
   function renderField(field, value) {
@@ -6539,6 +6691,20 @@
               `;
             }).join("")}
           </div>
+          ${field.help ? `<span class="tiny">${escapeHtml(field.help)}</span>` : ""}
+        </fieldset>
+      `;
+    }
+    if (field.type === "exercises") {
+      const list = Array.isArray(value) ? value : (Array.isArray(field.default) ? field.default : []);
+      const rows = list.length ? list : [{}];
+      return `
+        <fieldset class="field exercises-field">
+          <legend>${escapeHtml(field.label)}</legend>
+          <div class="exercise-rows" data-exercise-rows>
+            ${rows.map((ex) => exerciseRowHtml(ex)).join("")}
+          </div>
+          <button type="button" class="exercise-add" data-exercise-add>${icon("plus")}<span>Add exercise</span></button>
           ${field.help ? `<span class="tiny">${escapeHtml(field.help)}</span>` : ""}
         </fieldset>
       `;
@@ -6596,6 +6762,18 @@
   function collectFormValues(form, fields) {
     const values = {};
     fields.forEach((field) => {
+      // Skip fields hidden by progressive disclosure so stale values aren't saved.
+      const wrap = form.querySelector(`[data-field-wrap="${field.name}"]`);
+      if (wrap && wrap.hidden) return;
+      if (field.type === "exercises") {
+        const rows = [...form.querySelectorAll("[data-exercise-row]")];
+        values[field.name] = rows.map((row) => {
+          const rawName = row.querySelector(".exercise-name")?.value.trim() || "";
+          const stepVal = (key) => Number(row.querySelector(`[data-stepper="${key}"]`)?.dataset.value) || 0;
+          return { name: rawName, sets: stepVal("sets"), reps: stepVal("reps"), weight: stepVal("weight") };
+        }).filter((ex) => ex.name || ex.sets || ex.reps || ex.weight).map((ex) => ({ ...ex, name: ex.name || "Exercise" }));
+        return;
+      }
       if (field.type === "weekdays") {
         const nodes = form.querySelectorAll(`input[name="${field.name}"]`);
         values[field.name] = [...nodes].filter((node) => node.checked).map((node) => Number(node.value)).sort((a, b) => a - b);
@@ -6790,7 +6968,8 @@
           { value: "", label: accounts.length ? "Auto-select account" : "No accounts added" },
           ...accounts.map((account) => ({ value: account.id, label: account.name || "Account" }))
         ],
-        help: "Cash and debit spending lowers this account's available balance. Credit card spending ignores this."
+        help: "Which account this came out of.",
+        showIf: (v) => v.paymentMethod !== "Credit card"
       },
       {
         name: "debtId",
@@ -6800,7 +6979,8 @@
           { value: "", label: cards.length ? "No linked card" : "No credit cards added" },
           ...cards.map((debt) => ({ value: debt.id, label: debt.name || "Credit card" }))
         ],
-        help: cards.length ? "If selected, this spending increases that card balance." : "Add a credit card in Debt repayment to link spending."
+        help: cards.length ? "This spending increases that card's balance." : "Add a credit card in Debt repayment to link spending.",
+        showIf: (v) => v.paymentMethod === "Credit card"
       },
       { name: "necessary", label: "Necessary spending", type: "checkbox", default: true, help: "Used for needs vs wants analytics." }
     ];
@@ -6943,16 +7123,18 @@
   }
 
   function workoutFields(initial = {}) {
+    const isLift = (v) => (v.type || "lift") === "lift";
+    const isCardio = (v) => v.type === "run" || v.type === "other";
     return [
       { name: "date", label: "Date", type: "date", default: today(), required: true },
       { name: "type", label: "Type", type: "select", options: [{ value: "lift", label: "Lifting / Gym" }, { value: "run", label: "Run" }, { value: "other", label: "Other cardio" }], default: "lift", help: "Runs track distance & pace; lifts track sets and volume." },
-      { name: "split", label: "Split / focus", type: "select", options: ["Push", "Pull", "Legs", "Upper", "Lower", "Full Body", "Cardio", "Rest", "Custom"] },
-      { name: "distance", label: "Distance (miles)", type: "number", step: "0.01", help: "For runs and cardio." },
+      { name: "split", label: "Split / focus", type: "select", options: ["Push", "Pull", "Legs", "Upper", "Lower", "Full Body", "Cardio", "Rest", "Custom"], showIf: isLift },
+      { name: "distance", label: "Distance (miles)", type: "number", step: "0.01", help: "For runs and cardio.", showIf: isCardio },
       { name: "startTime", label: "Start time", type: "time", help: "Schedules this workout on your planner and calendar" },
       { name: "endTime", label: "End time", type: "time" },
       { name: "duration", label: "Duration minutes", type: "number", step: "1" },
       { name: "energy", label: "Energy level", type: "number", min: 1, max: 5, step: "1" },
-      { name: "exerciseText", label: "Exercises", type: "textarea", default: exercisesToText(initial.exercises), help: "One per line: Exercise name, sets, reps, weight" },
+      { name: "exercises", label: "Exercises", type: "exercises", default: initial.exercises || [], help: "Type the exercise name, then tap − / + to set sets, reps, and weight.", showIf: isLift },
       { name: "notes", label: "Notes", type: "textarea" }
     ];
   }
@@ -7289,6 +7471,20 @@
       ui.activeTab = "calendar";
       window.scrollTo({ top: 0, behavior: "auto" });
       return render();
+    }
+    if (action === "show-up-next") {
+      const kind = button.dataset.kind;
+      const evId = button.dataset.id;
+      const ev = scheduleHorizonEvents(45).find((e) => e.id === evId && e.kind === kind);
+      if (ev) openUpNextDetail(ev);
+      return;
+    }
+    if (action === "up-next-go") {
+      const kind = button.dataset.kind;
+      const goId = button.dataset.id;
+      closeModal();
+      navigateToKind(kind, goId);
+      return;
     }
     if (action === "set-assignment-status") {
       const nextStatus = normalizedAssignmentStatus(button.getAttribute("data-assignment-next-status"));
@@ -7755,10 +7951,9 @@
         openEdit({
           title: id ? "Edit workout" : (action === "add-run" ? "Log run" : action === "schedule-workout" ? "Schedule workout" : "Add workout"),
           fields: workoutFields(item),
-          initial: { ...item, type: presetType, exerciseText: exercisesToText(item.exercises), date: item.date || presetDate || today() },
+          initial: { ...item, type: presetType, exercises: item.exercises || [], date: item.date || presetDate || today() },
           onSubmit(values) {
-            const { exerciseText, ...rest } = values;
-            upsert(appData.gym.workouts, id, { ...rest, exercises: parseExercises(exerciseText) });
+            upsert(appData.gym.workouts, id, { ...values, exercises: values.exercises || [] });
           },
           deleteAction: id ? "delete-workout" : null,
           deleteId: id
