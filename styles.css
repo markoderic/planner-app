@@ -34,6 +34,10 @@ html {
   /* clip (not hidden) prevents sideways panning without creating a scroll
      container — using hidden here breaks position: sticky descendants. */
   overflow-x: clip;
+  /* Behave like a fixed native app: no double-tap-to-zoom, no pinch wobble. */
+  touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 body {

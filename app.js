@@ -8420,6 +8420,15 @@
     }
   });
 
+  // Keep the app pinned like a native app: block iOS Safari's pinch-zoom
+  // gestures and any multi-finger zoom the viewport meta doesn't already catch.
+  ["gesturestart", "gesturechange", "gestureend"].forEach((type) => {
+    document.addEventListener(type, (event) => event.preventDefault(), { passive: false });
+  });
+  document.addEventListener("touchmove", (event) => {
+    if (event.touches && event.touches.length > 1) event.preventDefault();
+  }, { passive: false });
+
   window.addEventListener("keydown", (event) => {
     if (event.key === "Escape") closeModal();
     if ((event.key === "Enter" || event.key === " ") && event.target?.matches?.("summary")) {
