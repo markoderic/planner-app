@@ -247,6 +247,10 @@
         financeSpan: "30",
         incomeHistorySpan: "month",
         spendingHistorySpan: "month",
+        incomeChartGran: "month",
+        incomeCompareOn: false,
+        incomeCompareA: "",
+        incomeCompareB: "",
         financeBarCollapsed: true,
         taskFilter: "All",
         schoolClassFilter: "all",
@@ -2158,32 +2162,136 @@
     });
   }
 
-  function incomeMonthlyTrend(monthsBack = 12) {
-    const now = new Date();
-    const months = [];
-    for (let i = monthsBack - 1; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const start = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
-      const end = dateString(new Date(d.getFullYear(), d.getMonth() + 1, 0));
-      const net = sum(appData.finance.income.filter((entry) => {
-        const when = incomeDate(entry);
-        return when && when >= start && when <= end;
-      }), entryNetIncome);
-      months.push({ start, net, label: new Intl.DateTimeFormat(undefined, { month: "short" }).format(d) });
-    }
-    return months;
+  function incomeNetInRange(start, end) {
+    return sum(appData.finance.income.filter((entry) => {
+      const when = incomeDate(entry);
+      return when && when >= start && when <= end;
+    }), entryNetIncome);
   }
 
-  // Stock-chart style line of net income per month so you can see the trend at a
-  // glance instead of scanning a long list.
+  function validIncomeGran(g) {
+    return ["week", "month", "year"].includes(g) ? g : "month";
+  }
+
+  // Builds the income series for the chart, oldest → newest (left → right).
+  function incomeSeries(gran) {
+    const now = new Date();
+    const points = [];
+    if (gran === "week") {
+      for (let i = 11; i >= 0; i--) {
+        const ws = startOfWeek(addDays(now, -i * 7));
+        const we = addDays(ws, 6);
+        const start = dateString(ws);
+        const end = dateString(we);
+        points.push({ start, end, net: incomeNetInRange(start, end), label: new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(ws) });
+      }
+    } else if (gran === "year") {
+      for (let i = 5; i >= 0; i--) {
+        const y = now.getFullYear() - i;
+        const start = `${y}-01-01`;
+        const end = `${y}-12-31`;
+        points.push({ start, end, net: incomeNetInRange(start, end), label: String(y) });
+      }
+    } else {
+      for (let i = 11; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const start = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+        const end = dateString(new Date(d.getFullYear(), d.getMonth() + 1, 0));
+        const label = `${new Intl.DateTimeFormat(undefined, { month: "short" }).format(d)} '${String(d.getFullYear()).slice(2)}`;
+        points.push({ start, end, net: incomeNetInRange(start, end), label });
+      }
+    }
+    return points;
+  }
+
+  // All months that have data (plus the current month), newest first, for the
+  // compare pickers — so any month from any year can be matched against another.
+  function incomeCompareMonths() {
+    const set = new Set();
+    appData.finance.income.forEach((entry) => {
+      const when = incomeDate(entry);
+      if (when) set.add(when.slice(0, 7));
+    });
+    set.add(today().slice(0, 7));
+    return [...set].sort((a, b) => b.localeCompare(a));
+  }
+
+  function monthLabel(ym) {
+    const [y, m] = ym.split("-").map(Number);
+    return new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" }).format(new Date(y, m - 1, 1));
+  }
+
+  function monthNetIncome(ym) {
+    if (!/^\d{4}-\d{2}$/.test(ym)) return 0;
+    const [y, m] = ym.split("-").map(Number);
+    const start = `${ym}-01`;
+    const end = dateString(new Date(y, m, 0));
+    return incomeNetInRange(start, end);
+  }
+
+  function incomeGranToggle() {
+    const gran = validIncomeGran(ui.incomeChartGran);
+    const opts = [["week", "Weekly"], ["month", "Monthly"], ["year", "Yearly"]];
+    return `
+      <div class="seg-toggle income-gran-toggle" role="group" aria-label="Income chart timeframe">
+        ${opts.map(([id, label]) => `<button type="button" class="seg-btn ${gran === id ? "active" : ""}" data-action="set-income-gran" data-gran="${id}"><span>${label}</span></button>`).join("")}
+      </div>
+    `;
+  }
+
+  function renderIncomeCompare() {
+    const months = incomeCompareMonths();
+    const aDefault = months[1] || months[0] || today().slice(0, 7);
+    const bDefault = months[0] || today().slice(0, 7);
+    const a = months.includes(ui.incomeCompareA) ? ui.incomeCompareA : aDefault;
+    const b = months.includes(ui.incomeCompareB) ? ui.incomeCompareB : bDefault;
+    const optionList = (selected) => months.map((ym) => `<option value="${ym}" ${ym === selected ? "selected" : ""}>${escapeHtml(monthLabel(ym))}</option>`).join("");
+    const aNet = monthNetIncome(a);
+    const bNet = monthNetIncome(b);
+    const diff = bNet - aNet;
+    const pct = aNet ? (diff / aNet) * 100 : 0;
+    const maxNet = Math.max(1, aNet, bNet);
+    return `
+      <div class="income-compare">
+        <div class="income-compare-pickers">
+          <label class="field income-compare-field"><span>Month A</span>
+            <select data-income-compare="a">${optionList(a)}</select>
+          </label>
+          <span class="income-compare-vs">vs</span>
+          <label class="field income-compare-field"><span>Month B</span>
+            <select data-income-compare="b">${optionList(b)}</select>
+          </label>
+        </div>
+        <div class="income-compare-bars">
+          <div class="income-compare-row">
+            <span class="income-compare-name">${escapeHtml(monthLabel(a))}</span>
+            <span class="income-compare-bar"><i style="width:${((aNet / maxNet) * 100).toFixed(1)}%"></i></span>
+            <span class="income-compare-val">${escapeHtml(formatCurrency(aNet))}</span>
+          </div>
+          <div class="income-compare-row">
+            <span class="income-compare-name">${escapeHtml(monthLabel(b))}</span>
+            <span class="income-compare-bar alt"><i style="width:${((bNet / maxNet) * 100).toFixed(1)}%"></i></span>
+            <span class="income-compare-val">${escapeHtml(formatCurrency(bNet))}</span>
+          </div>
+        </div>
+        <p class="income-compare-delta ${diff >= 0 ? "positive" : "negative"}">
+          ${diff >= 0 ? "▲" : "▼"} ${escapeHtml(formatCurrency(Math.abs(diff)))} (${formatNumber(Math.abs(pct), 1)}%) ${diff >= 0 ? "more" : "less"} in ${escapeHtml(monthLabel(b))}
+        </p>
+      </div>
+    `;
+  }
+
+  // Stock-chart style line of net income (weekly / monthly / yearly) plus an
+  // any-month-vs-any-month comparison.
   function renderIncomeTrendChart() {
-    const months = incomeMonthlyTrend(12);
-    const max = Math.max(1, ...months.map((m) => m.net));
+    const gran = validIncomeGran(ui.incomeChartGran);
+    const series = incomeSeries(gran);
+    const max = Math.max(1, ...series.map((m) => m.net));
     const bottom = 54;
     const top = 6;
     const height = bottom - top;
-    const n = months.length;
-    const points = months.map((m, i) => {
+    const n = series.length;
+    const points = series.map((m, i) => {
       const x = n > 1 ? (i / (n - 1)) * 90 + 6 : 51;
       const y = bottom - (Math.min(m.net, max) / max) * height;
       return { ...m, x, y: clamp(y, top, bottom) };
@@ -2192,15 +2300,18 @@
     const endPoint = points[points.length - 1];
     const dotX = clamp(endPoint.x, 14, 88);
     const dotY = clamp((endPoint.y / 60) * 100, 18, 84);
-    const hasData = months.some((m) => m.net > 0);
+    const granNote = { week: "Last 12 weeks", month: "Last 12 months", year: "Last 6 years" }[gran];
+    const compareOn = Boolean(ui.incomeCompareOn);
+    const hasData = appData.finance.income.length > 0;
     if (!hasData) return "";
     return `
       <details class="card panel section income-trend-card" open>
         <summary>
           <span class="finance-section-heading"><span class="finance-section-title">Income trend</span></span>
-          <span class="tiny">Last ${n} months</span>
+          <span class="tiny">${granNote}</span>
         </summary>
         <div class="details-body">
+          ${incomeGranToggle()}
           <div class="savings-line-panel">
             <div class="savings-line-labels">
               <span>${escapeHtml(formatCompactCurrency(max))}</span>
@@ -2208,7 +2319,7 @@
             </div>
             <div class="savings-line-plot" style="--dot-x:${dotX.toFixed(2)}%; --dot-y:${dotY.toFixed(2)}%;">
               <span class="savings-line-dot-label">${escapeHtml(formatCompactCurrency(endPoint.net))}</span>
-              <svg class="savings-line-svg" viewBox="0 0 100 60" preserveAspectRatio="none" role="img" aria-label="Monthly net income trend">
+              <svg class="savings-line-svg" viewBox="0 0 100 60" preserveAspectRatio="none" role="img" aria-label="Net income trend">
                 <line class="savings-line-grid" x1="6" y1="6" x2="96" y2="6"></line>
                 <line class="savings-line-grid" x1="6" y1="30" x2="96" y2="30"></line>
                 <line class="savings-line-grid" x1="6" y1="54" x2="96" y2="54"></line>
@@ -2222,9 +2333,22 @@
               </div>
             </div>
           </div>
+          <button type="button" class="income-compare-toggle ${compareOn ? "active" : ""}" data-action="toggle-income-compare">
+            ${icon("chart")}<span>${compareOn ? "Hide month comparison" : "Compare two months"}</span>
+          </button>
+          ${compareOn ? renderIncomeCompare() : ""}
         </div>
       </details>
     `;
+  }
+
+  function refreshIncomeChart() {
+    const card = app.querySelector(".income-trend-card");
+    if (!card) return render({ quiet: true });
+    const wrapper = document.createElement("div");
+    wrapper.innerHTML = renderIncomeTrendChart();
+    const next = wrapper.firstElementChild;
+    if (next) card.replaceWith(next); else card.remove();
   }
 
   function renderIncome(finance, range) {
@@ -3015,8 +3139,14 @@
       title: formatCurrency(payment.amount),
       meta: [formatDate(paymentHistoryDate(payment)), account ? `Paid from ${account.name}` : "", payment.notes ? "Note saved" : ""],
       note: payment.notes || "",
-      className: "debt-payment-item"
+      className: "debt-payment-item",
+      actions: `${actionButton("edit-debt-payment", payment.id, "Edit", "edit")}${actionButton("delete-debt-payment", payment.id, "Delete", "trash")}`
     });
+  }
+
+  function findDebtForPayment(paymentId) {
+    const debt = appData.finance.debts.find((d) => (d.paymentHistory || []).some((p) => p.id === paymentId));
+    return { debt, payment: debt ? debt.paymentHistory.find((p) => p.id === paymentId) : null };
   }
 
   // Investments can be tracked two ways: enter shares + an avg buy price + the
@@ -6959,6 +7089,16 @@
       saveUi();
       return;
     }
+    if (action === "set-income-gran") {
+      ui.incomeChartGran = validIncomeGran(button.dataset.gran);
+      saveUi();
+      return refreshIncomeChart();
+    }
+    if (action === "toggle-income-compare") {
+      ui.incomeCompareOn = !ui.incomeCompareOn;
+      saveUi();
+      return refreshIncomeChart();
+    }
     if (action === "jump-finance-section") {
       const key = button.dataset.section;
       const target = key ? document.getElementById(`finance-section-${key}`) : null;
@@ -7489,6 +7629,50 @@
         });
         break;
       }
+      case "edit-debt-payment": {
+        const { debt, payment } = findDebtForPayment(id);
+        if (!debt || !payment) break;
+        const oldAmount = Math.max(0, Number(payment.amount) || 0);
+        openEdit({
+          title: "Edit payment",
+          fields: debtPaymentFields(),
+          initial: { amount: payment.amount, accountId: payment.accountId || defaultSpendingAccountId("Debit card"), date: paymentHistoryDate(payment), notes: payment.notes || "" },
+          onSubmit(values) {
+            const amount = Math.max(0, Number(values.amount) || 0);
+            if (!amount) {
+              alert("Enter a payment amount.");
+              return false;
+            }
+            // Re-apply the difference to the running balance: the old amount was
+            // already deducted, so add it back and subtract the new amount.
+            const restored = (Number(debt.balance) || 0) + oldAmount;
+            if (amount > restored) {
+              const ok = confirm(`This payment of ${formatCurrency(amount)} is more than the ${formatCurrency(restored)} that would be owed. Record it anyway and mark the debt paid off?`);
+              if (!ok) return false;
+            }
+            debt.balance = Math.max(0, restored - amount);
+            payment.amount = amount;
+            payment.accountId = values.accountId || defaultSpendingAccountId("Debit card");
+            payment.date = values.date || today();
+            payment.notes = values.notes || "";
+            return true;
+          },
+          deleteAction: "delete-debt-payment",
+          deleteId: id
+        });
+        break;
+      }
+      case "delete-debt-payment": {
+        const { debt, payment } = findDebtForPayment(id);
+        if (!debt || !payment) break;
+        if (confirm("Delete this payment? The amount will be added back to the balance.")) {
+          debt.balance = (Number(debt.balance) || 0) + (Number(payment.amount) || 0);
+          debt.paymentHistory = debt.paymentHistory.filter((p) => p.id !== id);
+          rerender();
+          showToast("Payment deleted.");
+        }
+        break;
+      }
       case "delete-debt":
         if (confirm("Delete this debt?")) {
           deleteFinanceItem(appData.finance.debts, id, "debt");
@@ -7982,6 +8166,13 @@
     if (target.id === "task-filter") {
       ui.taskFilter = target.value;
       render();
+      return;
+    }
+    if (target.dataset.incomeCompare) {
+      if (target.dataset.incomeCompare === "a") ui.incomeCompareA = target.value;
+      else ui.incomeCompareB = target.value;
+      saveUi();
+      refreshIncomeChart();
       return;
     }
     if (target.dataset.dashboardCustom) {
