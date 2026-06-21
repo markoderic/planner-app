@@ -1536,106 +1536,69 @@
       ${ringMetric("Bills + debt", formatCurrency(obligationTotal), finance.currentMoney ? (obligationTotal / Math.max(finance.currentMoney, 1)) * 100 : 0, `${obligationCount} due`)}
     `;
 
+    // ---- mockup-A hero values (fixed semantics: today + this month) ----
+    const monthFinance = calculateFinance(calculateDateRange("month"));
+    const habitToday = habitStats(calculateDateRange("today"));
+    const weekGym = gymStats(calculateDateRange("week"));
+    const dayTotal = todayFocusList.length;
+    const dayDone = dayTotal - todayFocus.length;
+    const dayPct = dayTotal ? Math.round((dayDone / dayTotal) * 100) : 100;
+    const nextEv = scheduleHorizonEvents(45).find((e) => e.date === today() && e.start);
+    const sublineParts = [`${todayFocus.length} ${todayFocus.length === 1 ? "thing" : "things"} to do today`];
+    if (nextEv) sublineParts.push(`next at ${formatTime(nextEv.start)}`);
+
     return `
-      <div class="view">
+      <div class="view dashboard-view">
         ${topbar("Today", formatLongDate(today()), actionButton("open-quick-add", "", "Quick add", "plus", "primary"))}
 
-        <section class="card hero-card">
-          <div class="hero-content">
-            <div class="hero-row">
-              <div>
-                <p class="eyebrow">Selected span</p>
-                <h2>${animatedRangeLabel("range", "dashboard", range.label)}</h2>
-                <p class="muted">${escapeHtml(formatDate(range.start))} to ${escapeHtml(formatDate(range.end))}</p>
-              </div>
+        <section class="card panel dash-hero">
+          <div class="dash-hero-top">
+            <div class="dash-hero-text">
+              <p class="dash-hero-greet">${escapeHtml(dashGreeting())}</p>
+              <p class="dash-hero-sub">${escapeHtml(sublineParts.join(" · "))}</p>
             </div>
-            ${rangeToggle("dashboard", ui.dashboardSpan)}
-            ${customRangeControls("dashboard", range)}
-            ${dashboardViewToggle()}
-            <div class="stat-strip">
-              <div class="strip-item"><span class="strip-value">${task.completed}/${task.total}</span><span class="strip-label">Tasks</span></div>
-              <div class="strip-item"><span class="strip-value">${animatedDisplay("strip", "habits", `${habit.percent}%`)}</span><span class="strip-label">Habits</span></div>
-              <div class="strip-item"><span class="strip-value">${animatedDisplay("strip", "safe-to-spend", formatCompactCurrency(safeFinance.safeToSpend))}</span><span class="strip-label">Safe to spend</span></div>
-            </div>
+            ${dashRing(dayPct, "var(--green)")}
+          </div>
+          <div class="dash-chips">
+            <div class="dash-chip"><span class="dash-chip-n">${todayFocus.length}</span><span class="dash-chip-l">Tasks left</span></div>
+            <div class="dash-chip"><span class="dash-chip-n">${animatedDisplay("chip", "month", formatCompactCurrency(monthFinance.netIncome))}</span><span class="dash-chip-l">This month</span></div>
+            <div class="dash-chip"><span class="dash-chip-n">${habitToday.percent}%</span><span class="dash-chip-l">Habits</span></div>
           </div>
         </section>
 
-        <section class="dashboard-overview" aria-label="Dashboard overview">
-          <article class="card overview-card overview-card-primary">
-            <div>
-              <p class="eyebrow">Today focus</p>
-              <h2 class="overview-value">${animatedDisplay("overview", "today-focus", todayFocus.length)}</h2>
-              <p class="muted">${todayFocus.length === 1 ? "open item" : "open items"} due today</p>
-            </div>
-            <div class="overview-pairs">
-              <span><b>${task.completed}/${task.total}</b> tasks</span>
-              <span><b>${habit.percent}%</b> habits</span>
-            </div>
-          </article>
-          <article class="card overview-card">
-            <div>
-              <p class="eyebrow">Money</p>
-              <h2 class="overview-value">${animatedDisplay("overview", "safe-to-spend", formatCurrency(safeFinance.safeToSpend))}</h2>
-              <p class="muted">safe through ${escapeHtml(formatDate(safetyRange.end))}</p>
-            </div>
-            <div class="overview-pairs">
-              <span><b>${formatCompactCurrency(finance.currentMoney)}</b> current</span>
-              <span><b>${formatCompactCurrency(finance.projectedBalance)}</b> projected</span>
-            </div>
-          </article>
-          <article class="card overview-card">
-            <div>
-              <p class="eyebrow">School</p>
-              <h2 class="overview-value">${animatedDisplay("overview", "school", school.openDue.length)}</h2>
-              <p class="muted">assignments in ${escapeHtml(range.label.toLowerCase())}</p>
-            </div>
-            <div class="overview-pairs">
-              <span><b>${school.completed.length}/${school.total}</b> completed</span>
-              <span><b>${school.overdue.length}</b> overdue</span>
-            </div>
-          </article>
-          <article class="card overview-card">
-            <div>
-              <p class="eyebrow">Bills + debt</p>
-              <h2 class="overview-value">${animatedDisplay("overview", "bills-and-debt", formatCompactCurrency(obligationTotal))}</h2>
-              <p class="muted">${obligationCount} upcoming ${obligationCount === 1 ? "obligation" : "obligations"}</p>
-            </div>
-            <div class="overview-pairs">
-              <span><b>${openBills.length}</b> bills</span>
-              <span><b>${safeFinance.debtPaymentOccurrences.length}</b> debt payments</span>
-            </div>
-          </article>
+        ${renderDashboardUpNext()}
+
+        <div class="sec-head"><span class="sec-title">Snapshot</span></div>
+        <section class="snap-grid">
+          ${snapTile("Money", formatCompactCurrency(safeFinance.safeToSpend), "Safe to spend", "wallet", "var(--green)", "finance")}
+          ${snapTile("Tasks", String(todayFocus.length), "Open today", "check", "var(--blue)", "tasks")}
+          ${snapTile("School", String(school.openDue.length), `${school.overdue.length} overdue`, "book", "var(--purple)", "school")}
+          ${snapTile("Health", String(weekGym.workouts.length), "Workouts this week", "heart", "var(--pink)", "health")}
         </section>
 
-        ${renderTodaySchedule()}
+        <div class="sec-head"><span class="sec-title">Today focus</span>${actionButton("add-task", "", "Add task", "plus", "secondary")}</div>
+        <section class="card panel">
+          <div class="list ${todayFocusList.length ? "grouped" : ""}">
+            ${todayFocusList.length ? todayFocusList.map(renderFocusItem).join("") : emptyState("No items due today.")}
+          </div>
+        </section>
 
         ${renderDashboardMoneyGraph(moneyTrend)}
 
-        <section class="${ui.dashboardStyle === "rings" ? "ring-grid" : "metric-grid"}">
-          ${ui.dashboardStyle === "rings" ? ringMetrics : dashboardMetrics}
-        </section>
-
-        <section class="two-col">
-          <div class="card panel section">
-            <div class="section-header">
-              <h2>Today focus</h2>
-              ${actionButton("add-task", "", "Add task", "plus", "secondary")}
-            </div>
-            <div class="list ${todayFocusList.length ? "grouped" : ""}">
-              ${todayFocusList.length ? todayFocusList.map(renderFocusItem).join("") : emptyState("No items due today.")}
-            </div>
+        <details class="card panel section dash-detail">
+          <summary>
+            <span class="finance-section-heading"><span class="finance-section-title">Overview &amp; metrics</span></span>
+            <span class="tiny">${escapeHtml(range.label)}</span>
+          </summary>
+          <div class="details-body">
+            ${rangeToggle("dashboard", ui.dashboardSpan)}
+            ${customRangeControls("dashboard", range)}
+            ${dashboardViewToggle()}
+            <section class="${ui.dashboardStyle === "rings" ? "ring-grid" : "metric-grid"}" style="margin-top:12px">
+              ${ui.dashboardStyle === "rings" ? ringMetrics : dashboardMetrics}
+            </section>
           </div>
-
-          <div class="card panel section">
-            <div class="section-header">
-              <h2>Upcoming</h2>
-              ${actionButton("add-reminder", "", "Add reminder", "plus", "secondary")}
-            </div>
-            <div class="list grouped">
-              ${renderUpcomingDashboard(safeFinance, school, reminders)}
-            </div>
-          </div>
-        </section>
+        </details>
 
         <section class="card panel section">
           <div class="section-header">
@@ -1649,6 +1612,70 @@
 
         ${renderDashboardGoals()}
       </div>
+    `;
+  }
+
+  function dashGreeting() {
+    const h = new Date().getHours();
+    return h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
+  }
+
+  function dashRing(percent, color) {
+    const p = clamp(Math.round(Number(percent) || 0), 0, 100);
+    const r = 26;
+    const c = 2 * Math.PI * r;
+    const off = c * (1 - p / 100);
+    return `
+      <div class="dash-ring">
+        <svg width="64" height="64" viewBox="0 0 64 64" aria-hidden="true">
+          <circle cx="32" cy="32" r="${r}" fill="none" stroke="rgba(255,255,255,.10)" stroke-width="6"></circle>
+          <circle cx="32" cy="32" r="${r}" fill="none" stroke="${color}" stroke-width="6" stroke-linecap="round"
+            stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}" transform="rotate(-90 32 32)"></circle>
+        </svg>
+        <span class="dash-ring-val">${p}%</span>
+      </div>
+    `;
+  }
+
+  const DASH_KIND_ICON = { assignment: "book", task: "check", meeting: "clock", reminder: "clock", bill: "wallet", workout: "heart" };
+
+  function renderDashboardUpNext() {
+    const events = scheduleHorizonEvents(45);
+    const todayStr = today();
+    const todayItems = events.filter((e) => e.date === todayStr);
+    const shown = (todayItems.length ? todayItems : events).slice(0, 4);
+    const label = todayItems.length ? "Today's schedule" : "Up next";
+    const head = `<div class="sec-head"><span class="sec-title">${label}</span><button type="button" class="sec-action" data-action="go-calendar">Calendar ${icon("chevron")}</button></div>`;
+    if (!shown.length) {
+      return `${head}<section class="card panel"><p class="tiny">Nothing scheduled. Add a task with a time or an assignment to see it here.</p></section>`;
+    }
+    const rows = shown.map((ev) => {
+      const time = formatTime(ev.start);
+      const when = ev.date === todayStr ? (time || "Today") : `${formatDate(ev.date)}${time ? ` · ${time}` : ""}`;
+      const color = ev.color || CALENDAR_KIND_COLORS[ev.kind] || "var(--accent)";
+      return `
+        <button type="button" class="item-card upnext-item" data-action="show-up-next" data-id="${escapeHtml(ev.id)}" data-kind="${escapeHtml(ev.kind)}">
+          <span class="upnext-main">
+            <span class="upnext-ic" style="--ic:${escapeHtml(color)}">${icon(DASH_KIND_ICON[ev.kind] || "calendar")}</span>
+            <span class="upnext-tt">
+              <span class="upnext-title">${escapeHtml(ev.title)}</span>
+              <span class="upnext-meta">${escapeHtml(ev.meta || UP_NEXT_KIND_LABEL[ev.kind] || "")}</span>
+            </span>
+          </span>
+          <span class="upnext-when">${escapeHtml(when)}</span>
+        </button>
+      `;
+    }).join("");
+    return `${head}<section class="list grouped">${rows}</section>`;
+  }
+
+  function snapTile(label, value, sub, iconName, color, tab) {
+    return `
+      <button type="button" class="snap-tile" data-action="dash-go" data-tab="${escapeHtml(tab)}">
+        <span class="snap-head"><span class="snap-ic" style="--ic:${color}">${icon(iconName)}</span>${escapeHtml(label)}</span>
+        <span class="snap-val">${value}</span>
+        <span class="snap-sub">${escapeHtml(sub)}</span>
+      </button>
     `;
   }
 
@@ -7471,6 +7498,15 @@
       ui.activeTab = "calendar";
       window.scrollTo({ top: 0, behavior: "auto" });
       return render();
+    }
+    if (action === "dash-go") {
+      const tab = button.dataset.tab;
+      if (["dashboard", "tasks", "finance", "school", "calendar", "health", "notes", "travel", "more"].includes(tab)) {
+        ui.activeTab = tab;
+        window.scrollTo({ top: 0, behavior: "auto" });
+        return render();
+      }
+      return;
     }
     if (action === "show-up-next") {
       const kind = button.dataset.kind;

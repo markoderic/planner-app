@@ -2885,14 +2885,14 @@ textarea:focus {
 }
 
 .nav-item:active {
-  transform: scale(0.92);
+  transform: scale(0.94);
 }
 
-/* The active section gets a soft glass pill behind it. */
+/* No pill/box behind the active tab — just brighten the icon + label. */
 .nav-item.active {
   color: var(--text);
-  background: var(--glass-strong);
-  border-color: var(--glass-border);
+  background: transparent;
+  border-color: transparent;
 }
 
 .nav-item.active .icon {
@@ -5697,3 +5697,44 @@ body.modal-open {
     scroll-behavior: auto !important;
   }
 }
+
+/* =====================================================================
+   Dashboard — mockup A (hero ring · grouped up-next · snapshot tiles)
+   ===================================================================== */
+.dashboard-view { gap: 16px; }
+
+.dash-hero { display: flex; flex-direction: column; gap: 16px; }
+.dash-hero-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.dash-hero-text { min-width: 0; }
+.dash-hero-greet { margin: 0; font-size: 1.28rem; font-weight: 800; letter-spacing: -0.02em; }
+.dash-hero-sub { margin: 5px 0 0; font-size: 0.92rem; color: var(--muted); }
+.dash-ring { position: relative; width: 64px; height: 64px; flex: none; }
+.dash-ring svg { display: block; }
+.dash-ring-val { position: absolute; inset: 0; display: grid; place-items: center; font-size: 0.92rem; font-weight: 800; letter-spacing: -0.02em; }
+.dash-chips { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.dash-chip { display: flex; flex-direction: column; gap: 3px; padding: 12px; border-radius: var(--radius-md); background: rgba(255, 255, 255, 0.05); border: 1px solid var(--line); }
+.dash-chip-n { font-size: 1.18rem; font-weight: 800; letter-spacing: -0.02em; }
+.dash-chip-l { font-size: 0.74rem; color: var(--muted); }
+
+.sec-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 8px 4px -6px; }
+.sec-title { font-size: 1.02rem; font-weight: 700; letter-spacing: -0.01em; }
+.sec-action { display: inline-flex; align-items: center; gap: 2px; border: 0; background: none; padding: 4px 2px; cursor: pointer; color: var(--accent-2); font-size: 0.82rem; font-weight: 600; }
+.sec-action .icon { width: 15px; height: 15px; }
+
+.upnext-item { align-items: center; cursor: pointer; text-align: left; color: inherit; font: inherit; }
+.upnext-main { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.upnext-ic { width: 36px; height: 36px; flex: none; border-radius: 11px; display: grid; place-items: center; color: var(--ic); background: color-mix(in srgb, var(--ic) 17%, transparent); }
+.upnext-ic .icon { width: 18px; height: 18px; }
+.upnext-tt { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.upnext-title { font-size: 0.95rem; font-weight: 600; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.upnext-meta { font-size: 0.8rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.upnext-when { font-size: 0.8rem; font-weight: 600; color: var(--subtle); white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+.snap-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.snap-tile { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; text-align: left; padding: 16px; min-height: 106px; border-radius: var(--radius-lg); background: var(--elevated); border: 1px solid var(--line); cursor: pointer; color: inherit; font: inherit; transition: transform var(--dur-fast) var(--ease-spring), background var(--dur) var(--ease-out); }
+.snap-tile:active { transform: scale(0.98); background: var(--elevated-2); }
+.snap-head { display: flex; align-items: center; gap: 8px; font-size: 0.82rem; color: var(--muted); font-weight: 600; }
+.snap-ic { width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; color: var(--ic); background: color-mix(in srgb, var(--ic) 17%, transparent); }
+.snap-ic .icon { width: 15px; height: 15px; }
+.snap-val { font-size: 1.5rem; font-weight: 800; letter-spacing: -0.02em; }
+.snap-sub { font-size: 0.76rem; color: var(--subtle); }
