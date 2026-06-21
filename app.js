@@ -1747,7 +1747,7 @@
   }
 
   function getTodayFocus(includeCompleted = false) {
-    const habitItems = appData.dailyHabits
+    const habitItems = habitsForDate(today())
       .filter((habit) => includeCompleted || !isHabitDone(habit.id, today()))
       .map((habit) => ({ ...habit, type: "habit", done: isHabitDone(habit.id, today()) }));
     const taskItems = appData.tasks
@@ -1852,6 +1852,8 @@
     const todayTasks = filtered.filter((task) => task.dueDate === today() && !task.completed);
     const overdue = filtered.filter((task) => !task.completed && isBeforeToday(task.dueDate));
     const upcoming = sortByDate(filtered.filter((task) => !task.completed && task.dueDate > today())).slice(0, 20);
+    // Tasks with no due date aren't tied to a timeframe — they live in "Anytime".
+    const anytime = filtered.filter((task) => !task.completed && !task.dueDate);
     const completedTasks = filtered.filter((task) => task.completed);
 
     return `
@@ -1893,6 +1895,7 @@
             ${renderTaskGroup("Today", todayTasks)}
             ${renderTaskGroup("Overdue", overdue, { open: overdue.length > 0 })}
             ${renderTaskGroup("Upcoming", upcoming, { open: upcoming.length > 0 })}
+            ${renderTaskGroup("Anytime", anytime, { open: anytime.length > 0, emptyMessage: "Tasks with no date land here. Leave a task's date blank to keep it timeframe-free." })}
             ${renderTaskGroup("Task history", completedTasks, {
               open: false,
               countLabel: `${completedTasks.length} complete`,
@@ -1910,7 +1913,7 @@
   }
 
   function habitDayStats(dateStr) {
-    const habits = appData.dailyHabits || [];
+    const habits = habitsForDate(dateStr);
     const total = habits.length;
     const completed = habits.filter((habit) => isHabitDone(habit.id, dateStr)).length;
     return { total, completed, percent: pct(completed, total) };
@@ -1945,7 +1948,7 @@
         </div>
         ${progressRow(slide.label, stats.percent, `${stats.completed}/${stats.total}`, `habit-day-${slide.isToday ? 0 : 1}`)}
         <div class="list">
-          ${appData.dailyHabits.map((habit) => renderDailyHabit(habit, slide.date)).join("")}
+          ${(habitsForDate(slide.date).map((habit) => renderDailyHabit(habit, slide.date)).join("")) || emptyState("No habits scheduled for this day — enjoy the rest day.")}
         </div>
       </div>
     `;
@@ -1956,7 +1959,7 @@
     const done = isHabitDone(habit.id, dateStr);
     return itemCard({
       title: habit.title,
-      meta: [],
+      meta: habitDays(habit).length && habitDays(habit).length < 7 ? [habitScheduleLabel(habit)] : [],
       className: `daily-habit-card ${done ? "complete" : ""} ${isToday ? recentCompletionClass(habit.id, done) : ""}`,
       actions: `
         ${actionButton("toggle-daily-habit", habit.id, done ? "Uncheck" : "Complete", done ? "undo" : "check", "icon-btn", { date: dateStr })}
@@ -2155,6 +2158,75 @@
     });
   }
 
+  function incomeMonthlyTrend(monthsBack = 12) {
+    const now = new Date();
+    const months = [];
+    for (let i = monthsBack - 1; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const start = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+      const end = dateString(new Date(d.getFullYear(), d.getMonth() + 1, 0));
+      const net = sum(appData.finance.income.filter((entry) => {
+        const when = incomeDate(entry);
+        return when && when >= start && when <= end;
+      }), entryNetIncome);
+      months.push({ start, net, label: new Intl.DateTimeFormat(undefined, { month: "short" }).format(d) });
+    }
+    return months;
+  }
+
+  // Stock-chart style line of net income per month so you can see the trend at a
+  // glance instead of scanning a long list.
+  function renderIncomeTrendChart() {
+    const months = incomeMonthlyTrend(12);
+    const max = Math.max(1, ...months.map((m) => m.net));
+    const bottom = 54;
+    const top = 6;
+    const height = bottom - top;
+    const n = months.length;
+    const points = months.map((m, i) => {
+      const x = n > 1 ? (i / (n - 1)) * 90 + 6 : 51;
+      const y = bottom - (Math.min(m.net, max) / max) * height;
+      return { ...m, x, y: clamp(y, top, bottom) };
+    });
+    const pointString = points.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" ");
+    const endPoint = points[points.length - 1];
+    const dotX = clamp(endPoint.x, 14, 88);
+    const dotY = clamp((endPoint.y / 60) * 100, 18, 84);
+    const hasData = months.some((m) => m.net > 0);
+    if (!hasData) return "";
+    return `
+      <details class="card panel section income-trend-card" open>
+        <summary>
+          <span class="finance-section-heading"><span class="finance-section-title">Income trend</span></span>
+          <span class="tiny">Last ${n} months</span>
+        </summary>
+        <div class="details-body">
+          <div class="savings-line-panel">
+            <div class="savings-line-labels">
+              <span>${escapeHtml(formatCompactCurrency(max))}</span>
+              <span>$0</span>
+            </div>
+            <div class="savings-line-plot" style="--dot-x:${dotX.toFixed(2)}%; --dot-y:${dotY.toFixed(2)}%;">
+              <span class="savings-line-dot-label">${escapeHtml(formatCompactCurrency(endPoint.net))}</span>
+              <svg class="savings-line-svg" viewBox="0 0 100 60" preserveAspectRatio="none" role="img" aria-label="Monthly net income trend">
+                <line class="savings-line-grid" x1="6" y1="6" x2="96" y2="6"></line>
+                <line class="savings-line-grid" x1="6" y1="30" x2="96" y2="30"></line>
+                <line class="savings-line-grid" x1="6" y1="54" x2="96" y2="54"></line>
+                <polyline class="savings-line-path-glow" points="${escapeHtml(pointString)}"></polyline>
+                <polyline class="savings-line-path" pathLength="1" points="${escapeHtml(pointString)}"></polyline>
+                <circle class="savings-line-dot" cx="${endPoint.x.toFixed(2)}" cy="${endPoint.y.toFixed(2)}" r="2.15"></circle>
+              </svg>
+              <div class="savings-line-axis">
+                <span>${escapeHtml(points[0].label)}</span>
+                <span>${escapeHtml(endPoint.label)}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </details>
+    `;
+  }
+
   function renderIncome(finance, range) {
     const incomeInRange = appData.finance.income.filter((entry) => dateInRange(incomeDate(entry), range));
     const allIncome = appData.finance.income;
@@ -2173,6 +2245,7 @@
         ${metric("Weekly income estimate", formatCurrency(weekFinance.netIncome), "This week net")}
         ${metric("Gross this year", formatCurrency(yearFinance.grossIncome), "Before applied tax entries")}
       </div>
+      ${renderIncomeTrendChart()}
       ${renderBarChart(bySource, finance.netIncome)}
       ${renderTaxCalculatorDetails(finance, range, yearFinance, monthFinance)}
       <details class="finance-history" open>
@@ -2946,6 +3019,29 @@
     });
   }
 
+  // Investments can be tracked two ways: enter shares + an avg buy price + the
+  // current price (recommended for stocks/crypto whose price moves — just update
+  // the current price), or enter plain total invested / current value. The
+  // share-based numbers win when present; otherwise the totals are used. When no
+  // current value is known we assume break-even so a blank field never reads as a
+  // 100% loss.
+  function investmentInvested(inv) {
+    const shares = Number(inv.shares) || 0;
+    const cost = Number(inv.costBasis) || 0;
+    if (shares > 0 && cost > 0) return shares * cost;
+    return Number(inv.amountInvested) || 0;
+  }
+
+  function investmentCurrentValue(inv) {
+    const shares = Number(inv.shares) || 0;
+    const price = Number(inv.currentPrice) || 0;
+    if (shares > 0 && price > 0) return shares * price;
+    if (inv.currentValue !== undefined && inv.currentValue !== "" && inv.currentValue !== null) {
+      return Number(inv.currentValue) || 0;
+    }
+    return investmentInvested(inv);
+  }
+
   function renderInvestments(finance) {
     const gainPct = finance.invested ? (finance.investmentGain / finance.invested) * 100 : 0;
     return `
@@ -2955,12 +3051,27 @@
         ${metric("Gain/loss", formatCurrency(finance.investmentGain), `${formatNumber(gainPct, 1)}%`)}
       </div>
       <div class="list">
-        ${appData.finance.investments.length ? appData.finance.investments.map((investment) => itemCard({
-          title: investment.name,
-          meta: [investment.type, `Invested ${formatCurrency(investment.amountInvested)}`, `Current ${formatCurrency(investment.currentValue)}`],
-          note: investment.notes,
-          actions: `${actionButton("edit-investment", investment.id, "Edit", "edit")}${actionButton("delete-investment", investment.id, "Delete", "trash")}`
-        })).join("") : emptyState("Add investments for a simple gain/loss estimate.")}
+        ${appData.finance.investments.length ? appData.finance.investments.map((investment) => {
+          const invested = investmentInvested(investment);
+          const value = investmentCurrentValue(investment);
+          const gain = value - invested;
+          const gp = invested ? (gain / invested) * 100 : 0;
+          const shares = Number(investment.shares) || 0;
+          const price = Number(investment.currentPrice) || 0;
+          const meta = [
+            investment.type,
+            shares > 0 ? `${formatNumber(shares, shares % 1 ? 4 : 0)} sh${price > 0 ? ` @ ${formatCurrency(price)}` : ""}` : "",
+            `Invested ${formatCurrency(invested)}`,
+            `Now ${formatCurrency(value)}`,
+            `${gain >= 0 ? "+" : ""}${formatCurrency(gain)} (${formatNumber(gp, 1)}%)`
+          ].filter(Boolean);
+          return itemCard({
+            title: investment.name,
+            meta,
+            note: investment.notes,
+            actions: `${actionButton("edit-investment", investment.id, "Edit", "edit")}${actionButton("delete-investment", investment.id, "Delete", "trash")}`
+          });
+        }).join("") : emptyState("Add investments to track gain/loss. Tip: enter shares and update the current price as it moves.")}
       </div>
     `;
   }
@@ -3326,20 +3437,22 @@
     const filter = options.ignoreStatusFilter ? "all" : (validSchoolAssignmentFilter(ui.schoolAssignmentFilter) ? ui.schoolAssignmentFilter : "active");
     const inRange = (a) => dateInRange(a.dueDate, range);
     const overdue = sortByDate(assignments.filter((a) => !assignmentComplete(a) && isBeforeToday(a.dueDate)));
-    const notStarted = sortByDate(assignments.filter((a) => !isBeforeToday(a.dueDate) && normalizedAssignmentStatus(a.status) === "not started" && inRange(a)));
-    const inProgress = sortByDate(assignments.filter((a) => !isBeforeToday(a.dueDate) && normalizedAssignmentStatus(a.status) === "in progress" && inRange(a)));
+    // Not-started and in-progress assignments live in one "To do" list, so
+    // marking something in progress highlights it in place rather than yanking
+    // it into a separate bar.
+    let todo = sortByDate(assignments.filter((a) => !assignmentComplete(a) && !isBeforeToday(a.dueDate) && inRange(a)));
+    if (filter === "not-started") todo = todo.filter((a) => normalizedAssignmentStatus(a.status) === "not started");
+    if (filter === "in-progress") todo = todo.filter((a) => normalizedAssignmentStatus(a.status) === "in progress");
     const completed = [...assignments.filter((a) => assignmentComplete(a) && inRange(a))].sort((a, b) => String(b.dueDate || "").localeCompare(String(a.dueDate || "")));
 
     const show = {
       overdue: ["active", "all", "overdue"].includes(filter),
-      "not started": ["active", "all", "not-started"].includes(filter),
-      "in progress": ["active", "all", "in-progress"].includes(filter),
+      todo: ["active", "all", "not-started", "in-progress"].includes(filter),
       completed: ["all", "completed"].includes(filter)
     };
     const groups = [
       { key: "overdue", title: "Overdue", items: overdue, open: true, visible: show.overdue },
-      { key: "not started", title: "Not started", items: notStarted, open: true, visible: show["not started"] },
-      { key: "in progress", title: "In progress", items: inProgress, open: true, visible: show["in progress"] },
+      { key: "todo", title: "To do", items: todo, open: true, visible: show.todo },
       { key: "completed", title: "Completed", items: completed, open: false, visible: show.completed }
     ].filter((g) => g.visible);
 
@@ -3411,7 +3524,9 @@
     const firstWeekday = (monthStart.getDay() + 6) % 7; // Monday-first
     const daysInMonth = new Date(year, month, 0).getDate();
     const todayStr = today();
-    const selected = ui.calendarSelectedDate || "";
+    // Only treat a day as selected when it falls inside the month on screen, so
+    // stepping months with the arrows never shows a detail panel for a hidden day.
+    const selected = (ui.calendarSelectedDate && ui.calendarSelectedDate.slice(0, 7) === ym) ? ui.calendarSelectedDate : "";
 
     const cells = [];
     for (let i = 0; i < firstWeekday; i++) cells.push(null);
@@ -3430,7 +3545,7 @@
       if (date === selected) classes.push("is-selected");
       if (dayEvents.length) classes.push("has-events");
       return `
-        <button type="button" class="${classes.join(" ")}" data-action="select-calendar-day" data-date="${escapeHtml(date)}">
+        <button type="button" class="${classes.join(" ")}" data-action="school-select-calendar-day" data-date="${escapeHtml(date)}">
           <span class="cal-num">${Number(date.slice(8))}</span>
           ${dots ? `<span class="cal-dots">${dots}</span>` : ""}
         </button>
@@ -3465,9 +3580,9 @@
         <div class="details-body">
           ${classFilter}
           <div class="cal-header">
-            <button type="button" class="cal-nav" data-action="calendar-prev" aria-label="Previous month">${icon("chevron")}</button>
+            <button type="button" class="cal-nav" data-action="school-calendar-prev" aria-label="Previous month">${icon("chevron")}</button>
             <span class="cal-month">${escapeHtml(monthLabel)}</span>
-            <button type="button" class="cal-nav cal-nav-next" data-action="calendar-next" aria-label="Next month">${icon("chevron")}</button>
+            <button type="button" class="cal-nav cal-nav-next" data-action="school-calendar-next" aria-label="Next month">${icon("chevron")}</button>
           </div>
           <div class="cal-weekdays">${weekdayHeader}</div>
           <div class="cal-grid">${grid}</div>
@@ -4730,7 +4845,8 @@
 
   function closePlannerDay() {
     const layer = app.querySelector("[data-planner-zoom]");
-    if (!layer) return;
+    if (!layer || layer.hidden) return;
+    unlockBodyScroll();
     const card = layer.querySelector(".planner-zoom-card");
     layer.classList.remove("is-open");
     if (card) card.classList.remove("is-open");
@@ -4794,6 +4910,7 @@
     void layer.offsetWidth; // force reflow so the transition runs
     layer.classList.add("is-open");
     if (card) card.classList.add("is-open");
+    lockBodyScroll();
   }
 
   function workoutKind(w) {
@@ -4867,12 +4984,17 @@
         <h2>Split history</h2>
         ${renderBarChart(splitFreq, Math.max(1, liftWeek.length), false)}
       </div>
-      <div class="card panel section">
-        <h2>Lift log</h2>
-        <div class="list">
-          ${lifts.length ? lifts.slice().reverse().map(renderWorkoutItem).join("") : emptyState("Add a lift to track consistency and volume.")}
+      <details class="card panel section">
+        <summary>
+          <span class="finance-section-heading"><span class="finance-section-title">Lift log</span></span>
+          <span class="tiny">${lifts.length} entr${lifts.length === 1 ? "y" : "ies"}</span>
+        </summary>
+        <div class="details-body">
+          <div class="list">
+            ${lifts.length ? lifts.slice().reverse().map(renderWorkoutItem).join("") : emptyState("Add a lift to track consistency and volume.")}
+          </div>
         </div>
-      </div>
+      </details>
     `;
   }
 
@@ -4899,12 +5021,17 @@
         ${metric("Longest run", `${formatNumber(longest, 1)} mi`, "")}
         ${metric("Most recent", lastRun ? formatDate(lastRun.date) : "None", lastRun ? `${formatNumber(lastRun.distance || 0, 1)} mi` : "")}
       </div>
-      <div class="card panel section">
-        <h2>Run log</h2>
-        <div class="list">
-          ${allRuns.length ? allRuns.slice().reverse().map(renderWorkoutItem).join("") : emptyState("Log a run to track your miles and pace.")}
+      <details class="card panel section">
+        <summary>
+          <span class="finance-section-heading"><span class="finance-section-title">Run log</span></span>
+          <span class="tiny">${allRuns.length} entr${allRuns.length === 1 ? "y" : "ies"}</span>
+        </summary>
+        <div class="details-body">
+          <div class="list">
+            ${allRuns.length ? allRuns.slice().reverse().map(renderWorkoutItem).join("") : emptyState("Log a run to track your miles and pace.")}
+          </div>
         </div>
-      </div>
+      </details>
     `;
   }
 
@@ -5315,23 +5442,51 @@
     return Boolean(appData.habitCompletions?.[date]?.[habitId]);
   }
 
+  // Habits can be scheduled on specific weekdays (0 = Sun … 6 = Sat). A habit
+  // with no schedule (empty/missing days) runs every day, so existing habits
+  // keep their behavior.
+  function habitDays(habit) {
+    const days = Array.isArray(habit?.days) ? habit.days.map(Number).filter((d) => d >= 0 && d <= 6) : [];
+    return days;
+  }
+
+  function habitActiveOn(habit, dateStr) {
+    const days = habitDays(habit);
+    if (!days.length) return true;
+    const d = parseDate(dateStr);
+    if (!d) return true;
+    return days.includes(d.getDay());
+  }
+
+  function habitsForDate(dateStr) {
+    return (appData.dailyHabits || []).filter((habit) => habitActiveOn(habit, dateStr));
+  }
+
   function habitStats(range) {
-    const habits = appData.dailyHabits || [];
     const dates = eachDate(range.start, range.end);
-    const total = habits.length * dates.length;
+    let total = 0;
     let completed = 0;
     dates.forEach((date) => {
-      habits.forEach((habit) => {
+      habitsForDate(date).forEach((habit) => {
+        total += 1;
         if (isHabitDone(habit.id, date)) completed += 1;
       });
     });
     let streak = 0;
     let cursor = parseDate(today());
-    while (habits.length) {
+    const hasHabits = (appData.dailyHabits || []).length > 0;
+    // Walk back at most ~2 years so rest days (which never break the streak)
+    // can't spin the loop forever.
+    let guard = 0;
+    while (hasHabits && guard < 750) {
+      guard += 1;
       const d = dateString(cursor);
-      const fullDay = habits.every((habit) => isHabitDone(habit.id, d));
-      if (!fullDay) break;
-      streak += 1;
+      const scheduled = habitsForDate(d);
+      // Rest days (nothing scheduled) don't break the streak, and a scheduled
+      // day only counts once everything planned for it is done.
+      const fullDay = scheduled.every((habit) => isHabitDone(habit.id, d));
+      if (scheduled.length && !fullDay) break;
+      if (scheduled.length) streak += 1;
       cursor = addDays(cursor, -1);
     }
     return { total, completed, percent: pct(completed, total), streak };
@@ -5396,8 +5551,8 @@
     const debtPaymentOccurrences = appData.finance.debts.flatMap((debt) => debtPaymentOccurrencesInRange(debt, range)).sort((a, b) => a.date.localeCompare(b.date));
     const debtPayments = sum(debtPaymentOccurrences, (payment) => payment.amount);
     const totalDebt = sum(appData.finance.debts, (debt) => debt.balance);
-    const invested = sum(appData.finance.investments, (investment) => investment.amountInvested);
-    const investmentValue = sum(appData.finance.investments, (investment) => investment.currentValue);
+    const invested = sum(appData.finance.investments, investmentInvested);
+    const investmentValue = sum(appData.finance.investments, investmentCurrentValue);
     const investmentGain = investmentValue - invested;
     const shopping = shoppingStats().remainingTotal;
     const accountMoney = rawAccountMoney + postedIncome + postedSavings - postedAccountOutflows;
@@ -5741,8 +5896,19 @@
     return Math.max(minimum, target);
   }
 
+  // The cash-flow projection should reserve only the required minimum payment,
+  // not the accelerated amount needed to hit a payoff-by-date goal. The extra
+  // toward the goal is discretionary, so counting it dragged the forecast down
+  // and made "projected money" look far worse than reality. Falls back to the
+  // planned amount only when no minimum is set.
+  function debtProjectionAmount(debt) {
+    if ((Number(debt.balance) || 0) <= 0) return 0;
+    const minimum = Number(debt.minimumPayment) || 0;
+    return minimum > 0 ? minimum : debtPaymentAmount(debt);
+  }
+
   function debtPaymentOccurrencesInRange(debt, range) {
-    const amount = debtPaymentAmount(debt);
+    const amount = debtProjectionAmount(debt);
     if (!amount) return [];
     const dueDate = debt.dueDate || range.start;
     return billOccurrencesInRange({
@@ -5801,18 +5967,52 @@
     if (nextStatus === currentStatus) return;
 
     const schoolFilterState = captureSchoolFilterState();
-    const visibleAssignmentFilter = app.querySelector(".assignment-status-filter .status-chip.active")?.getAttribute("data-assignment-filter") || ui.schoolAssignmentFilter;
-    const shouldLeaveActiveList = ui.activeTab === "school" && visibleAssignmentFilter === "active" && nextStatus === "completed";
     const card = (trigger && typeof trigger.closest === "function" ? trigger.closest(".assignment-card") : null)
       || app.querySelector(`[data-assignment-card-id="${assignmentId}"]`);
-    if (shouldLeaveActiveList && card) {
+
+    // Completing always plays the slide-out animation when the card is on screen.
+    if (nextStatus === "completed" && card) {
       animateAssignmentCompletion(item, nextStatus, card, schoolFilterState);
+      return;
+    }
+
+    // Non-completing changes (e.g. marking in progress) keep the card in place
+    // and animate the highlight smoothly instead of doing a hard re-render.
+    if (card && currentStatus !== "completed") {
+      item.status = nextStatus;
+      saveData();
+      card.classList.toggle("in-progress", nextStatus === "in progress");
+      card.querySelectorAll(".assignment-status-option").forEach((btn) => {
+        const on = btn.getAttribute("data-assignment-next-status") === nextStatus;
+        btn.classList.toggle("active", on);
+        btn.setAttribute("aria-pressed", on ? "true" : "false");
+      });
+      updateAssignmentBadge(card, item);
       return;
     }
 
     item.status = nextStatus;
     saveData();
     render({ quiet: true, transition: "school-filter", schoolFilterState });
+  }
+
+  function updateAssignmentBadge(card, assignment) {
+    const meta = card.querySelector(".item-meta");
+    if (!meta) return;
+    const status = normalizedAssignmentStatus(assignment.status);
+    const complete = status === "completed";
+    const overdue = !complete && isBeforeToday(assignment.dueDate);
+    const inProgress = status === "in progress";
+    const html = complete
+      ? `<span class="assignment-status-tag complete">Completed</span>`
+      : overdue
+        ? `<span class="assignment-status-tag overdue">Overdue</span>`
+        : inProgress
+          ? `<span class="assignment-status-tag in-progress">In Progress</span>`
+          : "";
+    const existing = meta.querySelector(".assignment-status-tag");
+    if (existing) existing.remove();
+    if (html) meta.insertAdjacentHTML("beforeend", html);
   }
 
   function animateAssignmentCompletion(item, nextStatus, card, schoolFilterState) {
@@ -6098,6 +6298,30 @@
     return (exercises || []).map((ex) => `${ex.name}, ${ex.sets}, ${ex.reps}, ${ex.weight}`).join("\n");
   }
 
+  // Background scroll lock. While a modal/overlay is open the page behind it must
+  // not scroll (and on iOS must not be touch-scrollable), so we pin <body> and
+  // restore the scroll position on close. Reference-counted so stacked overlays
+  // (e.g. a form opened from the planner day) behave correctly.
+  let scrollLockY = 0;
+  let scrollLockCount = 0;
+  function lockBodyScroll() {
+    if (scrollLockCount === 0) {
+      scrollLockY = window.scrollY || window.pageYOffset || 0;
+      document.body.style.top = `-${scrollLockY}px`;
+      document.body.classList.add("modal-open");
+    }
+    scrollLockCount += 1;
+  }
+  function unlockBodyScroll() {
+    if (scrollLockCount === 0) return;
+    scrollLockCount -= 1;
+    if (scrollLockCount === 0) {
+      document.body.classList.remove("modal-open");
+      document.body.style.top = "";
+      window.scrollTo(0, scrollLockY);
+    }
+  }
+
   function openForm({ title, fields, initial = {}, submitLabel = "Save", onSubmit, livePreview = null, deleteAction = null, deleteId = "", deleteLabel = "Delete" }) {
     const showDelete = Boolean(deleteAction && deleteId);
     modalRoot.innerHTML = `
@@ -6124,6 +6348,7 @@
         </form>
       </div>
     `;
+    lockBodyScroll();
     const form = document.getElementById("active-form");
     if (showDelete) {
       const delBtn = form.querySelector("[data-form-delete]");
@@ -6188,6 +6413,26 @@
         </fieldset>
       `;
     }
+    if (field.type === "weekdays") {
+      const raw = Array.isArray(value) ? value : (Array.isArray(field.default) ? field.default : []);
+      const current = raw.map(Number);
+      return `
+        <fieldset class="field weekdays-field">
+          <legend>${escapeHtml(field.label)}</legend>
+          <div class="weekday-options">
+            ${["S", "M", "T", "W", "T", "F", "S"].map((lbl, i) => {
+              const on = current.includes(i);
+              return `
+                <label class="weekday-choice" title="${escapeHtml(WEEKDAY_SHORT[i])}">
+                  <input type="checkbox" name="${escapeHtml(field.name)}" value="${i}" ${on ? "checked" : ""}>
+                  <span>${escapeHtml(lbl)}</span>
+                </label>`;
+            }).join("")}
+          </div>
+          ${field.help ? `<span class="tiny">${escapeHtml(field.help)}</span>` : ""}
+        </fieldset>
+      `;
+    }
     if (field.type === "chips") {
       const current = String(value ?? field.default ?? "");
       return `
@@ -6221,6 +6466,11 @@
   function collectFormValues(form, fields) {
     const values = {};
     fields.forEach((field) => {
+      if (field.type === "weekdays") {
+        const nodes = form.querySelectorAll(`input[name="${field.name}"]`);
+        values[field.name] = [...nodes].filter((node) => node.checked).map((node) => Number(node.value)).sort((a, b) => a - b);
+        return;
+      }
       const input = form.elements[field.name];
       if (!input) return;
       if (field.type === "checkbox") values[field.name] = input.checked;
@@ -6233,6 +6483,7 @@
   function closeModal() {
     const backdrop = modalRoot.querySelector(".modal-backdrop");
     if (!backdrop) return;
+    unlockBodyScroll();
     backdrop.classList.add("closing");
     window.setTimeout(() => {
       if (backdrop.isConnected) modalRoot.innerHTML = "";
@@ -6316,15 +6567,26 @@
     }, 680);
   }
 
-  function habitFields() {
-    return [{ name: "title", label: "Daily task name", required: true }];
+  function habitFields(initial = {}) {
+    return [
+      { name: "title", label: "Daily task name", required: true },
+      { name: "days", label: "Repeat on", type: "weekdays", default: habitDays(initial), help: "Pick the days this habit is scheduled (e.g. gym on Mon/Wed/Sat). Leave all off to repeat every day. Completion only counts the days you choose, so rest days never lower your %." }
+    ];
+  }
+
+  const WEEKDAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+  function habitScheduleLabel(habit) {
+    const days = habitDays(habit);
+    if (!days.length || days.length === 7) return "Every day";
+    return [...days].sort((a, b) => a - b).map((d) => WEEKDAY_SHORT[d]).join(" · ");
   }
 
   function taskFields(initial = {}) {
     return [
       { name: "title", label: "Title", required: true },
       { name: "category", label: "Category", type: "select", options: [{ value: "", label: "No category" }, ...appData.settings.taskCategories.map((category) => ({ value: category, label: category }))], default: initial.category || "" },
-      { name: "dueDate", label: "Date", type: "date", default: initial.dueDate || today() },
+      { name: "dueDate", label: "Date", type: "date", default: initial.dueDate ?? today(), help: "Optional. Leave blank for an \"Anytime\" task with no timeframe; pick a date to sort it into Today / Upcoming / Overdue." },
       { name: "startTime", label: "Start time", type: "time", default: initial.startTime || initial.reminderTime || "", help: "Optional. Add a time to place this on the calendar." },
       { name: "endTime", label: "End time", type: "time", default: initial.endTime || "", help: "Optional. Set with a start time for a scheduled block (e.g. a meeting)." },
       { name: "classId", label: "Class (optional)", type: "select", options: [{ value: "", label: "No class" }, ...appData.school.classes.map((klass) => ({ value: klass.id, label: klass.name || "Class" }))], default: initial.classId || "" },
@@ -6510,12 +6772,15 @@
     ];
   }
 
-  function investmentFields() {
+  function investmentFields(initial = {}) {
     return [
       { name: "name", label: "Investment name", required: true },
       { name: "type", label: "Type", type: "select", options: ["stock", "crypto", "retirement", "other"] },
-      { name: "amountInvested", label: "Amount invested", type: "number", step: "0.01" },
-      { name: "currentValue", label: "Current value", type: "number", step: "0.01" },
+      { name: "shares", label: "Shares / units", type: "number", step: "0.0001", help: "Optional. For stocks/crypto, enter how many shares you hold and use the price fields below." },
+      { name: "costBasis", label: "Avg buy price (per share)", type: "number", step: "0.01", help: "What you paid per share on average." },
+      { name: "currentPrice", label: "Current price (per share)", type: "number", step: "0.01", help: "Update this as the price moves to keep value accurate." },
+      { name: "amountInvested", label: "Total invested", type: "number", step: "0.01", help: "Used only if you don't enter shares & buy price." },
+      { name: "currentValue", label: "Current total value", type: "number", step: "0.01", help: "Used only if you don't enter shares & current price." },
       { name: "notes", label: "Notes", type: "textarea" }
     ];
   }
@@ -6789,6 +7054,20 @@
       window.scrollTo({ top: 0, behavior: "auto" });
       return render();
     }
+    if (action === "school-calendar-prev" || action === "school-calendar-next") {
+      // The school calendar card is always a month grid; its arrows step the
+      // month regardless of the main calendar tab's view, and never touch it.
+      const dir = action === "school-calendar-next" ? 1 : -1;
+      ui.calendarMonth = shiftCalendarMonth(currentCalendarMonth(), dir);
+      return render({ quiet: true });
+    }
+    if (action === "school-select-calendar-day") {
+      // Selecting a day in the school card only toggles the detail panel; it
+      // must not flip the main calendar into day view.
+      const d = button.dataset.date || "";
+      ui.calendarSelectedDate = ui.calendarSelectedDate === d ? "" : d;
+      return render({ quiet: true });
+    }
     if (action === "calendar-prev" || action === "calendar-next") {
       const dir = action === "calendar-next" ? 1 : -1;
       const view = ui.calendarView || "month";
@@ -6937,7 +7216,7 @@
       case "add-daily-habit":
       case "edit-daily-habit": {
         const item = id ? findById(appData.dailyHabits, id) : {};
-        openEdit({ title: id ? "Edit daily habit" : "Add daily habit", fields: habitFields(), initial: item, onSubmit: (values) => upsert(appData.dailyHabits, id, values) });
+        openEdit({ title: id ? "Edit daily habit" : "Add daily habit", fields: habitFields(item), initial: item, onSubmit: (values) => upsert(appData.dailyHabits, id, values) });
         break;
       }
       case "toggle-daily-habit": {
@@ -7190,24 +7469,17 @@
             const amount = Math.max(0, Number(values.amount) || 0);
             const balance = Number(debt.balance) || 0;
             const accountId = values.accountId || defaultSpendingAccountId("Debit card");
-            const account = findById(appData.finance.accounts, accountId);
-            const finance = calculateFinance(calculateDateRange("today"));
-            const accountAvailable = account ? (Number(account.balance) || 0) - (finance.accountOutflowsById?.[account.id] || 0) : finance.currentMoney;
+            // Recording a payment is just bookkeeping for money that already moved,
+            // so we don't block it on a computed "available balance" (which the
+            // account-balance model can understate). Only require a real amount;
+            // overpayments simply zero out the remaining balance.
             if (!amount) {
               alert("Enter a payment amount.");
               return false;
             }
             if (amount > balance) {
-              alert(`Payment cannot be greater than the current balance of ${formatCurrency(balance)}.`);
-              return false;
-            }
-            if (amount > finance.currentMoney) {
-              alert(`Payment cannot be greater than your current available money of ${formatCurrency(finance.currentMoney)}.`);
-              return false;
-            }
-            if (account && amount > accountAvailable) {
-              alert(`Payment cannot be greater than ${account.name}'s available balance of ${formatCurrency(accountAvailable)}.`);
-              return false;
+              const ok = confirm(`This payment of ${formatCurrency(amount)} is more than the ${formatCurrency(balance)} remaining on this debt. Record it anyway and mark the debt paid off?`);
+              if (!ok) return false;
             }
             debt.balance = Math.max(0, balance - amount);
             debt.paymentHistory = debt.paymentHistory || [];
@@ -7292,6 +7564,7 @@
       case "add-run":
       case "schedule-workout":
       case "edit-workout": {
+        closePlannerDay(); // release the planner overlay (and its scroll lock) first
         const item = id ? findById(appData.gym.workouts, id) : {};
         const presetDate = button.dataset.date || "";
         const presetType = action === "add-run" ? "run" : (item.type || "lift");

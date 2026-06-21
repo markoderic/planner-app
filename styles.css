@@ -31,6 +31,7 @@
 html {
   min-height: 100%;
   background: var(--bg);
+  overflow-x: hidden;
 }
 
 body {
@@ -40,6 +41,8 @@ body {
   color: var(--text);
   font-size: 16px;
   letter-spacing: 0;
+  overflow-x: hidden;
+  max-width: 100vw;
 }
 
 body.app-loading {
@@ -133,17 +136,24 @@ body.app-ready .app-loader {
   min-height: 100vh;
   margin: 0 auto;
   padding: calc(16px + env(safe-area-inset-top)) 14px calc(var(--nav-height) + 28px + env(safe-area-inset-bottom));
-  transition: opacity 260ms ease, transform 260ms ease;
+  transition: opacity 260ms ease;
 }
 
 body.app-loading .app-main {
   opacity: 0.28;
-  transform: translateY(4px);
 }
 
+/* Use a one-shot entrance animation rather than a persistent transform: a
+   non-none transform on .app-main would make it the containing block for any
+   position:fixed modal inside it, pushing modals off-screen. */
 body.app-ready .app-main {
   opacity: 1;
-  transform: translateY(0);
+  animation: appMainRise 260ms ease;
+}
+
+@keyframes appMainRise {
+  from { transform: translateY(4px); }
+  to { transform: translateY(0); }
 }
 
 .view {
@@ -887,6 +897,7 @@ h3 {
   border-radius: var(--radius);
   box-shadow: 4px 0 0 var(--class-color, var(--accent)) inset;
   background: rgba(255, 255, 255, 0.052);
+  transition: background 280ms ease, box-shadow 280ms ease, border-color 280ms ease;
 }
 
 .class-card {
@@ -2351,6 +2362,11 @@ details[open] .savings-line-dot {
 .form-grid {
   display: grid;
   gap: 12px;
+  min-width: 0;
+}
+
+.form-grid .field {
+  min-width: 0;
 }
 
 .tax-panel {
@@ -2478,6 +2494,7 @@ input,
 select,
 textarea {
   width: 100%;
+  max-width: 100%;
   min-height: 44px;
   border: 1px solid transparent;
   border-radius: var(--radius);
@@ -2710,12 +2727,24 @@ textarea:focus {
   transform: translateY(-1px);
 }
 
+/* Pin the page while a modal/overlay is open so the background can't scroll
+   (and can't be touch-scrolled on iOS). JS stores/restores the scroll offset. */
+body.modal-open {
+  position: fixed;
+  left: 0;
+  right: 0;
+  width: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
 .modal-backdrop {
   position: fixed;
   inset: 0;
   z-index: 50;
   display: grid;
   place-items: end center;
+  overscroll-behavior: contain;
   padding: 18px 12px calc(18px + env(safe-area-inset-bottom));
   background: rgba(0, 0, 0, 0.72);
   backdrop-filter: blur(10px);
@@ -2810,6 +2839,8 @@ textarea:focus {
 .modal-body {
   min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
   padding: 12px;
 }
 
@@ -5228,6 +5259,64 @@ textarea:focus {
 }
 
 .chip-choice span:active { transform: scale(0.94); }
+
+.weekdays-field {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.weekdays-field legend {
+  font-size: 0.8rem;
+  font-weight: 680;
+  color: var(--muted);
+  padding: 0;
+}
+
+.weekday-options {
+  display: flex;
+  gap: 6px;
+}
+
+.weekday-choice {
+  flex: 1 1 0;
+  cursor: pointer;
+}
+
+.weekday-choice input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.weekday-choice span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+  font-weight: 760;
+  transition: background 160ms ease, color 160ms ease, border-color 160ms ease, transform 140ms ease;
+}
+
+.weekday-choice input:checked + span {
+  background: rgba(var(--accent-rgb), 0.22);
+  border-color: transparent;
+  color: var(--text);
+}
+
+.weekday-choice input:focus-visible + span {
+  outline: 2px solid rgba(var(--accent-rgb), 0.55);
+  outline-offset: 2px;
+}
+
+.weekday-choice span:active { transform: scale(0.94); }
 
 @media (prefers-reduced-motion: reduce) {
   *,
