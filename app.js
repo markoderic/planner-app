@@ -1891,54 +1891,35 @@
       <div class="view">
         ${topbar("Tasks", "", actionButton("add-task", "", "Add task", "plus", "primary"))}
 
-        <section class="metric-grid">
-          ${metric("Daily completion", `${dayHabits.percent}%`, `${dayHabits.completed}/${dayHabits.total} today`, {
-            value: { key: "tasks:daily-percent", value: dayHabits.percent, suffix: "%" }
-          })}
-          ${metric("Weekly habits", `${weekHabits.percent}%`, `${weekHabits.completed}/${weekHabits.total}`, {
-            value: { key: "tasks:weekly-habits-percent", value: weekHabits.percent, suffix: "%" }
-          })}
-          ${metric("Habit streak", `${dayHabits.streak}`, "Consecutive full days")}
-          ${metric("Task completion", `${stats.percent}%`, `${stats.completed}/${stats.total} this week`, {
-            value: { key: "tasks:task-percent", value: stats.percent, suffix: "%" }
-          })}
+        <section class="task-statrow">
+          <div class="task-stat"><span class="n" style="color:var(--green)">${dayHabits.percent}%</span><span class="l">Daily</span></div>
+          <div class="task-stat"><span class="n">${weekHabits.percent}%</span><span class="l">Weekly</span></div>
+          <div class="task-stat"><span class="n">${dayHabits.streak}</span><span class="l">Streak</span></div>
+          <div class="task-stat"><span class="n">${stats.completed}/${stats.total}</span><span class="l">Tasks</span></div>
         </section>
 
-        <section class="card panel section">
-          <div class="section-header">
-            <h2>Daily preset habits</h2>
-            ${actionButton("add-daily-habit", "", "Add habit", "plus", "secondary")}
-          </div>
-          ${appData.dailyHabits.length ? renderHabitSwipe() : `<div class="list">${emptyState("Add recurring daily habits you do not want to rewrite.")}</div>`}
+        <div class="sec-head"><span class="sec-title">Daily habits</span>${actionButton("add-daily-habit", "", "Add habit", "plus", "secondary")}</div>
+        <section>
+          ${appData.dailyHabits.length ? renderHabitSwipe() : emptyState("Add recurring daily habits you do not want to rewrite.")}
         </section>
 
-        <section class="card panel section">
-            <div class="section-header task-tools-header">
-              <h2>Custom tasks</h2>
-              <div class="actions">
-                ${actionButton("add-task-category", "", "Add category", "plus", "secondary")}
-                <select id="task-filter" aria-label="Filter tasks">
-                  ${["All", ...appData.settings.taskCategories].map((cat) => `<option value="${escapeHtml(cat)}" ${ui.taskFilter === cat ? "selected" : ""}>${escapeHtml(cat)}</option>`).join("")}
-                </select>
-              </div>
-            </div>
-          <div class="details-stack">
-            ${renderTaskGroup("Today", todayTasks)}
-            ${renderTaskGroup("Overdue", overdue, { open: overdue.length > 0 })}
-            ${renderTaskGroup("Upcoming", upcoming, { open: upcoming.length > 0 })}
-            ${renderTaskGroup("Anytime", anytime, { open: anytime.length > 0, emptyMessage: "Tasks with no date land here. Leave a task's date blank to keep it timeframe-free." })}
-            ${renderTaskGroup("Task history", completedTasks, {
-              open: false,
-              countLabel: `${completedTasks.length} complete`,
-              emptyMessage: "Completed custom tasks will appear here.",
-              sortMode: "history",
-              className: "task-history-group"
-            })}
-          </div>
-          <div class="task-add-footer">
-            ${actionButton("add-task", "", "Add task", "plus", "primary")}
-          </div>
-        </section>
+        <div class="sec-head"><span class="sec-title">Tasks</span>${actionButton("add-task-category", "", "Category", "plus", "secondary")}</div>
+        <div class="task-filter-chips" role="group" aria-label="Filter tasks by category">
+          ${["All", ...appData.settings.taskCategories].map((cat) => `<button type="button" class="chip ${ui.taskFilter === cat ? "active" : ""}" data-action="set-task-filter" data-task-cat="${escapeHtml(cat)}">${escapeHtml(cat)}</button>`).join("")}
+        </div>
+        <div class="task-groups">
+          ${renderTaskGroup("Today", todayTasks)}
+          ${renderTaskGroup("Overdue", overdue, { open: overdue.length > 0 })}
+          ${renderTaskGroup("Upcoming", upcoming, { open: upcoming.length > 0 })}
+          ${renderTaskGroup("Anytime", anytime, { open: anytime.length > 0, emptyMessage: "Tasks with no date land here. Leave a task's date blank to keep it timeframe-free." })}
+          ${renderTaskGroup("Task history", completedTasks, {
+            open: false,
+            countLabel: `${completedTasks.length} complete`,
+            emptyMessage: "Completed custom tasks will appear here.",
+            sortMode: "history",
+            className: "task-history-group"
+          })}
+        </div>
       </div>
     `;
   }
@@ -1978,9 +1959,7 @@
           <span class="tiny">${escapeHtml(formatDate(slide.date))}</span>
         </div>
         ${progressRow(slide.label, stats.percent, `${stats.completed}/${stats.total}`, `habit-day-${slide.isToday ? 0 : 1}`)}
-        <div class="list">
-          ${(habitsForDate(slide.date).map((habit) => renderDailyHabit(habit, slide.date)).join("")) || emptyState("No habits scheduled for this day — enjoy the rest day.")}
-        </div>
+        ${(habitsForDate(slide.date).length ? `<div class="hb-list">${habitsForDate(slide.date).map((habit) => renderDailyHabit(habit, slide.date)).join("")}</div>` : emptyState("No habits scheduled for this day — enjoy the rest day."))}
       </div>
     `;
   }
@@ -1988,16 +1967,18 @@
   function renderDailyHabit(habit, dateStr = today()) {
     const isToday = dateStr === today();
     const done = isHabitDone(habit.id, dateStr);
-    return itemCard({
-      title: habit.title,
-      meta: habitDays(habit).length && habitDays(habit).length < 7 ? [habitScheduleLabel(habit)] : [],
-      className: `daily-habit-card ${done ? "complete" : ""} ${isToday ? recentCompletionClass(habit.id, done) : ""}`,
-      actions: `
-        ${actionButton("toggle-daily-habit", habit.id, done ? "Uncheck" : "Complete", done ? "undo" : "check", "icon-btn", { date: dateStr })}
-        ${actionButton("edit-daily-habit", habit.id, "Edit", "edit")}
-        ${actionButton("delete-daily-habit", habit.id, "Delete", "trash")}
-      `
-    });
+    const sched = habitDays(habit).length && habitDays(habit).length < 7 ? habitScheduleLabel(habit) : "";
+    const pulse = isToday ? recentCompletionClass(habit.id, done) : "";
+    return `
+      <div class="hb-row ${done ? "done" : ""} ${pulse}">
+        <button type="button" class="hb-check ${done ? "done" : ""}" data-action="toggle-daily-habit" data-id="${escapeHtml(habit.id)}" data-date="${escapeHtml(dateStr)}" aria-label="${done ? "Uncheck" : "Complete"} ${escapeHtml(habit.title)}">${done ? icon("check") : ""}</button>
+        <span class="hb-main">
+          <span class="hb-title">${escapeHtml(habit.title)}</span>
+          ${sched ? `<span class="hb-sched">${escapeHtml(sched)}</span>` : ""}
+        </span>
+        <button type="button" class="hb-menu" data-action="edit-daily-habit" data-id="${escapeHtml(habit.id)}" aria-label="Edit ${escapeHtml(habit.title)}">${icon("more")}</button>
+      </div>
+    `;
   }
 
   function restoreHabitSwipe() {
@@ -2036,9 +2017,7 @@
       <details class="card ${escapeHtml(options.className || "")}" ${open ? "open" : ""}>
         <summary><span>${escapeHtml(title)}</span><span class="tiny">${escapeHtml(countLabel)}</span></summary>
         <div class="details-body">
-          <div class="list">
-            ${tasks.length ? sortedTasks.map(renderTaskItem).join("") : emptyState(emptyMessage)}
-          </div>
+          ${tasks.length ? `<div class="tk-list">${sortedTasks.map(renderTaskItem).join("")}</div>` : emptyState(emptyMessage)}
         </div>
       </details>
     `;
@@ -2054,17 +2033,21 @@
 
   function renderTaskItem(task) {
     const timeLabel = taskTimeLabel(task);
-    return itemCard({
-      title: task.title,
-      meta: [task.category, task.classId ? className(task.classId) : "", task.priority, task.dueDate ? formatDate(task.dueDate) : "No date", timeLabel],
-      note: task.notes,
-      className: `${task.completed ? "complete" : ""} ${recentCompletionClass(task.id, task.completed)}`,
-      actions: `
-        ${actionButton("toggle-task", task.id, task.completed ? "Uncomplete" : "Complete", task.completed ? "undo" : "check")}
-        ${actionButton("edit-task", task.id, "Edit", "edit")}
-        ${actionButton("delete-task", task.id, "Delete", "trash")}
-      `
-    });
+    const dateText = task.dueDate ? formatDate(task.dueDate) : (task.completed ? "" : "No date");
+    const metaBits = [task.classId ? className(task.classId) : "", dateText, timeLabel, task.priority].filter(Boolean).join(" · ");
+    const pulse = recentCompletionClass(task.id, task.completed);
+    return `
+      <div class="tk-row ${task.completed ? "done" : ""} ${pulse}">
+        <button type="button" class="tk-check ${task.completed ? "done" : ""}" data-action="toggle-task" data-id="${escapeHtml(task.id)}" aria-label="${task.completed ? "Uncomplete" : "Complete"} ${escapeHtml(task.title)}">${task.completed ? icon("check") : ""}</button>
+        <button type="button" class="tk-main" data-action="edit-task" data-id="${escapeHtml(task.id)}">
+          <span class="tk-text">
+            <span class="tk-title">${escapeHtml(task.title)}</span>
+            ${(task.category || metaBits) ? `<span class="tk-meta">${task.category ? `<span class="tk-cat">${escapeHtml(task.category)}</span>` : ""}${metaBits ? `<span>${escapeHtml(metaBits)}</span>` : ""}</span>` : ""}
+          </span>
+          <span class="tk-go"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></span>
+        </button>
+      </div>
+    `;
   }
 
   function renderFinance() {
@@ -7676,7 +7659,7 @@
       case "add-daily-habit":
       case "edit-daily-habit": {
         const item = id ? findById(appData.dailyHabits, id) : {};
-        openEdit({ title: id ? "Edit daily habit" : "Add daily habit", fields: habitFields(item), initial: item, onSubmit: (values) => upsert(appData.dailyHabits, id, values) });
+        openEdit({ title: id ? "Edit daily habit" : "Add daily habit", fields: habitFields(item), initial: item, onSubmit: (values) => upsert(appData.dailyHabits, id, values), deleteAction: id ? "delete-daily-habit" : null, deleteId: id });
         break;
       }
       case "toggle-daily-habit": {
@@ -7710,7 +7693,7 @@
         const item = findById(appData.tasks, id);
         if (!item) break;
         if (!item.completed && ui.activeTab === "tasks") {
-          const card = typeof button.closest === "function" ? button.closest(".item-card") : null;
+          const card = typeof button.closest === "function" ? button.closest(".tk-row, .item-card") : null;
           const inHistory = card && card.closest(".task-history-group");
           if (card && !inHistory) {
             animateTaskCompletion(item, card);
@@ -7758,6 +7741,9 @@
           showToast("Goal deleted.");
         }
         break;
+      case "set-task-filter":
+        ui.taskFilter = button.dataset.taskCat || "All";
+        return render({ quiet: true, transition: "period" });
       case "add-task-category":
         openEdit({
           title: "Add task category",

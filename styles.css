@@ -1092,6 +1092,7 @@ h3 {
 }
 
 .assignment-card.is-completing,
+.tk-row.is-completing,
 .item-card.is-completing {
   height: 0 !important;
   max-height: 0;
@@ -1208,11 +1209,15 @@ h3 {
   color: rgba(247, 247, 255, 0.84);
 }
 
-.item-card.just-completed {
+.item-card.just-completed,
+.tk-row.just-completed,
+.hb-row.just-completed {
   animation: completeSettle 520ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-.item-card.just-uncompleted {
+.item-card.just-uncompleted,
+.tk-row.just-uncompleted,
+.hb-row.just-uncompleted {
   animation: uncompleteSettle 360ms ease-out;
 }
 
@@ -5808,3 +5813,50 @@ body.modal-open {
    reports a tiny value and the open animation jumps. Keep it auto/block-flow. */
 .details-body.dcl-host { display: block; padding: 0; gap: 0; }
 .dcl { display: grid; gap: 12px; padding: 0 14px 14px; }
+
+/* =====================================================================
+   Tasks — mockup A (compact stats · grouped habit & task lists)
+   ===================================================================== */
+.task-statrow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.task-stat { background: var(--elevated); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 11px 10px; display: flex; flex-direction: column; gap: 3px; }
+.task-stat .n { font-size: 1.05rem; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.task-stat .l { font-size: 0.68rem; color: var(--muted); }
+
+.task-filter-chips { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; margin: -2px 0 2px; }
+.task-filter-chips::-webkit-scrollbar { display: none; }
+
+.task-groups { display: grid; gap: 12px; }
+
+/* shared grouped list (habits + tasks): one surface, hairline dividers */
+.hb-list, .tk-list { display: grid; gap: 0; background: var(--elevated); border: 1px solid var(--line); border-radius: var(--radius-lg); overflow: hidden; }
+/* when already inside a details card body, drop the extra surface */
+.details-body .tk-list { background: transparent; border: 0; border-radius: 0; }
+
+.hb-row, .tk-row { position: relative; display: flex; align-items: center; gap: 13px; padding: 12px 14px; }
+.hb-row + .hb-row::before, .tk-row + .tk-row::before { content: ""; position: absolute; top: 0; left: 51px; right: 0; height: 1px; background: var(--hairline); }
+
+/* round / square complete control */
+.hb-check, .tk-check { flex: none; width: 26px; height: 26px; border-radius: 50%; border: 2px solid rgba(255,255,255,.22); background: transparent; display: grid; place-items: center; cursor: pointer; color: #06301f; transition: background var(--dur) var(--ease-out), border-color var(--dur) var(--ease-out), transform var(--dur-fast) var(--ease-spring); }
+.tk-check { border-radius: 9px; }
+.hb-check .icon, .tk-check .icon { width: 15px; height: 15px; }
+.hb-check.done, .tk-check.done { background: var(--green); border-color: var(--green); }
+.hb-check:active, .tk-check:active { transform: scale(0.88); }
+
+.hb-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 9px; }
+.hb-title { font-size: 0.97rem; font-weight: 600; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hb-sched { flex: none; font-size: 0.66rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: rgba(157,111,255,.16); color: #c6b0ff; }
+.hb-row.done .hb-title { color: var(--text-3, var(--subtle)); text-decoration: line-through; }
+.hb-menu { flex: none; width: 32px; height: 32px; border-radius: 9px; border: 0; background: transparent; color: var(--subtle); display: grid; place-items: center; cursor: pointer; }
+.hb-menu .icon { width: 18px; height: 18px; }
+.hb-menu:active { transform: scale(0.9); }
+
+/* task row: check + tappable main (edit) + chevron */
+.tk-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; border: 0; background: transparent; padding: 0; cursor: pointer; text-align: left; color: inherit; font: inherit; }
+.tk-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.tk-title { font-size: 0.97rem; font-weight: 600; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tk-row.done .tk-title { color: var(--subtle); text-decoration: line-through; }
+.tk-meta { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 0.78rem; color: var(--muted); }
+.tk-meta > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tk-cat { flex: none; font-size: 0.66rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: rgba(157,111,255,.16); color: #c6b0ff; }
+.tk-go { flex: none; color: var(--text-3, var(--subtle)); display: grid; place-items: center; }
+.tk-go .icon { width: 16px; height: 16px; }
