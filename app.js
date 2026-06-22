@@ -841,7 +841,7 @@
       note: '<path d="M5 3h10l4 4v14a0 0 0 0 1 0 0H5a0 0 0 0 1 0 0V3z" /><path d="M14 3v5h5" /><path d="M8 13h8M8 17h5" />',
       folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" />',
       pin: '<path d="M9 3h6l-1 6 3 3v2h-4v5l-1 2-1-2v-5H6v-2l3-3-1-6z" />',
-      globe: '<circle cx="12" cy="12" r="9" /><path d="M3 12h18" /><path d="M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18z" />',
+      globe: '<circle cx="12" cy="12" r="9" /><path d="M3 12h18" /><ellipse cx="12" cy="12" rx="4" ry="9" />',
       activity: '<path d="M3 12h4l2.5 7 5-16 2.5 9h4" />'
     };
     return `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name] || icons.circle}</svg>`;
@@ -1436,7 +1436,7 @@
     return `
       <section class="topbar">
         <div>
-          <p class="eyebrow">${escapeHtml(eyebrow)}</p>
+          ${eyebrow ? `<p class="eyebrow">${escapeHtml(eyebrow)}</p>` : ""}
           <h1>${escapeHtml(title)}</h1>
         </div>
         ${action ? `<div class="actions">${action}</div>` : ""}
@@ -1889,7 +1889,7 @@
 
     return `
       <div class="view">
-        ${topbar("Tasks", "Planner checklist", actionButton("add-task", "", "Add task", "plus", "primary"))}
+        ${topbar("Tasks", "", actionButton("add-task", "", "Add task", "plus", "primary"))}
 
         <section class="metric-grid">
           ${metric("Daily completion", `${dayHabits.percent}%`, `${dayHabits.completed}/${dayHabits.total} today`, {
@@ -2086,7 +2086,7 @@
 
     return `
       <div class="view">
-        ${topbar("Finance", "Money calculations", financeActions)}
+        ${topbar("Finance", "", financeActions)}
 
         <section class="card hero-card">
           <div class="hero-content">
@@ -3236,15 +3236,14 @@
   function renderForecast(finance, range, safeFinance = finance, safetyRange = range) {
     return `
       <div class="metric-grid">
-        ${metric("Projected balance", formatCurrency(finance.projectedBalance), "Current + income - bills - debt - future cash/debit - shopping")}
-        ${metric("Safe-to-spend", formatCurrency(safeFinance.safeToSpend), `Protected through ${formatDate(safetyRange.end)}`)}
+        ${metric("Projected balance", formatCurrency(finance.projectedBalance), "End of range")}
+        ${metric("Safe-to-spend", formatCurrency(safeFinance.safeToSpend), `Through ${formatDate(safetyRange.end)}`)}
         ${metric("Expected income", formatCurrency(finance.netIncome), "Selected range")}
-        ${metric("Upcoming bills", formatCurrency(finance.billsDue), "Unpaid bills")}
-        ${metric("Debt payments", formatCurrency(safeFinance.debtPayments), `${safeFinance.debtPaymentOccurrences.length} due in ${safetyRange.label.toLowerCase()}`)}
-        ${metric("Expected spending", formatCurrency(finance.spending), "Logged spending in range")}
-        ${metric("Lowest balance", formatCurrency(safeFinance.lowestBalance), "Lowest protected balance")}
+        ${metric("Upcoming bills", formatCurrency(finance.billsDue), "Unpaid")}
+        ${metric("Debt payments", formatCurrency(safeFinance.debtPayments), `${safeFinance.debtPaymentOccurrences.length} due`)}
+        ${metric("Expected spending", formatCurrency(finance.spending), "In range")}
+        ${metric("Lowest balance", formatCurrency(safeFinance.lowestBalance), "Protected low")}
       </div>
-      <p class="tiny">Cash and debit spending lowers current money. Credit card spending still counts in spending analytics, but it raises the linked card balance instead of lowering cash today.</p>
     `;
   }
 
@@ -3272,7 +3271,7 @@
 
     return `
       <div class="view">
-        ${topbar("School", "Assignments, classes, and calendar", actionButton("add-assignment", "", "Add assignment", "plus", "primary"))}
+        ${topbar("School", "", actionButton("add-assignment", "", "Add assignment", "plus", "primary"))}
 
         <section class="card hero-card">
           <div class="hero-content">
@@ -3927,11 +3926,10 @@
     const legend = { Tasks: CALENDAR_KIND_COLORS.task, Meetings: CALENDAR_KIND_COLORS.meeting, Reminders: CALENDAR_KIND_COLORS.reminder, Workouts: CALENDAR_KIND_COLORS.workout };
     return `
       <div class="view">
-        ${topbar("Calendar", "Everything scheduled, in one place", actionButton("add-task", "", "Add to calendar", "plus", "primary"))}
+        ${topbar("Calendar", "", actionButton("add-task", "", "Add to calendar", "plus", "primary"))}
 
         <section class="card panel section calendar-page-card">
           ${calendarKindFilterRow()}
-          ${appData.school.classes.length ? renderCalendarClassFilter() : ""}
           ${calendarViewToggle()}
           <div class="cal-body" data-cal-body>
             ${renderCalendarBody()}
@@ -4440,7 +4438,7 @@
 
     return `
       <div class="view">
-        ${topbar("Notes", notesFolderName(filter), `${actionButton("add-note-folder", "", "New folder", "folder", "secondary")}${actionButton("new-note", "", "New note", "plus", "primary")}`)}
+        ${topbar("Notes", "", `${actionButton("add-note-folder", "", "New folder", "folder", "secondary")}${actionButton("new-note", "", "New note", "plus", "primary")}`)}
         ${chipRow}
         ${isFolder ? `<div class="notes-folder-actions">${actionButton("edit-note-folder", filter, "Rename", "edit", "secondary")}${actionButton("delete-note-folder", filter, "Delete folder", "trash", "secondary")}</div>` : ""}
         <section class="notes-list">${listHtml}</section>
@@ -4915,7 +4913,7 @@
     ];
     return `
       <div class="view">
-        ${topbar("More", "Additional tools")}
+        ${topbar("More", "")}
         <section class="more-list" aria-label="More sections">
           ${views.map((view) => `
             <button type="button" class="more-row ${ui.moreView === view.key ? "active" : ""}" data-action="set-more-view" data-view="${escapeHtml(view.key)}">
@@ -4996,7 +4994,7 @@
     const view = ["workouts", "nutrition"].includes(ui.healthView) ? ui.healthView : "workouts";
     return `
       <div class="view">
-        ${topbar("Health", "Workouts & nutrition, together", actionButton("schedule-workout", "", "Schedule workout", "clock", "primary"))}
+        ${topbar("Health", "", actionButton("schedule-workout", "", "Schedule workout", "clock", "primary"))}
         <div class="seg-toggle health-toggle" role="group" aria-label="Health view">
           <button type="button" class="seg-btn ${view === "workouts" ? "active" : ""}" data-action="set-health-view" data-health-view="workouts">${icon("dumbbell")}<span>Workouts</span></button>
           <button type="button" class="seg-btn ${view === "nutrition" ? "active" : ""}" data-action="set-health-view" data-health-view="nutrition">${icon("flame")}<span>Nutrition</span></button>
@@ -6217,6 +6215,9 @@
         btn.setAttribute("aria-pressed", on ? "true" : "false");
       });
       updateAssignmentBadge(card, item);
+      card.classList.remove("status-pulse");
+      void card.offsetWidth;
+      card.classList.add("status-pulse");
       return;
     }
 
