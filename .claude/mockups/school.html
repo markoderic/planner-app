@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root{
+    --bg:#0a0c10; --elevated:#161a22; --elevated-2:#1c212c;
+    --line:rgba(255,255,255,.08); --hairline:rgba(255,255,255,.07); --border-glass:rgba(255,255,255,.16);
+    --text:#f5f7fa; --text-2:rgba(245,247,250,.62); --text-3:rgba(245,247,250,.40);
+    --blue:#4f8cff; --purple:#9d6fff; --green:#47dc9a; --orange:#ffae52; --pink:#ff5c8a; --teal:#2fd9c0; --red:#ff5c70;
+    --r-lg:22px; --r-md:14px;
+    --font:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","Inter","Helvetica Neue",Arial,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-font-smoothing:antialiased;}
+  body{background:#050608;font-family:var(--font);color:var(--text);padding:30px 22px 56px;}
+  .row{display:flex;gap:26px;align-items:flex-start;flex-wrap:wrap;}
+  .col{display:flex;flex-direction:column;align-items:center;gap:14px;}
+  .cap{max-width:392px;text-align:center;color:rgba(255,255,255,.55);font-size:13px;line-height:1.5;}
+  .cap b{color:#fff;font-weight:600;}
+
+  .phone{width:392px;height:842px;border-radius:46px;padding:11px;background:#000;box-shadow:0 40px 90px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.06);}
+  .screen{width:100%;height:100%;border-radius:36px;overflow:hidden;position:relative;background:var(--bg);}
+  .content{position:absolute;inset:0;padding:0 18px;display:flex;flex-direction:column;}
+  .statusbar{display:flex;justify-content:space-between;align-items:center;padding:14px 8px 6px;font-size:14px;font-weight:600;}
+  .topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 4px 14px;}
+  .h1{font-size:34px;font-weight:800;letter-spacing:-.02em;}
+  .addbtn{display:inline-flex;align-items:center;gap:7px;background:#f5f7fa;color:#0b0d12;font-weight:760;font-size:14px;padding:11px 14px;border-radius:16px;white-space:nowrap;}
+  .addbtn svg{width:17px;height:17px;}
+
+  .sec-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:14px 4px 9px;}
+  .sec-title{font-size:1rem;font-weight:700;letter-spacing:-.01em;}
+  .sec-head .more{font-size:.82rem;color:var(--text-2);font-weight:500;}
+
+  .seg{display:flex;gap:4px;padding:4px;border-radius:999px;background:rgba(255,255,255,.045);border:1px solid var(--line);overflow:hidden;}
+  .seg b{flex:none;font-size:.8rem;font-weight:600;color:var(--text-2);padding:8px 13px;border-radius:999px;white-space:nowrap;}
+  .seg b.active{background:rgba(255,255,255,.10);color:var(--text);}
+
+  .statrow{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;}
+  .stat{background:var(--elevated);border:1px solid var(--line);border-radius:var(--r-md);padding:11px 10px;display:flex;flex-direction:column;gap:3px;}
+  .stat .n{font-size:1.05rem;font-weight:800;letter-spacing:-.02em;}
+  .stat .l{font-size:.68rem;color:var(--text-2);}
+
+  .group{background:var(--elevated);border:1px solid var(--line);border-radius:var(--r-lg);overflow:hidden;}
+
+  /* class row */
+  .cl{position:relative;display:flex;align-items:center;gap:12px;padding:13px 15px 13px 17px;}
+  .cl + .cl::before{content:"";position:absolute;top:0;left:15px;right:0;height:1px;background:var(--hairline);}
+  .cl::after{content:"";position:absolute;left:0;top:10px;bottom:10px;width:3px;border-radius:3px;background:var(--c);}
+  .cl-main{flex:1;min-width:0;}
+  .cl-top{display:flex;align-items:center;gap:8px;}
+  .cl-name{font-size:.97rem;font-weight:700;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .grade{flex:none;font-size:.72rem;font-weight:800;padding:2px 9px;border-radius:999px;border:1px solid color-mix(in srgb,var(--c) 45%,transparent);color:#fff;}
+  .cl-sub{display:flex;align-items:center;gap:8px;margin-top:7px;}
+  .pbar{flex:1;height:6px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;}
+  .pbar i{display:block;height:100%;border-radius:inherit;background:var(--c);}
+  .cl-pct{font-size:.74rem;color:var(--text-2);font-weight:700;min-width:30px;text-align:right;}
+  .cl-meta{font-size:.74rem;color:var(--text-3);margin-top:5px;}
+  .cl-meta .ov{color:#ff9fb4;}
+  .chev{flex:none;color:var(--text-3);}
+  .chev svg{width:17px;height:17px;}
+
+  /* assignment row */
+  .as{position:relative;display:flex;align-items:center;gap:12px;padding:12px 15px;}
+  .as + .as::before{content:"";position:absolute;top:0;left:40px;right:0;height:1px;background:var(--hairline);}
+  .dot{width:9px;height:9px;border-radius:50%;flex:none;background:var(--c);}
+  .as-main{flex:1;min-width:0;}
+  .as-title{font-size:.95rem;font-weight:600;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .as-meta{display:flex;align-items:center;gap:7px;margin-top:3px;font-size:.76rem;color:var(--text-2);}
+  .cpill{font-size:.64rem;font-weight:700;padding:2px 7px;border-radius:999px;background:color-mix(in srgb,var(--c) 18%,transparent);color:#fff;}
+  .tpill{font-size:.64rem;font-weight:700;padding:2px 7px;border-radius:999px;background:rgba(255,255,255,.07);color:var(--text-2);}
+  .as-due{font-size:.76rem;color:var(--text-3);font-weight:600;white-space:nowrap;}
+  .as-due.over{color:#ff9fb4;}
+
+  .chips{display:flex;gap:8px;overflow:hidden;}
+  .chip{font-size:.8rem;font-weight:600;padding:8px 13px;border-radius:999px;background:rgba(255,255,255,.05);color:var(--text-2);white-space:nowrap;}
+  .chip.active{background:rgba(79,140,255,.18);color:#bcd4ff;}
+
+  .gh{display:flex;align-items:center;justify-content:space-between;padding:13px 15px;}
+  .gh .gt{font-size:.92rem;font-weight:700;}
+  .gh .gc{font-size:.8rem;color:var(--text-3);font-weight:600;}
+
+  /* hero */
+  .hero{background:var(--elevated);border:1px solid var(--line);border-radius:var(--r-lg);padding:18px;display:flex;flex-direction:column;gap:15px;}
+  .hero-top{display:flex;align-items:center;gap:16px;}
+  .ring{width:74px;height:74px;flex:none;position:relative;}
+  .ring .rv{position:absolute;inset:0;display:grid;place-items:center;font-size:1rem;font-weight:800;}
+  .hero-greet{font-size:1.1rem;font-weight:800;letter-spacing:-.02em;}
+  .hero-sub{font-size:.88rem;color:var(--text-2);margin-top:4px;}
+  .minichips{display:flex;gap:9px;}
+  .mc{flex:1;background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:var(--r-md);padding:10px;display:flex;flex-direction:column;gap:2px;}
+  .mc .n{font-size:1rem;font-weight:800;}
+  .mc .l{font-size:.66rem;color:var(--text-2);}
+
+  /* 2-col class cards */
+  .cgrid{display:grid;grid-template-columns:1fr 1fr;gap:11px;}
+  .cc{position:relative;background:var(--elevated);border:1px solid var(--line);border-radius:var(--r-lg);padding:14px;overflow:hidden;box-shadow:inset 3px 0 0 var(--c);}
+  .cc-top{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;}
+  .cc-name{font-size:.92rem;font-weight:700;letter-spacing:-.01em;}
+  .cc-pct{font-size:.72rem;color:var(--text-2);margin:10px 0 6px;font-weight:700;}
+
+  /* horizontal class cards (C) */
+  .cscroll{display:flex;gap:11px;overflow:hidden;}
+  .ccard{flex:none;width:150px;background:var(--elevated);border:1px solid var(--line);border-radius:var(--r-lg);padding:14px;box-shadow:inset 3px 0 0 var(--c);}
+
+  .tabbar{position:absolute;left:14px;right:14px;bottom:12px;height:62px;display:flex;justify-content:space-around;align-items:center;background:rgba(20,23,31,.72);border:1px solid var(--border-glass);border-radius:24px;backdrop-filter:blur(30px);box-shadow:0 18px 50px rgba(0,0,0,.5);}
+  .tab{display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--text-3);font-size:10px;font-weight:600;}
+  .tab.active{color:var(--text);}
+  .tab svg{width:21px;height:21px;}
+  .fade{position:absolute;left:0;right:0;bottom:0;height:90px;background:linear-gradient(to top,var(--bg),transparent);pointer-events:none;}
+  svg{stroke-linecap:round;stroke-linejoin:round;}
+  .tb{width:22px;height:12px;}
+</style>
+</head>
+<body>
+<p class="cap" style="max-width:none;margin-bottom:24px;font-size:14px;">Three School layouts — same dark "Quiet" system; school accent is blue, each class keeps its own color.</p>
+<div class="row">
+
+  <!-- ============ A · CLEAN ACADEMIC ============ -->
+  <div class="col">
+  <div class="phone"><div class="screen">
+    <div class="content">
+      <div class="statusbar"><span>14:25</span><svg class="tb" viewBox="0 0 24 13" fill="none"><rect x="1" y="1" width="19" height="11" rx="3" stroke="#fff" opacity=".5"/><rect x="2.5" y="2.5" width="13" height="8" rx="1.5" fill="#fff"/><rect x="21" y="4" width="2" height="5" rx="1" fill="#fff" opacity=".5"/></svg></div>
+      <div class="topbar"><span class="h1">School</span><span class="addbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>Add</span></div>
+
+      <div class="seg" style="margin-bottom:12px"><b class="active">Today</b><b>Week</b><b>Month</b><b>Semester</b><b>All</b></div>
+
+      <div class="statrow">
+        <div class="stat"><span class="n">2</span><span class="l">Due today</span></div>
+        <div class="stat"><span class="n" style="color:#ff9fb4">1</span><span class="l">Overdue</span></div>
+        <div class="stat"><span class="n" style="color:var(--green)">8</span><span class="l">Done</span></div>
+        <div class="stat"><span class="n">3.7</span><span class="l">GPA</span></div>
+      </div>
+
+      <div class="sec-head"><span class="sec-title">Classes</span><span class="more">+ Add</span></div>
+      <div class="group">
+        <div class="cl" style="--c:var(--purple)"><div class="cl-main"><div class="cl-top"><span class="cl-name">Organic Chemistry</span><span class="grade">B+</span></div><div class="cl-sub"><span class="pbar"><i style="width:64%"></i></span><span class="cl-pct">64%</span></div><div class="cl-meta"><span class="ov">1 overdue</span> · 3 upcoming</div></div><span class="chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></span></div>
+        <div class="cl" style="--c:var(--orange)"><div class="cl-main"><div class="cl-top"><span class="cl-name">Statistics 1450</span><span class="grade">A−</span></div><div class="cl-sub"><span class="pbar"><i style="width:82%"></i></span><span class="cl-pct">82%</span></div><div class="cl-meta">Next Jun 24 · 1 upcoming</div></div><span class="chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></span></div>
+        <div class="cl" style="--c:var(--teal)"><div class="cl-main"><div class="cl-top"><span class="cl-name">Athletics 175</span><span class="grade">A</span></div><div class="cl-sub"><span class="pbar"><i style="width:95%"></i></span><span class="cl-pct">95%</span></div><div class="cl-meta">No upcoming work</div></div><span class="chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></span></div>
+      </div>
+
+      <div class="sec-head"><span class="sec-title">To do</span><span class="more">3</span></div>
+      <div class="group">
+        <div class="as" style="--c:var(--purple)"><span class="dot"></span><div class="as-main"><div class="as-title">Lab report — stereochemistry</div><div class="as-meta"><span class="cpill">Org Chem</span><span class="tpill">Lab</span></div></div><span class="as-due over">Overdue</span></div>
+        <div class="as" style="--c:var(--orange)"><span class="dot"></span><div class="as-main"><div class="as-title">Problem set 6</div><div class="as-meta"><span class="cpill">Stats</span><span class="tpill">Homework</span></div></div><span class="as-due">Jun 24</span></div>
+        <div class="as" style="--c:var(--purple)"><span class="dot"></span><div class="as-main"><div class="as-title">Read chapter 9</div><div class="as-meta"><span class="cpill">Org Chem</span><span class="tpill">Reading</span></div></div><span class="as-due">Jun 26</span></div>
+      </div>
+
+      <div class="sec-head"><span class="sec-title">Calendar</span><span class="more">⌄</span></div>
+      <div class="group"><div class="gh"><span class="gt">June 2026</span><span class="gc">4 items</span></div></div>
+      <div class="fade"></div>
+    </div>
+    <div class="tabbar">
+      <div class="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg>Home</div>
+      <div class="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3 8-8M3 12h4"/></svg>Tasks</div>
+      <div class="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="18" height="13" rx="3"/><path d="M3 10h18"/></svg>Finance</div>
+      <div class="tab active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5z"/></svg>School</div>
+      <div class="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="3"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>Calendar</div>
+    </div>
+  </div></div>
+  <div class="cap"><b>A · Clean academic</b><br>Span segmented, stat chips, classes as one grouped list (color bar + grade pill + progress + next due), then a "To do" assignment list. Calmest, everything scannable.</div>
+  </div>
+
+  <!-- ============ B · TERM HERO ============ -->
+  <div class="col">
+  <div class="phone"><div class="screen">
+    <div class="content">
+      <div class="statusbar"><span>14:25</span><svg class="tb" viewBox="0 0 24 13" fill="none"><rect x="1" y="1" width="19" height="11" rx="3" stroke="#fff" opacity=".5"/><rect x="2.5" y="2.5" width="13" height="8" rx="1.5" fill="#fff"/><rect x="21" y="4" width="2" height="5" rx="1" fill="#fff" opacity=".5"/></svg></div>
+      <div class="topbar"><span class="h1">School</span><span class="addbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>Add</span></div>
+
+      <div class="hero">
+        <div class="hero-top">
+          <div class="ring"><svg width="74" height="74"><circle cx="37" cy="37" r="30" stroke="rgba(255,255,255,.10)" stroke-width="7" fill="none"/><circle cx="37" cy="37" r="30" stroke="var(--blue)" stroke-width="7" fill="none" stroke-dasharray="188" stroke-dashoffset="66" stroke-linecap="round" transform="rotate(-90 37 37)"/></svg><div class="rv">65%</div></div>
+          <div><div class="hero-greet">This semester</div><div class="hero-sub">8 of 12 assignments done<br>1 overdue · 2 due today</div></div>
+        </div>
+        <div class="minichips">
+          <div class="mc"><span class="n">2</span><span class="l">Due today</span></div>
+          <div class="mc"><span class="n" style="color:#ff9fb4">1</span><span class="l">Overdue</span></div>
+          <div class="mc"><span class="n">3.7</span><span class="l">GPA</span></div>
+        </div>
+      </div>
+
+      <div class="sec-head"><span class="sec-title">Classes</span><span class="more">+ Add</span></div>
+      <div class="cgrid">
+        <div class="cc" style="--c:var(--purple)"><div class="cc-top"><span class="cc-name">Org Chem</span><span class="grade" style="--c:var(--purple)">B+</span></div><div class="cc-pct">64% · 1 overdue</div><span class="pbar"><i style="width:64%"></i></span></div>
+        <div class="cc" style="--c:var(--orange)"><div class="cc-top"><span class="cc-name">Stats 1450</span><span class="grade" style="--c:var(--orange)">A−</span></div><div class="cc-pct">82% · next Jun 24</div><span class="pbar"><i style="width:82%"></i></span></div>
+        <div class="cc" style="--c:var(--teal)"><div class="cc-top"><span class="cc-name">Athletics</span><span class="grade" style="--c:var(--teal)">A</span></div><div class="cc-pct">95% · done</div><span class="pbar"><i style="width:95%"></i></span></div>
+        <div class="cc" style="--c:var(--blue)"><div class="cc-top"><span class="cc-name">English</span><span class="grade" style="--c:var(--blue)">B</span></div><div class="cc-pct">70% · next Jul 1</div><span class="pbar"><i style="width:70%"></i></span></div>
+      </div>
+
+      <div class="sec-head"><span class="sec-title">To do</span><span class="more">3</span></div>
+      <div class="group">
+        <div class="as" style="--c:var(--purple)"><span class="dot"></span><div class="as-main"><div class="as-title">Lab report — stereochemistry</div><div class="as-meta"><span class="cpill">Org Chem</span><span class="tpill">Lab</span></div></div><span class="as-due over">Overdue</span></div>
+        <div class="as" style="--c:var(--orange)"><span class="dot"></span><div class="as-main"><div class="as-title">Problem set 6</div><div class="as-meta"><span class="cpill">Stats</span><span class="tpill">HW</span></div></div><span class="as-due">Jun 24</span></div>
+      </div>
+      <div class="fade"></div>
+    </div>
+    <div class="tabbar">
+      <div class="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg>Home</div>
+      <div class="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3 8-8M3 12h4"/></svg>Tasks</div>
+      <div class="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="18" height="13" rx="3"/><path d="M3 10h18"/></svg>Finance</div>
+      <div class="tab active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5z"/></svg>School</div>
+      <div class="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="3"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>Calendar</div>
+    </div>
+  </div></div>
+  <div class="cap"><b>B · Term hero</b><br>A semester progress ring + chips up top, classes as 2-col color cards, then the to-do list. Most dashboard-like, good at-a-glance overview.</div>
+  </div>
+
+  <!-- ============ C · ASSIGNMENT-FIRST ============ -->
+  <div class="col">
+  <div class="phone"><div class="screen">
+    <div class="content">
+      <div class="statusbar"><span>14:25</span><svg class="tb" viewBox="0 0 24 13" fill="none"><rect x="1" y="1" width="19" height="11" rx="3" stroke="#fff" opacity=".5"/><rect x="2.5" y="2.5" width="13" height="8" rx="1.5" fill="#fff"/><rect x="21" y="4" width="2" height="5" rx="1" fill="#fff" opacity=".5"/></svg></div>
+      <div class="topbar"><span class="h1">School</span><span class="addbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>Add</span></div>
+
+      <div class="sec-head" style="margin-top:2px"><span class="sec-title">Classes</span><span class="more">+ Add</span></div>
+      <div class="cscroll">
+        <div class="ccard" style="--c:var(--purple)"><div class="cc-top"><span class="cc-name">Org Chem</span><span class="grade" style="--c:var(--purple)">B+</span></div><div class="cc-pct">64%</div><span class="pbar"><i style="width:64%"></i></span></div>
+        <div class="ccard" style="--c:var(--orange)"><div class="cc-top"><span class="cc-name">Stats</span><span class="grade" style="--c:var(--orange)">A−</span></div><div class="cc-pct">82%</div><span class="pbar"><i style="width:82%"></i></span></div>
+        <div class="ccard" style="--c:var(--teal)"><div class="cc-top"><span class="cc-name">Athletics</span></div><div class="cc-pct">95%</div><span class="pbar"><i style="width:95%"></i></span></div>
+      </div>
+
+      <div class="sec-head"><span class="sec-title">Assignments</span><span class="more">filter</span></div>
+      <div class="chips" style="margin-bottom:10px"><span class="chip active">All</span><span class="chip">Org Chem</span><span class="chip">Stats</span><span class="chip">Athletics</span></div>
+      <div class="seg" style="margin-bottom:12px"><b class="active">To do</b><b>Overdue</b><b>Done</b></div>
+      <div class="group">
+        <div class="as" style="--c:var(--purple)"><span class="dot"></span><div class="as-main"><div class="as-title">Lab report — stereochemistry</div><div class="as-meta"><span class="cpill">Org Chem</span><span class="tpill">Lab</span></div></div><span class="as-due over">Overdue</span></div>
+        <div class="as" style="--c:var(--orange)"><span class="dot"></span><div class="as-main"><div class="as-title">Problem set 6</div><div class="as-meta"><span class="cpill">Stats</span><span class="tpill">Homework</span></div></div><span class="as-due">Jun 24</span></div>
+        <div class="as" style="--c:var(--purple)"><span class="dot"></span><div class="as-main"><div class="as-title">Read chapter 9</div><div class="as-meta"><span class="cpill">Org Chem</span><span class="tpill">Reading</span></div></div><span class="as-due">Jun 26</span></div>
+        <div class="as" style="--c:var(--teal)"><span class="dot"></span><div class="as-main"><div class="as-title">Conditioning log</div><div class="as-meta"><span class="cpill">Athletics</span><span class="tpill">Log</span></div></div><span class="as-due">Jun 28</span></div>
+      </div>
+      <div class="fade"></div>
+    </div>
+    <div class="tabbar">
+      <div class="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg>Home</div>
+      <div class="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3 8-8M3 12h4"/></svg>Tasks</div>
+      <div class="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="18" height="13" rx="3"/><path d="M3 10h18"/></svg>Finance</div>
+      <div class="tab active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5z"/></svg>School</div>
+      <div class="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="3"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>Calendar</div>
+    </div>
+  </div></div>
+  <div class="cap"><b>C · Assignment-first</b><br>Classes shrink to a swipeable strip; assignments take center stage with class filter chips + a To do / Overdue / Done switch over one list. Best if assignments are your focus.</div>
+  </div>
+
+</div>
+</body>
+</html>

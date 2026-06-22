@@ -3258,56 +3258,31 @@
       <div class="view">
         ${topbar("School", "", actionButton("add-assignment", "", "Add assignment", "plus", "primary"))}
 
-        <section class="card hero-card">
-          <div class="hero-content">
-            <div>
-              <p class="eyebrow">Time span</p>
-              <h2>${animatedRangeLabel("range", "school", range.label)}</h2>
-              <p class="muted">${ui.schoolSpan === "all" ? "Showing every assignment" : `${escapeHtml(formatDate(range.start))} to ${escapeHtml(formatDate(range.end))}`}</p>
-            </div>
-            ${rangeToggle("school", ui.schoolSpan)}
-            ${customRangeControls("school", range)}
-          </div>
+        ${rangeToggle("school", ui.schoolSpan)}
+        ${customRangeControls("school", range)}
+
+        <section class="stat-chips">
+          <div class="stat-chip"><span class="n">${dueToday.length}</span><span class="l">Due today</span></div>
+          <div class="stat-chip"><span class="n" style="color:var(--danger)">${stats.overdue.length}</span><span class="l">Overdue</span></div>
+          <div class="stat-chip"><span class="n">${stats.openDue.length}</span><span class="l">In range</span></div>
+          <div class="stat-chip"><span class="n" style="color:var(--green)">${completedInRange.length}</span><span class="l">Done</span></div>
         </section>
 
-        <section class="metric-grid">
-          ${metric("Due today", String(dueToday.length), "Open assignments")}
-          ${metric("Due in range", String(stats.openDue.length), range.label)}
-          ${metric("Overdue", String(stats.overdue.length), "Open and past due")}
-          ${metric("Completed", String(completedInRange.length), range.label)}
-        </section>
+        <div class="sec-head"><span class="sec-title">Classes</span>${actionButton("add-class", "", "Add class", "plus", "secondary")}</div>
+        ${appData.school.classes.length
+          ? `<section class="class-grid">${byClass.map(renderClassCard).join("")}</section>`
+          : `<section>${emptyState("Add classes to group assignments, track grades, and build your calendar.")}</section>`}
 
-        <section class="card panel section">
-          <div class="section-header">
-            <div>
-              <h2>Classes</h2>
-              <span class="tiny">Tap a class to open its dashboard</span>
-            </div>
-            ${actionButton("add-class", "", "Add class", "plus", "secondary")}
-          </div>
-          <div class="list class-list">
-            ${appData.school.classes.length ? byClass.map(renderClassCard).join("") : emptyState("Add classes to group assignments, track grades, and build your calendar.")}
-          </div>
-        </section>
+        <div class="sec-head"><span class="sec-title">Assignments</span>${actionButton("add-assignment", "", "Add", "plus", "secondary")}</div>
+        <div class="assignment-tools">
+          ${schoolClassFilterToggle()}
+          ${schoolAssignmentFilterToggle()}
+        </div>
+        <div class="assignment-list">
+          ${renderAssignmentGroups(filterAssignmentsByClass(appData.school.assignments), range)}
+        </div>
 
         ${renderSchoolCalendarCard({ scope: "school" })}
-
-        <section class="card panel section">
-          <div class="section-header">
-            <div>
-              <h2>Assignments</h2>
-              <span class="tiny">${escapeHtml(schoolFilterLabel(ui.schoolClassFilter))} · ${escapeHtml(schoolAssignmentFilterLabel(ui.schoolAssignmentFilter))}</span>
-            </div>
-            ${actionButton("add-assignment", "", "Add", "plus", "secondary")}
-          </div>
-          <div class="assignment-tools">
-            ${schoolClassFilterToggle()}
-            ${schoolAssignmentFilterToggle()}
-          </div>
-          <div class="assignment-list">
-            ${renderAssignmentGroups(filterAssignmentsByClass(appData.school.assignments), range)}
-          </div>
-        </section>
       </div>
     `;
   }
@@ -3502,28 +3477,22 @@
       : nextUp
         ? `<span>Next ${escapeHtml(formatDate(nextUp.dueDate))}</span>`
         : `<span>No upcoming work</span>`;
+    const metaText = overdue.length
+      ? `${overdue.length} overdue`
+      : nextUp
+        ? `Next ${formatDate(nextUp.dueDate)}`
+        : (open.length ? `${upcoming.length} upcoming` : "All caught up");
     return `
-      <article class="item-card class-card" role="button" tabindex="0" data-action="open-class" data-id="${escapeHtml(stats.id)}" data-progress-key="${escapeHtml(progressKey)}" data-progress-percent="${escapeHtml(clamp(stats.percent))}" style="--class-color:${escapeHtml(color)}; --class-color-rgb:${rgbText(color)}">
-        <div class="item-main">
-          <div class="class-card-head">
-            <p class="item-title">${escapeHtml(stats.name)}</p>
-            ${gradeBadge}
-          </div>
-          <div class="item-meta">
-            <span>${countSpan(`${progressKey}:count`, stats.completed, { suffix: `/${stats.total} done` })}</span>
-            ${open.length ? `<span>${upcoming.length} upcoming</span>` : ""}
-            ${deadlineMeta}
-          </div>
-          <div class="class-progress-line">
-            <div class="progress"><span style="width:${clamp(stats.percent)}%"></span></div>
-            <span>${countSpan(`${progressKey}:percent`, stats.percent, { suffix: "%" })}</span>
-          </div>
+      <article class="class-card2 ${overdue.length ? "has-overdue" : ""}" role="button" tabindex="0" data-action="open-class" data-id="${escapeHtml(stats.id)}" data-progress-key="${escapeHtml(progressKey)}" data-progress-percent="${escapeHtml(clamp(stats.percent))}" style="--class-color:${escapeHtml(color)}; --class-color-rgb:${rgbText(color)}">
+        <div class="cc2-top">
+          <span class="cc2-name">${escapeHtml(stats.name)}</span>
+          ${gradeBadge}
         </div>
-        <div class="item-actions class-card-actions">
-          ${actionButton("edit-class", stats.id, "Edit", "edit")}
-          ${actionButton("delete-class", stats.id, "Delete", "trash")}
-          <span class="class-card-chevron" aria-hidden="true">${icon("chevron")}</span>
+        <div class="cc2-meta">
+          <span class="cc2-pct">${countSpan(`${progressKey}:percent`, stats.percent, { suffix: "%" })}</span>
+          <span class="cc2-deadline">${escapeHtml(metaText)}</span>
         </div>
+        <div class="progress cc2-progress"><span style="width:${clamp(stats.percent)}%"></span></div>
       </article>
     `;
   }
@@ -8002,7 +7971,7 @@
       case "add-class":
       case "edit-class": {
         const item = id ? findById(appData.school.classes, id) : {};
-        openEdit({ title: id ? "Edit class" : "Add class", fields: classFields(), initial: item, onSubmit: (values) => upsert(appData.school.classes, id, values) });
+        openEdit({ title: id ? "Edit class" : "Add class", fields: classFields(), initial: item, onSubmit: (values) => upsert(appData.school.classes, id, values), deleteAction: id ? "delete-class" : null, deleteId: id });
         break;
       }
       case "edit-class-grade": {

@@ -5860,3 +5860,23 @@ body.modal-open {
 .tk-cat { flex: none; font-size: 0.66rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: rgba(157,111,255,.16); color: #c6b0ff; }
 .tk-go { flex: none; color: var(--text-3, var(--subtle)); display: grid; place-items: center; }
 .tk-go .icon { width: 16px; height: 16px; }
+
+/* =====================================================================
+   School — B-with-A's-top (stat chips · 2-col class cards)
+   ===================================================================== */
+.stat-chips { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.stat-chip { background: var(--elevated); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 11px 10px; display: flex; flex-direction: column; gap: 3px; }
+.stat-chip .n { font-size: 1.05rem; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.stat-chip .l { font-size: 0.68rem; color: var(--muted); }
+
+.class-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; }
+.class-card2 { position: relative; overflow: hidden; background: var(--elevated); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 14px; box-shadow: inset 3px 0 0 var(--class-color, var(--accent)); cursor: pointer; transition: transform var(--dur-fast) var(--ease-spring), background var(--dur) var(--ease-out); }
+.class-card2:active { transform: scale(0.985); background: var(--elevated-2); }
+.cc2-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.cc2-name { font-size: 0.95rem; font-weight: 700; letter-spacing: -0.01em; line-height: 1.2; min-width: 0; }
+.cc2-meta { display: flex; align-items: baseline; gap: 7px; margin: 11px 0 8px; font-size: 0.76rem; color: var(--muted); }
+.cc2-pct { font-weight: 800; color: var(--text); font-size: 0.92rem; font-variant-numeric: tabular-nums; }
+.cc2-deadline { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.class-card2.has-overdue .cc2-deadline { color: #ff9fb4; }
+.class-card2 .cc2-progress { height: 6px; }
+.class-card2 .cc2-progress > span { background: var(--class-color, var(--accent)); }
