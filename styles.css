@@ -5880,3 +5880,39 @@ body.modal-open {
 .class-card2.has-overdue .cc2-deadline { color: #ff9fb4; }
 .class-card2 .cc2-progress { height: 6px; }
 .class-card2 .cc2-progress > span { background: var(--class-color, var(--accent)); }
+
+/* =====================================================================
+   Health — C + split bars (week strip · stat tiles · split history)
+   ===================================================================== */
+.sec-head .sec-hint { font-size: 0.82rem; color: var(--muted); font-weight: 500; }
+.sec-head .sec-actions { display: flex; align-items: center; gap: 8px; }
+
+/* refined week strip: elevated pills, pink "today" ring */
+.health-planner .planner-week { gap: 7px; }
+.planner-day { background: var(--elevated); border: 1px solid var(--line); border-radius: 15px; min-height: 72px; }
+.planner-day.has-workouts { background: var(--elevated); }
+.planner-day.is-today { border-color: var(--pink); box-shadow: 0 0 0 1px var(--pink); background: var(--elevated); }
+.planner-day.is-today .planner-dom { color: #ffc2d4; }
+
+/* segmented Workouts/Nutrition gets the calm pink active state */
+.health-toggle .seg-btn.active { background: rgba(255, 92, 138, 0.18); color: #ffc2d4; }
+
+/* stat tiles (2x2) */
+.stat-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; }
+.stat-tile { background: var(--elevated); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 15px; display: flex; flex-direction: column; gap: 6px; min-height: 96px; }
+.st-head { display: flex; align-items: center; gap: 8px; font-size: 0.8rem; color: var(--muted); font-weight: 600; }
+.st-ic { width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; color: var(--ic, var(--pink)); background: color-mix(in srgb, var(--ic, var(--pink)) 17%, transparent); }
+.st-ic .icon { width: 15px; height: 15px; }
+.st-val { font-size: 1.5rem; font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; }
+.st-sub { font-size: 0.72rem; color: var(--subtle); }
+
+/* split history bars */
+.split-panel { display: grid; gap: 11px; }
+.split-row { display: grid; grid-template-columns: 64px 1fr 22px; align-items: center; gap: 10px; }
+.split-label { font-size: 0.82rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.split-bar { height: 8px; border-radius: 999px; background: rgba(255, 255, 255, 0.07); overflow: hidden; }
+.split-bar i { display: block; height: 100%; border-radius: inherit; background: var(--pink); transition: width 420ms var(--ease-out); }
+.split-val { font-size: 0.78rem; color: var(--muted); text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* week strip needs positive spacing under its label (sec-head default tucks up) */
+.health-planner .sec-head { margin: 4px 4px 10px; }

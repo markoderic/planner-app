@@ -5010,14 +5010,8 @@
         </button>`);
     }
     return `
-      <section class="card panel section health-planner">
-        <div class="section-header">
-          <div>
-            <h2>This week's plan</h2>
-            <span class="tiny">Tap a day to see planned workouts</span>
-          </div>
-          ${actionButton("schedule-workout", "", "Schedule", "plus", "secondary")}
-        </div>
+      <section class="health-planner">
+        <div class="sec-head"><span class="sec-title">This week</span><span class="sec-hint">Tap a day</span></div>
         <div class="planner-week">${cols.join("")}</div>
         <div class="planner-zoom-layer" data-planner-zoom hidden></div>
       </section>
@@ -5134,41 +5128,58 @@
     `;
   }
 
+  function healthTile(label, value, sub, iconName, color) {
+    return `
+      <div class="stat-tile">
+        <span class="st-head"><span class="st-ic" style="--ic:${color}">${icon(iconName)}</span>${escapeHtml(label)}</span>
+        <span class="st-val">${escapeHtml(value)}</span>
+        <span class="st-sub">${escapeHtml(sub)}</span>
+      </div>
+    `;
+  }
+
+  function renderSplitBars(freq) {
+    const entries = Object.entries(freq).sort((a, b) => b[1] - a[1]);
+    const max = Math.max(1, ...entries.map((e) => e[1]));
+    return `
+      <div class="panel split-panel">
+        ${entries.map(([label, count]) => `
+          <div class="split-row">
+            <span class="split-label">${escapeHtml(label || "Other")}</span>
+            <span class="split-bar"><i style="width:${Math.round((count / max) * 100)}%"></i></span>
+            <span class="split-val">${count}</span>
+          </div>
+        `).join("")}
+      </div>
+    `;
+  }
+
   function renderLiftingSummary() {
     const lifts = sortByDate(appData.gym.workouts.filter((w) => !isRunWorkout(w)), "date");
     const weekRange = calculateDateRange("week");
-    const monthRange = calculateDateRange("month");
     const liftWeek = lifts.filter((w) => dateInRange(w.date, weekRange));
-    const liftMonth = lifts.filter((w) => dateInRange(w.date, monthRange));
     const volume = sum(liftWeek, workoutVolume);
     const splitFreq = groupTotals(liftWeek, "split", () => 1);
     const lastLift = lifts.at(-1);
-    const missed = gymStats(weekRange).missedPlanned;
-    const planText = appData.gym.planDays?.length ? appData.gym.planDays.map(dayName).join(", ") : "No plan days set";
+    const planText = appData.gym.planDays?.length ? appData.gym.planDays.map(dayName).join(" · ") : "No plan days";
+    const lastPreview = lastLift ? [lastLift.split || "Workout", formatDate(lastLift.date)].filter(Boolean).join(" · ") : "Lift log";
     return `
-      <div class="section-header">
-        <h2>Lifting summary</h2>
-        <div class="actions">
-          ${actionButton("edit-gym-plan", "", "Plan days", "calendar", "secondary")}
-          ${actionButton("add-workout", "", "Add lift", "plus", "primary")}
-        </div>
-      </div>
-      <div class="metric-grid">
-        ${metric("Lifts this week", String(liftWeek.length), planText)}
-        ${metric("Lifts this month", String(liftMonth.length), "")}
-        ${metric("Workout streak", String(workoutStreak()), "Consecutive workout days")}
-        ${metric("Total volume", formatNumber(volume), "Sets x reps x weight")}
-        ${metric("Missed planned", String(missed), "This week")}
-        ${metric("Most recent", lastLift ? formatDate(lastLift.date) : "None", lastLift?.split || "")}
-      </div>
-      <div class="card panel section">
-        <h2>Split history</h2>
-        ${renderBarChart(splitFreq, Math.max(1, liftWeek.length), false)}
-      </div>
+      <div class="sec-head"><span class="sec-title">Lifting</span><span class="sec-actions">${actionButton("edit-gym-plan", "", "Plan days", "calendar", "secondary")}${actionButton("add-workout", "", "Add lift", "plus", "primary")}</span></div>
+      <section class="stat-tiles">
+        ${healthTile("This week", String(liftWeek.length), planText, "dumbbell", "var(--pink)")}
+        ${healthTile("Streak", String(workoutStreak()), "days in a row", "activity", "var(--green)")}
+        ${healthTile("Volume", formatNumber(volume), "sets × reps × wt", "chart", "var(--blue)")}
+        ${healthTile("Recent", lastLift ? (lastLift.split || "Workout") : "None", lastLift ? formatDate(lastLift.date) : "Log a lift", "calendar", "var(--orange)")}
+      </section>
+      ${Object.keys(splitFreq).length ? `
+        <div class="sec-head"><span class="sec-title">Split history</span><span class="sec-hint">This week</span></div>
+        ${renderSplitBars(splitFreq)}
+      ` : ""}
+      <div class="sec-head"><span class="sec-title">Lift log</span><span class="sec-hint">${lifts.length} entr${lifts.length === 1 ? "y" : "ies"}</span></div>
       <details class="card panel section">
         <summary>
-          <span class="finance-section-heading"><span class="finance-section-title">Lift log</span></span>
-          <span class="tiny">${lifts.length} entr${lifts.length === 1 ? "y" : "ies"}</span>
+          <span class="finance-section-heading"><span class="finance-section-title">${escapeHtml(lastPreview)}</span></span>
+          <span class="tiny">${lifts.length}</span>
         </summary>
         <div class="details-body">
           <div class="list">
@@ -5187,25 +5198,20 @@
     const totalMiles = sum(allRuns, (w) => Number(w.distance) || 0);
     const longest = allRuns.reduce((m, w) => Math.max(m, Number(w.distance) || 0), 0);
     const lastRun = allRuns.at(-1);
+    const lastPreview = lastRun ? `Run · ${formatDate(lastRun.date)}` : "Run log";
     return `
-      <div class="section-header">
-        <h2>Running summary</h2>
-        <div class="actions">
-          ${actionButton("add-run", "", "Log run", "plus", "primary")}
-        </div>
-      </div>
-      <div class="metric-grid">
-        ${metric("Miles today", formatNumber(todayRuns.miles, 1), `${todayRuns.count} run${todayRuns.count === 1 ? "" : "s"}`)}
-        ${metric("Miles this week", formatNumber(weekRuns.miles, 1), `${weekRuns.count} run${weekRuns.count === 1 ? "" : "s"}`)}
-        ${metric("Miles this month", formatNumber(monthRuns.miles, 1), `${monthRuns.count} runs`)}
-        ${metric("Total miles", formatNumber(totalMiles, 1), `${allRuns.length} runs all-time`)}
-        ${metric("Longest run", `${formatNumber(longest, 1)} mi`, "")}
-        ${metric("Most recent", lastRun ? formatDate(lastRun.date) : "None", lastRun ? `${formatNumber(lastRun.distance || 0, 1)} mi` : "")}
-      </div>
+      <div class="sec-head"><span class="sec-title">Running</span><span class="sec-actions">${actionButton("add-run", "", "Log run", "plus", "primary")}</span></div>
+      <section class="stat-tiles">
+        ${healthTile("This week", `${formatNumber(weekRuns.miles, 1)} mi`, `${weekRuns.count} run${weekRuns.count === 1 ? "" : "s"}`, "activity", "var(--cyan)")}
+        ${healthTile("This month", `${formatNumber(monthRuns.miles, 1)} mi`, `${monthRuns.count} runs`, "calendar", "var(--blue)")}
+        ${healthTile("Total", `${formatNumber(totalMiles, 1)} mi`, `${allRuns.length} all-time`, "chart", "var(--green)")}
+        ${healthTile("Longest", `${formatNumber(longest, 1)} mi`, lastRun ? formatDate(lastRun.date) : "None", "spark", "var(--orange)")}
+      </section>
+      <div class="sec-head"><span class="sec-title">Run log</span><span class="sec-hint">${allRuns.length} entr${allRuns.length === 1 ? "y" : "ies"}</span></div>
       <details class="card panel section">
         <summary>
-          <span class="finance-section-heading"><span class="finance-section-title">Run log</span></span>
-          <span class="tiny">${allRuns.length} entr${allRuns.length === 1 ? "y" : "ies"}</span>
+          <span class="finance-section-heading"><span class="finance-section-title">${escapeHtml(lastPreview)}</span></span>
+          <span class="tiny">${allRuns.length}</span>
         </summary>
         <div class="details-body">
           <div class="list">
