@@ -2361,9 +2361,11 @@
             </div>
           </div>
           <button type="button" class="income-compare-toggle ${compareOn ? "active" : ""}" data-action="toggle-income-compare">
-            ${icon("chart")}<span>${compareOn ? "Hide month comparison" : "Compare two months"}</span>
+            ${icon("chart")}<span data-compare-label>${compareOn ? "Hide month comparison" : "Compare two months"}</span>
           </button>
-          ${compareOn ? renderIncomeCompare() : ""}
+          <div class="income-compare-wrap" ${compareOn ? "data-open" : ""}>
+            <div class="income-compare-inner">${renderIncomeCompare()}</div>
+          </div>
         </div>
       </details>
     `;
@@ -6841,16 +6843,65 @@
     return true;
   }
 
-  // One consistent, stable collapse used everywhere: the element height eases
-  // between the collapsed (summary-only) height and its full content height.
-  const DETAILS_ANIM_MS = 300;
+  const DETAILS_ANIM_MS = 340;
+
+  // Smooth collapse. Cards whose content is wrapped in a single `.details-body`
+  // animate `grid-template-rows` (0fr↔1fr) — the browser composites this far more
+  // smoothly than per-frame JS height changes. Anything else falls back to height.
   function toggleDetails(details, summary = details.querySelector(":scope > summary")) {
+    const body = details.querySelector(":scope > .details-body");
+    if (body && CSS.supports && CSS.supports("grid-template-rows", "1fr")) {
+      return toggleDetailsGrid(details);
+    }
+    return toggleDetailsHeight(details, summary);
+  }
+
+  function toggleDetailsGrid(details) {
+    if (details.dataset.animating === "1") return;
+    details.dataset.animating = "1";
+    const finish = () => {
+      details.dataset.animating = "";
+      details.style.gridTemplateRows = "";
+      details.classList.remove("is-details-animating", "is-grid-collapsing");
+    };
+    const onEnd = (after) => {
+      let done = false;
+      const handler = (event) => {
+        if (event.target !== details || event.propertyName !== "grid-template-rows") return;
+        if (done) return;
+        done = true;
+        details.removeEventListener("transitionend", handler);
+        after();
+      };
+      details.addEventListener("transitionend", handler);
+      window.setTimeout(() => { if (!done) { done = true; details.removeEventListener("transitionend", handler); after(); } }, DETAILS_ANIM_MS + 80);
+    };
+    details.classList.add("is-details-animating", "is-grid-collapsing");
+    if (details.open) {
+      details.style.gridTemplateRows = "auto 1fr";
+      details.offsetHeight;
+      window.requestAnimationFrame(() => {
+        if (details.isConnected) details.style.gridTemplateRows = "auto 0fr";
+      });
+      onEnd(() => { details.open = false; finish(); });
+    } else {
+      details.open = true;
+      details.style.gridTemplateRows = "auto 0fr";
+      details.offsetHeight;
+      window.requestAnimationFrame(() => {
+        if (details.isConnected) details.style.gridTemplateRows = "auto 1fr";
+      });
+      onEnd(finish);
+    }
+  }
+
+  function toggleDetailsHeight(details, summary = details.querySelector(":scope > summary")) {
     if (details.open) {
       const collapsedHeight = (summary?.offsetHeight || 0);
       const startHeight = details.offsetHeight;
       details.style.height = `${startHeight}px`;
       details.classList.add("is-details-animating", "is-closing");
-      details.offsetHeight; // force reflow so the start height is applied
+      details.offsetHeight;
       window.requestAnimationFrame(() => {
         if (details.isConnected) details.style.height = `${collapsedHeight}px`;
       });
@@ -6866,7 +6917,7 @@
       const endHeight = details.scrollHeight;
       details.style.height = `${startHeight}px`;
       details.classList.add("is-details-animating", "is-opening");
-      details.offsetHeight; // force reflow
+      details.offsetHeight;
       window.requestAnimationFrame(() => {
         if (details.isConnected) details.style.height = `${endHeight}px`;
       });
@@ -7309,7 +7360,21 @@
     if (action === "toggle-income-compare") {
       ui.incomeCompareOn = !ui.incomeCompareOn;
       saveUi();
-      return refreshIncomeChart();
+      const wrap = app.querySelector(".income-compare-wrap");
+      if (!wrap) return refreshIncomeChart();
+      wrap.toggleAttribute("data-open", ui.incomeCompareOn);
+      button.classList.toggle("active", ui.incomeCompareOn);
+      const label = button.querySelector("[data-compare-label]");
+      if (label) label.textContent = ui.incomeCompareOn ? "Hide month comparison" : "Compare two months";
+      if (ui.incomeCompareOn) {
+        // re-trigger the bar grow once the panel is open
+        wrap.querySelectorAll(".income-compare-bar i").forEach((bar) => {
+          bar.style.animation = "none";
+          void bar.offsetWidth;
+          bar.style.animation = "";
+        });
+      }
+      return;
     }
     if (action === "jump-finance-section") {
       const key = button.dataset.section;

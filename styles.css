@@ -5782,9 +5782,11 @@ body.modal-open {
 }
 .item-card .item-actions .icon-btn .icon { width: 16px; height: 16px; }
 
-/* Month comparison: animate the panel + bars instead of popping in */
-.income-compare { animation: riseFade 320ms var(--ease-out) both; }
-@keyframes riseFade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+/* Month comparison: smooth grid-rows expand/collapse in place */
+.income-compare-wrap { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 400ms var(--ease-out); }
+.income-compare-wrap[data-open] { grid-template-rows: 1fr; }
+.income-compare-inner { overflow: hidden; min-height: 0; }
+.income-compare { padding-top: 12px; }
 .income-compare-bar i { transform-origin: left center; animation: barGrow 560ms var(--ease-out) both; }
 @keyframes barGrow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 
@@ -5794,3 +5796,8 @@ body.modal-open {
 
 /* Smoother collapse: hint the compositor while details animate */
 .is-details-animating { will-change: height; contain: paint; }
+
+/* GPU-friendly collapse: animate grid track size instead of JS height (no jank) */
+details:has(> .details-body) { display: grid; grid-template-rows: auto 1fr; }
+details.is-grid-collapsing { transition: grid-template-rows 340ms var(--ease-out); will-change: grid-template-rows; }
+details.is-grid-collapsing > .details-body { overflow: hidden; min-height: 0; }
