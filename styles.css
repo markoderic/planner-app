@@ -1673,6 +1673,11 @@ h3 {
   font-weight: 720;
 }
 
+/* Flip the income/spending history disclosure arrow (per preference): points up
+   when collapsed, down when expanded. */
+.finance-history > summary::after { transform: rotate(225deg); }
+.finance-history[open]:not(.is-closing) > summary::after { transform: rotate(45deg); }
+
 /* ===== Collapsible finance history entries (income + spending) ===== */
 .fin-num { font-variant-numeric: tabular-nums; }
 .fin-num.income { color: #4ade80; }
@@ -5783,7 +5788,7 @@ body.modal-open {
 .item-card .item-actions .icon-btn .icon { width: 16px; height: 16px; }
 
 /* Month comparison: smooth grid-rows expand/collapse in place */
-.income-compare-wrap { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 400ms var(--ease-out); }
+.income-compare-wrap { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 460ms var(--ease-out); }
 .income-compare-wrap[data-open] { grid-template-rows: 1fr; }
 .income-compare-inner { overflow: hidden; min-height: 0; }
 .income-compare { padding-top: 12px; }
@@ -5797,7 +5802,10 @@ body.modal-open {
 /* Smoother collapse: hint the compositor while details animate */
 .is-details-animating { will-change: height; contain: paint; }
 
-/* GPU-friendly collapse: animate grid track size instead of JS height (no jank) */
-details:has(> .details-body) { display: grid; grid-template-rows: auto 1fr; }
-details.is-grid-collapsing { transition: grid-template-rows 340ms var(--ease-out); will-change: grid-template-rows; }
-details.is-grid-collapsing > .details-body { overflow: hidden; min-height: 0; }
+/* GPU-friendly collapse: animate ONE fr row on a wrapper (the only form that
+   interpolates smoothly on every engine, Safari included). JS wraps the body's
+   content in `.dcl` and animates the body row 0fr <-> 1fr. */
+.details-body.dcl-host { display: grid; grid-template-rows: 1fr; padding: 0; gap: 0; transition: grid-template-rows 460ms var(--ease-out); }
+.details-body.dcl-host[data-collapsed] { grid-template-rows: 0fr; }
+.details-body.dcl-host > .dcl { overflow: hidden; min-height: 0; }
+.dcl { display: grid; gap: 12px; padding: 0 14px 14px; }

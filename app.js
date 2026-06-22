@@ -6843,55 +6843,75 @@
     return true;
   }
 
-  const DETAILS_ANIM_MS = 340;
+  const DETAILS_ANIM_MS = 460;
 
-  // Smooth collapse. Cards whose content is wrapped in a single `.details-body`
-  // animate `grid-template-rows` (0fr↔1fr) — the browser composites this far more
-  // smoothly than per-frame JS height changes. Anything else falls back to height.
+  const DETAILS_EASE = "cubic-bezier(0.22, 0.72, 0.18, 1)";
+  const prefersReducedMotion = () => window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // Smooth collapse via the Web Animations API: it animates the body's height to
+  // an EXACT pixel target (0 when closing) and fires `finish` precisely at the
+  // end — no grid `fr` residual that "stops short", and no fallback-timer pause.
   function toggleDetails(details, summary = details.querySelector(":scope > summary")) {
     const body = details.querySelector(":scope > .details-body");
-    if (body && CSS.supports && CSS.supports("grid-template-rows", "1fr")) {
-      return toggleDetailsGrid(details);
-    }
-    return toggleDetailsHeight(details, summary);
-  }
-
-  function toggleDetailsGrid(details) {
+    if (!body || typeof body.animate !== "function") return toggleDetailsHeight(details, summary);
     if (details.dataset.animating === "1") return;
+
+    if (prefersReducedMotion()) {
+      details.open = !details.open;
+      return;
+    }
+
     details.dataset.animating = "1";
-    const finish = () => {
+    details.classList.add("is-details-animating");
+    // Move the body's padding into a single inner `.dcl` wrapper so the body
+    // itself has zero padding and collapses to a TRUE 0 (otherwise the body's
+    // bottom padding floors the height at ~14px = the "stops short" residual).
+    if (!body.querySelector(":scope > .dcl")) {
+      const inner = document.createElement("div");
+      inner.className = "dcl";
+      while (body.firstChild) inner.appendChild(body.firstChild);
+      body.appendChild(inner);
+      body.classList.add("dcl-host");
+    }
+    const clearFlags = () => {
+      body.style.willChange = "";
       details.dataset.animating = "";
-      details.style.gridTemplateRows = "";
-      details.classList.remove("is-details-animating", "is-grid-collapsing");
+      details.classList.remove("is-details-animating");
     };
-    const onEnd = (after) => {
-      let done = false;
-      const handler = (event) => {
-        if (event.target !== details || event.propertyName !== "grid-template-rows") return;
-        if (done) return;
-        done = true;
-        details.removeEventListener("transitionend", handler);
-        after();
-      };
-      details.addEventListener("transitionend", handler);
-      window.setTimeout(() => { if (!done) { done = true; details.removeEventListener("transitionend", handler); after(); } }, DETAILS_ANIM_MS + 80);
-    };
-    details.classList.add("is-details-animating", "is-grid-collapsing");
+    body.style.overflow = "hidden";
+    body.style.willChange = "height";
+
     if (details.open) {
-      details.style.gridTemplateRows = "auto 1fr";
-      details.offsetHeight;
-      window.requestAnimationFrame(() => {
-        if (details.isConnected) details.style.gridTemplateRows = "auto 0fr";
-      });
-      onEnd(() => { details.open = false; finish(); });
+      // Close: animate to exactly 0 and KEEP it pinned at 0 — this engine does not
+      // hide details content on open=false, so clearing height would spring it back.
+      const start = body.scrollHeight;
+      const anim = body.animate(
+        [{ height: `${start}px` }, { height: "0px" }],
+        { duration: DETAILS_ANIM_MS, easing: DETAILS_EASE, fill: "none" }
+      );
+      const done = () => {
+        body.style.height = "0px";
+        body.style.overflow = "hidden";
+        details.open = false;
+        clearFlags();
+      };
+      anim.onfinish = done;
+      anim.oncancel = done;
     } else {
       details.open = true;
-      details.style.gridTemplateRows = "auto 0fr";
-      details.offsetHeight;
-      window.requestAnimationFrame(() => {
-        if (details.isConnected) details.style.gridTemplateRows = "auto 1fr";
-      });
-      onEnd(finish);
+      body.style.height = "0px";
+      const end = body.scrollHeight;
+      const anim = body.animate(
+        [{ height: "0px" }, { height: `${end}px` }],
+        { duration: DETAILS_ANIM_MS, easing: DETAILS_EASE, fill: "none" }
+      );
+      const done = () => {
+        body.style.height = "";
+        body.style.overflow = "";
+        clearFlags();
+      };
+      anim.onfinish = done;
+      anim.oncancel = done;
     }
   }
 
