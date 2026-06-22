@@ -5802,10 +5802,9 @@ body.modal-open {
 /* Smoother collapse: hint the compositor while details animate */
 .is-details-animating { will-change: height; contain: paint; }
 
-/* GPU-friendly collapse: animate ONE fr row on a wrapper (the only form that
-   interpolates smoothly on every engine, Safari included). JS wraps the body's
-   content in `.dcl` and animates the body row 0fr <-> 1fr. */
-.details-body.dcl-host { display: grid; grid-template-rows: 1fr; padding: 0; gap: 0; transition: grid-template-rows 460ms var(--ease-out); }
-.details-body.dcl-host[data-collapsed] { grid-template-rows: 0fr; }
-.details-body.dcl-host > .dcl { overflow: hidden; min-height: 0; }
+/* Collapse wrapper: the body's padding moves to `.dcl` so the body itself has
+   zero padding and can animate (via WAAPI height) to a true 0. The body must NOT
+   force the row to a fixed track — otherwise measuring scrollHeight at height:0
+   reports a tiny value and the open animation jumps. Keep it auto/block-flow. */
+.details-body.dcl-host { display: block; padding: 0; gap: 0; }
 .dcl { display: grid; gap: 12px; padding: 0 14px 14px; }

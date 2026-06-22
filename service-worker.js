@@ -1,4 +1,4 @@
-const CACHE_NAME = "planner-app-v94";
+const CACHE_NAME = "planner-app-v95";
 const APP_FILES = [
   "./",
   "./index.html",
