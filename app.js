@@ -245,6 +245,7 @@
         dashboardSpan: "today",
         dashboardStyle: "cards",
         financeSpan: "30",
+        financeSection: "current-money",
         incomeHistorySpan: "month",
         spendingHistorySpan: "month",
         incomeChartGran: "month",
@@ -277,6 +278,7 @@
         dashboardSpan: "today",
         dashboardStyle: "cards",
         financeSpan: "30",
+        financeSection: "current-money",
         incomeHistorySpan: "month",
         spendingHistorySpan: "month",
         financeBarCollapsed: true,
@@ -1083,7 +1085,10 @@
     if (ui.activeTab === "tasks") restoreHabitSwipe();
     if (ui.activeTab === "notes") setupNotesEditor();
     if (ui.activeTab === "travel") setupTravelMap();
-    if (ui.activeTab === "finance") setupFinanceHistory();
+    if (ui.activeTab === "finance") {
+      setupFinanceHistory();
+      app.querySelector(".fin-tab.active")?.scrollIntoView({ inline: "center", block: "nearest" });
+    }
     animateProgressIndicators();
     animateCountElements(app, { force: periodTransition });
     if (ui.activeTab !== "finance") app.classList.remove("finance-shortcuts-hidden");
@@ -2057,50 +2062,84 @@
     const safeFinance = calculateFinance(safetyRange);
     const financeActions = actionButton("add-spending", "", "Add spending", "plus", "primary");
     const sections = [
-      { key: "current-money", title: "Current money", body: renderAccounts(finance, safeFinance, safetyRange), action: "add-account", label: "Add account" },
-      { key: "income", title: "Income", body: renderIncome(finance, range), action: "add-income", label: "Add income" },
-      { key: "bills", title: "Bills and subscriptions", body: renderBills(finance), action: "add-bill", label: "Add bill" },
-      { key: "spending", title: "Spending", body: renderSpending(range), action: "add-spending", label: "Add spending" },
-      { key: "savings", title: "Savings", body: renderSavings(finance, range), action: "add-saving", label: "Add savings" },
-      { key: "debt", title: "Debt repayment", body: renderDebts(finance), action: "add-debt", label: "Add debt" },
-      { key: "investments", title: "Investments", body: renderInvestments(finance), action: "add-investment", label: "Add investment" },
-      { key: "forecast", title: "Forecast", body: renderForecast(finance, range, safeFinance, safetyRange), action: "", label: "" }
+      { key: "current-money", title: "Current money", action: "add-account", label: "Add account", render: () => renderAccounts(finance, safeFinance, safetyRange) },
+      { key: "income", title: "Income", action: "add-income", label: "Add income", render: () => renderIncome(finance, range) },
+      { key: "bills", title: "Bills and subscriptions", action: "add-bill", label: "Add bill", render: () => renderBills(finance) },
+      { key: "spending", title: "Spending", action: "add-spending", label: "Add spending", render: () => renderSpending(range) },
+      { key: "savings", title: "Savings", action: "add-saving", label: "Add savings", render: () => renderSavings(finance, range) },
+      { key: "debt", title: "Debt repayment", action: "add-debt", label: "Add debt", render: () => renderDebts(finance) },
+      { key: "investments", title: "Investments", action: "add-investment", label: "Add investment", render: () => renderInvestments(finance) },
+      { key: "forecast", title: "Forecast", action: "", label: "", render: () => renderForecast(finance, range, safeFinance, safetyRange) }
     ];
+    const activeKey = sections.some((s) => s.key === ui.financeSection) ? ui.financeSection : sections[0].key;
+    const active = sections.find((s) => s.key === activeKey);
 
     return `
-      <div class="view">
+      <div class="view finance-view">
         ${topbar("Finance", "", financeActions)}
 
-        <section class="card hero-card">
-          <div class="hero-content">
-            <div>
-              <p class="eyebrow">Forecast span</p>
-              <h2>${animatedRangeLabel("range", "finance", range.label)}</h2>
-              <p class="muted">${escapeHtml(formatDate(range.start))} to ${escapeHtml(formatDate(range.end))}</p>
-            </div>
-            ${rangeToggle("finance", ui.financeSpan)}
-            ${customRangeControls("finance", range)}
-            <div class="stat-strip">
-              <div class="strip-item"><span class="strip-value">${animatedDisplay("strip", "current", formatCompactCurrency(finance.currentMoney))}</span><span class="strip-label">Current</span></div>
-              <div class="strip-item"><span class="strip-value">${animatedDisplay("strip", "projected", formatCompactCurrency(finance.projectedBalance))}</span><span class="strip-label">Projected</span></div>
-              <div class="strip-item"><span class="strip-value">${animatedDisplay("strip", "safe-to-spend", formatCompactCurrency(safeFinance.safeToSpend))}</span><span class="strip-label">Safe to spend</span></div>
-            </div>
-          </div>
+        ${renderFinanceHero(finance, safeFinance, safetyRange, range)}
+
+        <div class="sec-head"><span class="sec-title">Overview</span></div>
+        <section class="stat-tiles fin-overview">
+          ${healthTile("Current money", formatCompactCurrency(finance.currentMoney), "Balances + income", "wallet", "var(--green)")}
+          ${healthTile("Safe to spend", formatCompactCurrency(safeFinance.safeToSpend), `Through ${formatDate(safetyRange.end)}`, "check", "var(--cyan)")}
+          ${healthTile("Upcoming bills", formatCompactCurrency(finance.billsDue), `${finance.billOccurrences.length} due`, "calendar", "var(--orange)")}
+          ${healthTile("Net worth", formatCompactCurrency(finance.netWorth), "+ invest − debt", "chart", "var(--purple)")}
         </section>
 
-        <section class="metric-grid finance-headline-grid">
-          ${metric("Total current money", formatCurrency(finance.currentMoney), "Balances + income received − spending")}
-          ${metric("Safe-to-spend", formatCurrency(safeFinance.safeToSpend), `Protected through ${formatDate(safetyRange.end)}`)}
-          ${metric("Upcoming bills", formatCurrency(finance.billsDue), `${finance.billOccurrences.length} due in range`)}
-          ${metric("Net worth estimate", formatCurrency(finance.netWorth), "Money + investments − debt")}
-        </section>
+        <div class="finance-subnav" role="tablist" aria-label="Finance sections">
+          ${sections.map((s, i) => `<button type="button" class="fin-tab ${s.key === activeKey ? "active" : ""}" role="tab" aria-selected="${s.key === activeKey}" data-action="set-finance-section" data-section="${escapeHtml(s.key)}"><span class="fin-tab-num">${String(i + 1).padStart(2, "0")}</span>${escapeHtml(s.title)}</button>`).join("")}
+        </div>
 
-        ${financeShortcutNav(sections)}
-
-        <section class="details-stack finance-details-stack">
-          ${sections.map((section, index) => financeDetails(section, index)).join("")}
+        <div class="sec-head"><span class="sec-title">${escapeHtml(active.title)}</span>${active.action ? actionButton(active.action, "", active.label, "plus", "secondary") : ""}</div>
+        <section class="finance-section-body" data-finance-active="${escapeHtml(activeKey)}">
+          ${active.render()}
         </section>
       </div>
+    `;
+  }
+
+  function financeBalancePoints(months, currentMoney) {
+    const trend = moneyTrendMonths(months);
+    const n = trend.length;
+    if (!n) return [];
+    const bals = new Array(n);
+    bals[n - 1] = currentMoney;
+    for (let i = n - 2; i >= 0; i--) bals[i] = bals[i + 1] - (Number(trend[i + 1].net) || 0);
+    return trend.map((m, i) => ({ label: m.label, value: bals[i] }));
+  }
+
+  function sparklineSvg(points, color) {
+    if (!points.length) return "";
+    const vals = points.map((p) => p.value);
+    const min = Math.min(...vals);
+    const max = Math.max(...vals);
+    const span = (max - min) || 1;
+    const n = points.length;
+    const coords = points.map((p, i) => {
+      const x = n > 1 ? (i / (n - 1)) * 100 : 50;
+      const y = 33 - ((p.value - min) / span) * 30;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(" ");
+    return `<svg viewBox="0 0 100 36" preserveAspectRatio="none" class="fin-spark-svg" aria-hidden="true"><polyline points="${escapeHtml(coords)}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"></polyline></svg>`;
+  }
+
+  function renderFinanceHero(finance, safeFinance, safetyRange, range) {
+    const pts = financeBalancePoints(6, finance.currentMoney);
+    return `
+      <section class="card panel finance-hero">
+        <div class="fh-lab">Current money</div>
+        <div class="fh-big">${escapeHtml(formatCurrency(finance.currentMoney))}</div>
+        ${pts.length ? `<div class="fin-spark">${sparklineSvg(pts, "var(--green)")}</div>` : ""}
+        <div class="fh-mini">
+          <div class="hm"><span class="n">${escapeHtml(formatCompactCurrency(safeFinance.safeToSpend))}</span><span class="l">Safe to spend</span></div>
+          <div class="hm"><span class="n">${escapeHtml(formatCompactCurrency(finance.projectedBalance))}</span><span class="l">Projected</span></div>
+          <div class="hm"><span class="n">${escapeHtml(formatCompactCurrency(finance.netWorth))}</span><span class="l">Net worth</span></div>
+        </div>
+        ${rangeToggle("finance", ui.financeSpan)}
+        ${customRangeControls("finance", range)}
+      </section>
     `;
   }
 
@@ -7378,6 +7417,11 @@
     }
     if (action === "set-finance-span") {
       ui.financeSpan = button.dataset.span;
+      return render({ quiet: true, transition: "period" });
+    }
+    if (action === "set-finance-section") {
+      ui.financeSection = button.dataset.section || "current-money";
+      saveUi();
       return render({ quiet: true, transition: "period" });
     }
     if (action === "set-more-view") {
