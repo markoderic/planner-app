@@ -1,0 +1,78 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="_base.css">
+<style>
+  .pinkseg b.active{background:rgba(255,92,138,.18);color:#ffc2d4;}
+  .macro{display:grid;gap:12px;}
+  .mrow{display:grid;grid-template-columns:62px 1fr 64px;align-items:center;gap:10px;}
+  .mrow .ml{font-size:.82rem;color:var(--t2);}
+  .mbar{height:8px;border-radius:999px;background:rgba(255,255,255,.07);overflow:hidden;}
+  .mbar i{display:block;height:100%;border-radius:inherit;}
+  .mrow .mv{font-size:.78rem;color:var(--t2);text-align:right;font-weight:700;}
+  .meal{position:relative;display:flex;align-items:center;gap:12px;padding:12px 15px;}
+  .meal+.meal::before{content:"";position:absolute;top:0;left:15px;right:0;height:1px;background:var(--hairline);}
+  .meal-t{flex:1;min-width:0;} .meal-name{font-size:.94rem;font-weight:600;}
+  .meal-meta{font-size:.76rem;color:var(--t2);margin-top:2px;} .meal-cal{font-size:.9rem;font-weight:800;}
+  .calring .rv{display:flex;flex-direction:column;gap:1px;} .calring .rv b{font-size:1.3rem;font-weight:800;} .calring .rv s{font-size:.62rem;color:var(--t2);text-decoration:none;}
+</style></head>
+<body>
+<p class="intro">Nutrition (Health tab) — two redesign directions. Calories = orange ring, macros colored (protein blue · carbs orange · fat pink).</p>
+<div class="row">
+
+  <!-- A · RINGS + MACROS -->
+  <div class="col">
+  <div class="phone"><div class="screen"><div class="content">
+    <div class="sb"><span>14:25</span><svg class="tb" viewBox="0 0 24 13" fill="none"><rect x="1" y="1" width="19" height="11" rx="3" stroke="#fff" opacity=".5"/><rect x="2.5" y="2.5" width="13" height="8" rx="1.5" fill="#fff"/></svg></div>
+    <div class="topbar"><span class="h1">Health</span><span class="add"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>Add meal</span></div>
+    <div class="seg pinkseg" style="margin-bottom:14px"><b>Workouts</b><b class="active">Nutrition</b></div>
+
+    <div class="panel" style="display:flex;align-items:center;gap:18px">
+      <div class="ring calring" style="width:96px;height:96px"><svg width="96" height="96"><circle cx="48" cy="48" r="38" stroke="rgba(255,255,255,.10)" stroke-width="9" fill="none"/><circle cx="48" cy="48" r="38" stroke="var(--orange)" stroke-width="9" fill="none" stroke-dasharray="239" stroke-dashoffset="86" stroke-linecap="round" transform="rotate(-90 48 48)"/></svg><span class="rv"><b>1,640</b><s>of 2,200 kcal</s></span></div>
+      <div style="flex:1"><div style="font-size:.8rem;color:var(--t2);font-weight:600">Calories today</div><div style="font-size:1.05rem;font-weight:800;margin-top:3px">560 left</div><div style="font-size:.76rem;color:var(--t3);margin-top:4px">3 meals logged</div></div>
+    </div>
+
+    <div class="sec-head"><span class="sec-title">Macros</span><span class="more">Goals</span></div>
+    <div class="panel macro">
+      <div class="mrow"><span class="ml">Protein</span><span class="mbar"><i style="width:72%;background:var(--blue)"></i></span><span class="mv">108 / 150g</span></div>
+      <div class="mrow"><span class="ml">Carbs</span><span class="mbar"><i style="width:60%;background:var(--orange)"></i></span><span class="mv">150 / 250g</span></div>
+      <div class="mrow"><span class="ml">Fat</span><span class="mbar"><i style="width:48%;background:var(--pink)"></i></span><span class="mv">38 / 80g</span></div>
+    </div>
+
+    <div class="sec-head"><span class="sec-title">Today's meals</span><span class="more">3</span></div>
+    <div class="group">
+      <div class="meal"><div class="meal-t"><div class="meal-name">Oatmeal &amp; eggs</div><div class="meal-meta">Breakfast · 32g protein</div></div><span class="meal-cal">540</span></div>
+      <div class="meal"><div class="meal-t"><div class="meal-name">Chicken bowl</div><div class="meal-meta">Lunch · 48g protein</div></div><span class="meal-cal">720</span></div>
+      <div class="meal"><div class="meal-t"><div class="meal-name">Protein shake</div><div class="meal-meta">Snack · 28g protein</div></div><span class="meal-cal">380</span></div>
+    </div>
+    <div class="fade"></div>
+  </div></div></div>
+  <div class="cap"><b>A · Calorie ring + macros</b><br>A calories ring (eaten vs goal) + protein/carbs/fat bars, then today's meals as a clean list. Calm, Apple-Fitness-like.</div>
+  </div>
+
+  <!-- B · TILES + MEALS -->
+  <div class="col">
+  <div class="phone"><div class="screen"><div class="content">
+    <div class="sb"><span>14:25</span><svg class="tb" viewBox="0 0 24 13" fill="none"><rect x="1" y="1" width="19" height="11" rx="3" stroke="#fff" opacity=".5"/><rect x="2.5" y="2.5" width="13" height="8" rx="1.5" fill="#fff"/></svg></div>
+    <div class="topbar"><span class="h1">Health</span><span class="add"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>Add meal</span></div>
+    <div class="seg pinkseg" style="margin-bottom:14px"><b>Workouts</b><b class="active">Nutrition</b></div>
+
+    <div class="tiles">
+      <div class="tile" style="--ic:var(--orange)"><span class="th"><span class="tic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2c1 3-1 5-1 7a3 3 0 0 0 6 0c0-3-2-4-1-7"/></svg></span>Calories</span><span class="tn">1,640</span><span class="ts">of 2,200 · 75%</span></div>
+      <div class="tile" style="--ic:var(--blue)"><span class="th"><span class="tic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 7v10M18 7v10M6 12h12"/></svg></span>Protein</span><span class="tn">108g</span><span class="ts">of 150 · 72%</span></div>
+      <div class="tile" style="--ic:var(--orange)"><span class="th"><span class="tic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l6-6 4 4 7-7"/></svg></span>Carbs</span><span class="tn">150g</span><span class="ts">of 250 · 60%</span></div>
+      <div class="tile" style="--ic:var(--pink)"><span class="th"><span class="tic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg></span>Fat</span><span class="tn">38g</span><span class="ts">of 80 · 48%</span></div>
+    </div>
+
+    <div class="sec-head"><span class="sec-title">Today's meals</span><span class="more">+ Add meal</span></div>
+    <div class="group">
+      <div class="meal"><div class="meal-t"><div class="meal-name">Oatmeal &amp; eggs</div><div class="meal-meta">Breakfast · 8:10 AM</div></div><span class="meal-cal">540</span></div>
+      <div class="meal"><div class="meal-t"><div class="meal-name">Chicken bowl</div><div class="meal-meta">Lunch · 1:00 PM</div></div><span class="meal-cal">720</span></div>
+      <div class="meal"><div class="meal-t"><div class="meal-name">Protein shake</div><div class="meal-meta">Snack · 4:30 PM</div></div><span class="meal-cal">380</span></div>
+    </div>
+    <div class="sec-head"><span class="sec-title">This week</span><span class="more">avg</span></div>
+    <div class="panel"><div style="display:flex;justify-content:space-between;font-size:.84rem;color:var(--t2)"><span>Avg calories</span><span style="color:var(--text);font-weight:800">2,010</span></div></div>
+    <div class="fade"></div>
+  </div></div></div>
+  <div class="cap"><b>B · Macro tiles</b><br>A 2×2 of Calories / Protein / Carbs / Fat (with % of goal), then the meals list and a weekly average. Most data-forward.</div>
+  </div>
+
+</div></body></html>

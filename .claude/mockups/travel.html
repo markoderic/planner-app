@@ -1,0 +1,80 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="_base.css">
+<style>
+  .mapcard{position:relative;background:linear-gradient(160deg,#13202e,#0f1620);border:1px solid var(--line);border-radius:var(--r-lg);height:230px;overflow:hidden;}
+  .mapcard .world{position:absolute;inset:0;display:grid;place-items:center;color:rgba(255,255,255,.10);}
+  .mapcard .world svg{width:90%;height:auto;}
+  .mapctrl{position:absolute;right:12px;bottom:12px;display:flex;flex-direction:column;gap:8px;}
+  .mapctrl button{width:38px;height:38px;border-radius:11px;background:rgba(20,23,31,.8);border:1px solid var(--border-glass);backdrop-filter:blur(20px);color:var(--text);display:grid;place-items:center;}
+  .mapctrl svg{width:17px;height:17px;}
+  .maphint{position:absolute;left:14px;bottom:16px;font-size:.74rem;color:var(--t2);}
+  .tstats{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;}
+  .ts2{background:var(--elevated);border:1px solid var(--line);border-radius:var(--r-md);padding:12px;text-align:center;}
+  .ts2 .n{font-size:1.2rem;font-weight:800;letter-spacing:-.02em;} .ts2 .l{font-size:.66rem;color:var(--t2);margin-top:2px;}
+  .crow2{position:relative;display:flex;align-items:center;gap:12px;padding:12px 15px;}
+  .crow2+.crow2::before{content:"";position:absolute;top:0;left:44px;right:0;height:1px;background:var(--hairline);}
+  .flag{width:24px;height:18px;border-radius:4px;flex:none;background:var(--fl,#333);}
+  .cname{flex:1;font-size:.94rem;font-weight:600;}
+  .cind{width:22px;height:22px;border-radius:50%;flex:none;display:grid;place-items:center;}
+  .cind.on{background:var(--cyan);color:#04323a;} .cind.on svg{width:13px;height:13px;}
+  .cind.off{border:1.5px solid rgba(255,255,255,.18);}
+  .search{display:flex;align-items:center;gap:9px;background:var(--elevated);border:1px solid var(--line);border-radius:14px;padding:11px 13px;color:var(--t3);font-size:.92rem;}
+  .search svg{width:17px;height:17px;}
+  .ringbig .rv b{font-size:1.4rem;font-weight:800;} .ringbig .rv s{font-size:.62rem;color:var(--t2);text-decoration:none;}
+</style></head>
+<body>
+<p class="intro">Travel — two redesign directions, same functionality (world map, zoom, country list/search, visited toggle). Cyan/teal accent.</p>
+<div class="row">
+
+  <!-- A · MAP HERO + LIST -->
+  <div class="col">
+  <div class="phone"><div class="screen"><div class="content">
+    <div class="sb"><span>14:25</span><svg class="tb" viewBox="0 0 24 13" fill="none"><rect x="1" y="1" width="19" height="11" rx="3" stroke="#fff" opacity=".5"/><rect x="2.5" y="2.5" width="13" height="8" rx="1.5" fill="#fff"/></svg></div>
+    <div class="topbar"><div><div style="color:var(--t2);font-size:.84rem;margin-bottom:3px;font-weight:600">5 of 196 visited</div><div class="h1">Travel</div></div></div>
+    <div class="mapcard">
+      <div class="world"><svg viewBox="0 0 200 90" fill="currentColor"><path d="M20 40c10-8 30-10 45-6 8 2 14 8 24 7 12-1 18-9 30-8 14 1 22 10 36 9 10-1 16-6 25-5v20c-12 2-22 9-36 8-13-1-20-8-33-7-11 1-17 8-29 8-13 0-20-8-33-7-10 1-16 6-24 5-5-1-9-4-14-5z"/><circle cx="150" cy="34" r="3" fill="#36d3ff"/><circle cx="60" cy="38" r="3" fill="#36d3ff"/><circle cx="95" cy="44" r="3" fill="#36d3ff"/></svg></div>
+      <div class="mapctrl"><button><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg></button><button><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/></svg></button><button><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18z"/></svg></button></div>
+      <span class="maphint">Tap a country · pinch to zoom</span>
+    </div>
+    <div class="sec-head"><span class="sec-title">Progress</span></div>
+    <div class="tstats">
+      <div class="ts2"><div class="n" style="color:var(--cyan)">5</div><div class="l">Visited</div></div>
+      <div class="ts2"><div class="n">191</div><div class="l">To go</div></div>
+      <div class="ts2"><div class="n">3</div><div class="l">Continents</div></div>
+    </div>
+    <div class="sec-head"><span class="sec-title">All countries</span><span class="more">A–Z</span></div>
+    <div style="margin-bottom:10px"><div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3-3"/></svg>Search countries…</div></div>
+    <div class="group">
+      <div class="crow2"><span class="flag" style="--fl:#c8102e"></span><span class="cname">Canada</span><span class="cind on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg></span></div>
+      <div class="crow2"><span class="flag" style="--fl:#012169"></span><span class="cname">United States</span><span class="cind on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg></span></div>
+      <div class="crow2"><span class="flag" style="--fl:#d52b1e"></span><span class="cname">Serbia</span><span class="cind on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg></span></div>
+      <div class="crow2"><span class="flag" style="--fl:#009246"></span><span class="cname">Italy</span><span class="cind off"></span></div>
+      <div class="crow2"><span class="flag" style="--fl:#000"></span><span class="cname">Germany</span><span class="cind off"></span></div>
+    </div>
+    <div class="fade"></div>
+  </div></div></div>
+  <div class="cap"><b>A · Map hero + list</b><br>Bigger glass map with floating zoom/globe controls, a 3-stat progress row, then a searchable country list with a clean visited check.</div>
+  </div>
+
+  <!-- B · PROGRESS + CONTINENTS -->
+  <div class="col">
+  <div class="phone"><div class="screen"><div class="content">
+    <div class="sb"><span>14:25</span><svg class="tb" viewBox="0 0 24 13" fill="none"><rect x="1" y="1" width="19" height="11" rx="3" stroke="#fff" opacity=".5"/><rect x="2.5" y="2.5" width="13" height="8" rx="1.5" fill="#fff"/></svg></div>
+    <div class="topbar"><div><div style="color:var(--t2);font-size:.84rem;margin-bottom:3px;font-weight:600">Your map</div><div class="h1">Travel</div></div></div>
+    <div class="panel" style="display:flex;align-items:center;gap:18px">
+      <div class="ring ringbig" style="width:88px;height:88px"><svg width="88" height="88"><circle cx="44" cy="44" r="35" stroke="rgba(255,255,255,.10)" stroke-width="8" fill="none"/><circle cx="44" cy="44" r="35" stroke="var(--cyan)" stroke-width="8" fill="none" stroke-dasharray="220" stroke-dashoffset="214" stroke-linecap="round" transform="rotate(-90 44 44)"/></svg><span class="rv"><b>5</b><s>of 196</s></span></div>
+      <div style="flex:1"><div style="font-size:.8rem;color:var(--t2);font-weight:600">Countries visited</div><div style="font-size:1.05rem;font-weight:800;margin-top:3px">3% of the world</div><div style="font-size:.76rem;color:var(--t3);margin-top:4px">3 continents</div></div>
+    </div>
+    <div class="mapcard" style="height:150px;margin-top:14px"><div class="world"><svg viewBox="0 0 200 90" fill="currentColor"><path d="M20 40c10-8 30-10 45-6 8 2 14 8 24 7 12-1 18-9 30-8 14 1 22 10 36 9 10-1 16-6 25-5v20c-12 2-22 9-36 8-13-1-20-8-33-7-11 1-17 8-29 8-13 0-20-8-33-7-10 1-16 6-24 5-5-1-9-4-14-5z"/><circle cx="150" cy="34" r="3" fill="#36d3ff"/><circle cx="60" cy="38" r="3" fill="#36d3ff"/></svg></div><div class="mapctrl"><button><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/></svg></button></div></div>
+    <div class="sec-head"><span class="sec-title">By continent</span></div>
+    <div class="panel macro" style="display:grid;gap:11px">
+      <div class="mrow" style="display:grid;grid-template-columns:88px 1fr 40px;align-items:center;gap:10px"><span style="font-size:.82rem;color:var(--t2)">N. America</span><span class="mbar" style="height:8px;border-radius:999px;background:rgba(255,255,255,.07);overflow:hidden"><i style="display:block;height:100%;width:60%;background:var(--cyan);border-radius:999px"></i></span><span style="font-size:.78rem;color:var(--t2);text-align:right;font-weight:700">2</span></div>
+      <div class="mrow" style="display:grid;grid-template-columns:88px 1fr 40px;align-items:center;gap:10px"><span style="font-size:.82rem;color:var(--t2)">Europe</span><span class="mbar" style="height:8px;border-radius:999px;background:rgba(255,255,255,.07);overflow:hidden"><i style="display:block;height:100%;width:40%;background:var(--cyan);border-radius:999px"></i></span><span style="font-size:.78rem;color:var(--t2);text-align:right;font-weight:700">2</span></div>
+      <div class="mrow" style="display:grid;grid-template-columns:88px 1fr 40px;align-items:center;gap:10px"><span style="font-size:.82rem;color:var(--t2)">Asia</span><span class="mbar" style="height:8px;border-radius:999px;background:rgba(255,255,255,.07);overflow:hidden"><i style="display:block;height:100%;width:20%;background:var(--cyan);border-radius:999px"></i></span><span style="font-size:.78rem;color:var(--t2);text-align:right;font-weight:700">1</span></div>
+    </div>
+    <div class="fade"></div>
+  </div></div></div>
+  <div class="cap"><b>B · Progress-first</b><br>A visited ring (5 / 196 · 3%) up top, a compact map, then a by-continent breakdown. The full searchable list lives below. More "stats" feel.</div>
+  </div>
+
+</div></body></html>

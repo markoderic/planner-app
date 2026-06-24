@@ -1,0 +1,82 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="_base.css">
+<style>
+  .glabel{font-size:.74rem;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.04em;margin:16px 6px 8px;}
+  .srow{position:relative;display:flex;align-items:center;gap:13px;padding:14px 15px;}
+  .srow+.srow::before{content:"";position:absolute;top:0;left:54px;right:0;height:1px;background:var(--hairline);}
+  .sic{width:30px;height:30px;border-radius:9px;flex:none;display:grid;place-items:center;color:var(--ic,var(--blue));background:color-mix(in srgb,var(--ic,var(--blue)) 18%,transparent);}
+  .sic svg{width:17px;height:17px;}
+  .sname{flex:1;font-size:.96rem;font-weight:600;}
+  .sval{font-size:.84rem;color:var(--t3);}
+  .schev{color:var(--t3);} .schev svg{width:17px;height:17px;}
+  .prof{display:flex;align-items:center;gap:14px;background:var(--elevated);border:1px solid var(--line);border-radius:var(--r-lg);padding:16px;}
+  .avatar{width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,#4f8cff,#9d6fff);display:grid;place-items:center;font-weight:800;font-size:1.2rem;}
+  .pname{font-size:1.1rem;font-weight:800;letter-spacing:-.01em;} .pmail{font-size:.82rem;color:var(--t2);margin-top:2px;}
+  /* tool grid */
+  .tgrid{display:grid;grid-template-columns:1fr 1fr;gap:11px;}
+  .tcard{background:var(--elevated);border:1px solid var(--line);border-radius:var(--r-lg);padding:15px;display:flex;flex-direction:column;gap:10px;min-height:96px;}
+  .tcard .tic2{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;color:var(--ic,var(--blue));background:color-mix(in srgb,var(--ic,var(--blue)) 18%,transparent);}
+  .tcard .tic2 svg{width:18px;height:18px;}
+  .tcard .tnm{font-size:.95rem;font-weight:700;}
+  .tcard .tsub{font-size:.72rem;color:var(--t3);margin-top:-4px;}
+</style></head>
+<body>
+<p class="intro">More — two redesign directions. Neutral, organized — not a junk drawer.</p>
+<div class="row">
+
+  <!-- A · GROUPED SETTINGS -->
+  <div class="col">
+  <div class="phone"><div class="screen"><div class="content">
+    <div class="sb"><span>14:25</span><svg class="tb" viewBox="0 0 24 13" fill="none"><rect x="1" y="1" width="19" height="11" rx="3" stroke="#fff" opacity=".5"/><rect x="2.5" y="2.5" width="13" height="8" rx="1.5" fill="#fff"/></svg></div>
+    <div class="topbar"><span class="h1">More</span></div>
+    <div class="prof"><div class="avatar">M</div><div style="flex:1"><div class="pname">Marko</div><div class="pmail">djerkomarko@gmail.com</div></div><span class="schev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></span></div>
+
+    <div class="glabel">Tools</div>
+    <div class="group">
+      <div class="srow"><span class="sic" style="--ic:var(--green)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6h15l-1.5 9h-12z"/><circle cx="9" cy="20" r="1"/><circle cx="18" cy="20" r="1"/></svg></span><span class="sname">Shopping</span><span class="sval">3 items</span><span class="schev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></span></div>
+      <div class="srow"><span class="sic" style="--ic:var(--orange)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M10 21h4"/></svg></span><span class="sname">Reminders</span><span class="sval">2</span><span class="schev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></span></div>
+      <div class="srow"><span class="sic" style="--ic:var(--blue)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5 6h14l3 6v6H2v-6z"/></svg></span><span class="sname">Inbox</span><span class="sval">5</span><span class="schev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></span></div>
+      <div class="srow"><span class="sic" style="--ic:var(--purple)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l6-6 4 4 7-7"/></svg></span><span class="sname">Bucket list</span><span class="sval">8</span><span class="schev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></span></div>
+    </div>
+
+    <div class="glabel">Preferences</div>
+    <div class="group">
+      <div class="srow"><span class="sic" style="--ic:var(--cyan)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2"/></svg></span><span class="sname">Theme</span><span class="sval">Dark</span><span class="schev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></span></div>
+      <div class="srow"><span class="sic" style="--ic:var(--green)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1l2-1.6-2-3.4-2.3 1a7 7 0 0 0-1.7-1l-.3-2.5h-4l-.3 2.5a7 7 0 0 0-1.7 1l-2.3-1-2 3.4 2 1.6a7 7 0 0 0 0 2l-2 1.6 2 3.4 2.3-1a7 7 0 0 0 1.7 1l.3 2.5h4l.3-2.5a7 7 0 0 0 1.7-1l2.3 1 2-3.4-2-1.6c.06-.3.1-.7.1-1z"/></svg></span><span class="sname">Sync</span><span class="sval">On</span><span class="schev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></span></div>
+    </div>
+
+    <div class="glabel">Data &amp; about</div>
+    <div class="group">
+      <div class="srow"><span class="sic" style="--ic:var(--orange)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg></span><span class="sname">Export data</span><span class="schev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></span></div>
+      <div class="srow"><span class="sic" style="--ic:var(--purple)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></svg></span><span class="sname">About</span><span class="sval">v1.0</span><span class="schev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></span></div>
+    </div>
+    <div class="fade"></div>
+  </div></div></div>
+  <div class="cap"><b>A · Grouped settings</b><br>Profile header, then iOS-style inset groups (Tools / Preferences / Data &amp; about) with colored icons, values, and chevrons. Clean and organized.</div>
+  </div>
+
+  <!-- B · TOOL GRID + SETTINGS -->
+  <div class="col">
+  <div class="phone"><div class="screen"><div class="content">
+    <div class="sb"><span>14:25</span><svg class="tb" viewBox="0 0 24 13" fill="none"><rect x="1" y="1" width="19" height="11" rx="3" stroke="#fff" opacity=".5"/><rect x="2.5" y="2.5" width="13" height="8" rx="1.5" fill="#fff"/></svg></div>
+    <div class="topbar"><span class="h1">More</span></div>
+    <div class="sec-head"><span class="sec-title">Tools</span></div>
+    <div class="tgrid">
+      <div class="tcard" style="--ic:var(--green)"><span class="tic2"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6h15l-1.5 9h-12z"/><circle cx="9" cy="20" r="1"/><circle cx="18" cy="20" r="1"/></svg></span><div><div class="tnm">Shopping</div><div class="tsub">3 items in cart</div></div></div>
+      <div class="tcard" style="--ic:var(--orange)"><span class="tic2"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M10 21h4"/></svg></span><div><div class="tnm">Reminders</div><div class="tsub">2 active</div></div></div>
+      <div class="tcard" style="--ic:var(--blue)"><span class="tic2"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5 6h14l3 6v6H2v-6z"/></svg></span><div><div class="tnm">Inbox</div><div class="tsub">5 to sort</div></div></div>
+      <div class="tcard" style="--ic:var(--purple)"><span class="tic2"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l6-6 4 4 7-7"/></svg></span><div><div class="tnm">Bucket list</div><div class="tsub">8 dreams</div></div></div>
+    </div>
+    <div class="sec-head"><span class="sec-title">Settings</span></div>
+    <div class="group">
+      <div class="srow"><span class="sic" style="--ic:var(--cyan)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2"/></svg></span><span class="sname">Theme</span><span class="sval">Dark</span><span class="schev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></span></div>
+      <div class="srow"><span class="sic" style="--ic:var(--green)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4v6h6M20 20v-6h-6"/><path d="M20 9A8 8 0 0 0 6 6M4 15a8 8 0 0 0 14 3"/></svg></span><span class="sname">Sync</span><span class="sval">On</span><span class="schev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></span></div>
+      <div class="srow"><span class="sic" style="--ic:var(--orange)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg></span><span class="sname">Export data</span><span class="schev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></span></div>
+      <div class="srow"><span class="sic" style="--ic:var(--purple)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></svg></span><span class="sname">About</span><span class="sval">v1.0</span><span class="schev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></span></div>
+    </div>
+    <div class="fade"></div>
+  </div></div></div>
+  <div class="cap"><b>B · Tool grid + settings</b><br>The mini-apps (Shopping / Reminders / Inbox / Bucket list) as a 2×2 tile grid up top, then settings as a grouped list. Tools feel like a launcher.</div>
+  </div>
+
+</div></body></html>

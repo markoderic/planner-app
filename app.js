@@ -3326,6 +3326,25 @@
     `;
   }
 
+  // Big grade ring for the class detail hero: the ring fill tracks completion,
+  // the centred label is the class's letter grade, tinted with the class color.
+  function classGradeRing(percent, letter, color) {
+    const p = clamp(Math.round(Number(percent) || 0), 0, 100);
+    const r = 30;
+    const c = 2 * Math.PI * r;
+    const off = c * (1 - p / 100);
+    return `
+      <div class="class-grade-ring">
+        <svg width="74" height="74" viewBox="0 0 74 74" aria-hidden="true">
+          <circle cx="37" cy="37" r="${r}" fill="none" stroke="rgba(255,255,255,.10)" stroke-width="7"></circle>
+          <circle cx="37" cy="37" r="${r}" fill="none" stroke="${escapeHtml(color)}" stroke-width="7" stroke-linecap="round"
+            stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}" transform="rotate(-90 37 37)"></circle>
+        </svg>
+        <span class="class-grade-ring-val">${escapeHtml(letter)}</span>
+      </div>
+    `;
+  }
+
   function renderClassDetail(classId) {
     const klass = findById(appData.school.classes, classId) || {};
     const stats = classStats(classId);
@@ -3333,66 +3352,63 @@
     const assignments = appData.school.assignments.filter((a) => a.classId === classId);
     const open = assignments.filter((a) => !assignmentComplete(a));
     const overdue = open.filter((a) => isBeforeToday(a.dueDate));
-    const inProgress = assignments.filter((a) => normalizedAssignmentStatus(a.status) === "in progress");
-    const nextUp = sortByDate(open.filter((a) => !isBeforeToday(a.dueDate)))[0];
+    const upcoming = open.filter((a) => !isBeforeToday(a.dueDate));
+    const nextUp = sortByDate(upcoming)[0];
     const meta = [klass.professor, klass.meetingDays].filter(Boolean);
+    const chips = [
+      overdue.length ? `<span class="class-chip-stat over">${overdue.length} overdue</span>` : "",
+      `<span class="class-chip-stat">${upcoming.length} upcoming</span>`,
+      `<span class="class-chip-stat">${nextUp ? `Next ${escapeHtml(formatDate(nextUp.dueDate))}` : "All caught up"}</span>`
+    ].filter(Boolean).join("");
     return `
-      <div class="view" style="--class-color:${escapeHtml(color)}; --class-color-rgb:${rgbText(color)}">
+      <div class="view class-detail" style="--class-color:${escapeHtml(color)}; --class-color-rgb:${rgbText(color)}">
         <section class="topbar class-detail-topbar">
           <div>
             <button type="button" class="back-link" data-action="back-to-school">${icon("chevron")}<span>School</span></button>
-            <p class="eyebrow">Class dashboard</p>
             <h1 class="class-detail-title">${escapeHtml(klass.name || "Class")}</h1>
             ${meta.length ? `<p class="muted">${escapeHtml(meta.join(" · "))}</p>` : ""}
           </div>
-          <div class="actions">
-            ${actionButton("add-assignment", "", "Add assignment", "plus", "primary")}
-          </div>
         </section>
 
-        <section class="metric-grid">
-          ${metric("Current grade", stats.displayLetter || "—", stats.gradeSource)}
-          ${metric("Completed", `${stats.completed}/${stats.total}`, `${stats.percent}% done`)}
-          ${metric("In progress", String(inProgress.length), "Active now")}
-          ${metric("Overdue", String(overdue.length), nextUp ? `Next ${formatDate(nextUp.dueDate)}` : "Nothing past due")}
-        </section>
-
-        <section class="card panel section">
-          <div class="section-header">
-            <div>
-              <h2>Progress</h2>
-              <span class="tiny">${stats.completed} of ${stats.total} assignments complete</span>
-            </div>
-            <div class="actions">
-              ${actionButton("edit-class-grade", classId, "Edit grade", "spark", "secondary")}
-              ${actionButton("edit-class", classId, "Edit class", "edit", "secondary")}
+        <section class="card panel class-hero">
+          <div class="class-hero-top">
+            ${classGradeRing(stats.percent, stats.displayLetter || "—", color)}
+            <div class="class-hero-prog">
+              <span class="class-hero-label">Completion</span>
+              <span class="class-hero-value">${stats.completed} / ${stats.total} · ${stats.percent}%</span>
+              <div class="class-hero-bar" data-progress-key="${ui.activeTab}:class-detail-${escapeHtml(classId)}" data-progress-percent="${clamp(stats.percent)}"><div class="progress"><span style="width:${clamp(stats.percent)}%"></span></div></div>
+              <span class="class-hero-src">${escapeHtml(stats.gradeSource)}</span>
             </div>
           </div>
-          ${progressRow("Completion", stats.percent, `${stats.completed}/${stats.total}`, `class-detail-${classId}`)}
+          <div class="class-chips">${chips}</div>
+          <div class="class-hero-actions">
+            ${actionButton("edit-class-grade", classId, "Edit grade", "spark", "secondary")}
+            ${actionButton("edit-class", classId, "Edit class", "edit", "secondary")}
+          </div>
           ${klass.notes ? `<p class="tiny class-notes">${escapeHtml(klass.notes)}</p>` : ""}
         </section>
 
-        ${renderSchoolCalendarCard({ scope: "class", classId })}
-
-        <details class="card panel section timeline-card">
-          <summary>
-            <span class="finance-section-heading"><span class="finance-section-title">Assignment timeline</span></span>
-            <span class="tiny">${assignments.length}</span>
-          </summary>
-          <div class="details-body">
-            ${renderClassTimeline(assignments)}
-          </div>
-        </details>
-
         <section class="card panel section">
           <div class="section-header">
-            <h2>Assignments</h2>
+            <h2>To do</h2>
             ${actionButton("add-assignment", "", "Add", "plus", "secondary")}
           </div>
           <div class="assignment-list">
             ${renderAssignmentGroups(assignments, { start: "1900-01-01", end: "2999-12-31" }, { ignoreStatusFilter: true })}
           </div>
         </section>
+
+        ${renderSchoolCalendarCard({ scope: "class", classId, open: false })}
+
+        <details class="card panel section timeline-card">
+          <summary>
+            <span class="finance-section-heading"><span class="finance-section-title">Timeline</span></span>
+            <span class="tiny">${assignments.length}</span>
+          </summary>
+          <div class="details-body">
+            ${renderClassTimeline(assignments)}
+          </div>
+        </details>
       </div>
     `;
   }
@@ -3660,7 +3676,7 @@
     return events;
   }
 
-  function renderSchoolCalendarCard({ scope = "school", classId = "" } = {}) {
+  function renderSchoolCalendarCard({ scope = "school", classId = "", open = true } = {}) {
     const ym = currentCalendarMonth();
     const [year, month] = ym.split("-").map(Number);
     const monthStart = new Date(year, month - 1, 1);
@@ -3721,7 +3737,7 @@
     const classFilter = scope === "school" ? renderCalendarClassFilter() : "";
 
     return `
-      <details class="card panel section calendar-card" open>
+      <details class="card panel section calendar-card"${open ? " open" : ""}>
         <summary>
           <span class="finance-section-heading"><span class="finance-section-title">Calendar</span></span>
           <span class="tiny">${events.length} item${events.length === 1 ? "" : "s"}</span>

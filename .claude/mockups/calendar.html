@@ -1,0 +1,84 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="_base.css">
+<style>
+  .calwk{display:grid;grid-template-columns:repeat(7,1fr);margin-bottom:4px;}
+  .calwk span{text-align:center;font-size:.66rem;font-weight:700;color:var(--t3);text-transform:uppercase;}
+  .calgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;}
+  .cell{aspect-ratio:1;border-radius:11px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font-size:.86rem;font-weight:600;color:var(--text);background:rgba(255,255,255,.025);}
+  .cell.muted{color:var(--t3);background:transparent;}
+  .cell.today{background:rgba(255,174,82,.16);color:#ffd2a0;}
+  .cell.sel{box-shadow:0 0 0 1.5px var(--orange);background:rgba(255,174,82,.10);color:#ffd2a0;}
+  .cdots{display:flex;gap:2px;height:5px;}
+  .cdots i{width:5px;height:5px;border-radius:50%;}
+  .legend{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;margin-top:12px;font-size:.72rem;color:var(--t2);}
+  .legend span{display:inline-flex;align-items:center;gap:5px;} .legend i{width:8px;height:8px;border-radius:50%;}
+  .ev{position:relative;display:flex;align-items:center;gap:12px;padding:12px 15px;}
+  .ev+.ev::before{content:"";position:absolute;top:0;left:40px;right:0;height:1px;background:var(--hairline);}
+  .ev-t{flex:1;min-width:0;} .ev-title{font-size:.94rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .ev-meta{font-size:.76rem;color:var(--t2);margin-top:2px;} .ev-time{font-size:.78rem;color:var(--t3);font-weight:600;white-space:nowrap;}
+  .daygrp{font-size:.8rem;font-weight:700;color:var(--t2);margin:14px 4px 8px;}
+  .cnav{display:flex;align-items:center;justify-content:space-between;margin:4px 2px 12px;}
+  .cnav .m{font-size:1.05rem;font-weight:800;letter-spacing:-.01em;}
+  .cnav button{width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.05);border:1px solid var(--line);color:var(--text);display:grid;place-items:center;}
+  .cnav svg{width:16px;height:16px;}
+</style></head>
+<body>
+<p class="intro">Calendar — two redesign directions. Calendar accent = orange; event dots colored by type (no classes shown unless filtered).</p>
+<div class="row">
+
+  <!-- A · CLEAN MONTH + AGENDA -->
+  <div class="col">
+  <div class="phone"><div class="screen"><div class="content">
+    <div class="sb"><span>14:25</span><svg class="tb" viewBox="0 0 24 13" fill="none"><rect x="1" y="1" width="19" height="11" rx="3" stroke="#fff" opacity=".5"/><rect x="2.5" y="2.5" width="13" height="8" rx="1.5" fill="#fff"/></svg></div>
+    <div class="topbar"><span class="h1">Calendar</span><span class="add"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>Add</span></div>
+    <div class="chips" style="margin-bottom:12px"><span class="chip active" style="background:rgba(255,174,82,.18);color:#ffd2a0">All</span><span class="chip">Tasks</span><span class="chip">Meetings</span><span class="chip">Bills</span><span class="chip">Workouts</span></div>
+    <div class="seg" style="margin-bottom:14px"><b class="active">Month</b><b>Week</b><b>Day</b></div>
+    <div class="panel">
+      <div class="cnav"><button><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg></button><span class="m">June 2026</span><button><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></button></div>
+      <div class="calwk"><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span></div>
+      <div class="calgrid">
+        <span class="cell muted">26</span><span class="cell muted">27</span><span class="cell muted">28</span><span class="cell muted">29</span><span class="cell muted">30</span><span class="cell">1</span><span class="cell">2</span>
+        <span class="cell">3</span><span class="cell">4<span class="cdots"><i style="background:var(--purple)"></i></span></span><span class="cell">5</span><span class="cell">6</span><span class="cell">7<span class="cdots"><i style="background:var(--pink)"></i></span></span><span class="cell">8</span><span class="cell">9</span>
+        <span class="cell">10</span><span class="cell">11</span><span class="cell">12<span class="cdots"><i style="background:var(--blue)"></i></span></span><span class="cell">13</span><span class="cell">14</span><span class="cell">15</span><span class="cell">16</span>
+        <span class="cell">17</span><span class="cell">18</span><span class="cell">19</span><span class="cell">20</span><span class="cell sel">21<span class="cdots"><i style="background:var(--purple)"></i><i style="background:var(--pink)"></i></span></span><span class="cell">22</span><span class="cell">23</span>
+        <span class="cell">24<span class="cdots"><i style="background:var(--orange)"></i></span></span><span class="cell">25</span><span class="cell">26</span><span class="cell">27</span><span class="cell">28</span><span class="cell">29</span><span class="cell">30</span>
+      </div>
+      <div class="legend"><span><i style="background:var(--purple)"></i>Tasks</span><span><i style="background:var(--blue)"></i>Meetings</span><span><i style="background:var(--orange)"></i>Bills</span><span><i style="background:var(--pink)"></i>Workouts</span></div>
+    </div>
+    <div class="sec-head"><span class="sec-title">Sat, Jun 21</span><span class="more">2 items</span></div>
+    <div class="group">
+      <div class="ev"><span class="dot" style="background:var(--pink)"></span><div class="ev-t"><div class="ev-title">Push workout</div><div class="ev-meta">Health · 60 min</div></div><span class="ev-time">6:00 PM</span></div>
+      <div class="ev"><span class="dot" style="background:var(--purple)"></span><div class="ev-t"><div class="ev-title">Lab report due</div><div class="ev-meta">Tasks</div></div><span class="ev-time">11:30 PM</span></div>
+    </div>
+    <div class="fade"></div>
+  </div></div></div>
+  <div class="cap"><b>A · Month + agenda</b><br>Polished month grid (orange "today"/selected, colored dots), with the tapped day's agenda listed below. Month/Week/Day kept.</div>
+  </div>
+
+  <!-- B · AGENDA-FIRST -->
+  <div class="col">
+  <div class="phone"><div class="screen"><div class="content">
+    <div class="sb"><span>14:25</span><svg class="tb" viewBox="0 0 24 13" fill="none"><rect x="1" y="1" width="19" height="11" rx="3" stroke="#fff" opacity=".5"/><rect x="2.5" y="2.5" width="13" height="8" rx="1.5" fill="#fff"/></svg></div>
+    <div class="topbar"><span class="h1">Calendar</span><span class="add"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>Add</span></div>
+    <div class="seg" style="margin-bottom:12px"><b>Month</b><b>Week</b><b class="active">Agenda</b></div>
+    <div class="chips" style="margin-bottom:12px"><span class="chip active" style="background:rgba(255,174,82,.18);color:#ffd2a0">All</span><span class="chip">Tasks</span><span class="chip">Meetings</span><span class="chip">Workouts</span></div>
+    <div class="daygrp">Today · Sat, Jun 21</div>
+    <div class="group">
+      <div class="ev"><span class="dot" style="background:var(--pink)"></span><div class="ev-t"><div class="ev-title">Push workout</div><div class="ev-meta">Health · 60 min</div></div><span class="ev-time">6:00 PM</span></div>
+      <div class="ev"><span class="dot" style="background:var(--purple)"></span><div class="ev-t"><div class="ev-title">Lab report due</div><div class="ev-meta">Organic Chemistry</div></div><span class="ev-time">11:30 PM</span></div>
+    </div>
+    <div class="daygrp">Tomorrow · Sun, Jun 22</div>
+    <div class="group">
+      <div class="ev"><span class="dot" style="background:var(--blue)"></span><div class="ev-t"><div class="ev-title">Study group</div><div class="ev-meta">Meeting</div></div><span class="ev-time">2:00 PM</span></div>
+    </div>
+    <div class="daygrp">Mon, Jun 24</div>
+    <div class="group">
+      <div class="ev"><span class="dot" style="background:var(--orange)"></span><div class="ev-t"><div class="ev-title">Rent</div><div class="ev-meta">Bill · $1,200</div></div><span class="ev-time">All day</span></div>
+      <div class="ev"><span class="dot" style="background:var(--purple)"></span><div class="ev-t"><div class="ev-title">Problem set 6</div><div class="ev-meta">Stats 1450</div></div><span class="ev-time">9:00 AM</span></div>
+    </div>
+    <div class="fade"></div>
+  </div></div></div>
+  <div class="cap"><b>B · Agenda list</b><br>A scrollable agenda grouped by day (Today / Tomorrow / …) — fastest to read "what's coming." Month &amp; Week still a tap away.</div>
+  </div>
+
+</div></body></html>

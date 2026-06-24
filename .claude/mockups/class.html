@@ -1,0 +1,85 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="_base.css">
+<style>
+  .as{position:relative;display:flex;align-items:center;gap:12px;padding:12px 15px;}
+  .as+.as::before{content:"";position:absolute;top:0;left:40px;right:0;height:1px;background:var(--hairline);}
+  .as-t{flex:1;min-width:0;}
+  .as-title{font-size:.95rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .as-meta{display:flex;gap:7px;margin-top:3px;font-size:.76rem;color:var(--t2);align-items:center;}
+  .tpill{background:rgba(255,255,255,.07);color:var(--t2);}
+  .as-due{font-size:.76rem;color:var(--t3);font-weight:600;white-space:nowrap;}
+  .as-due.over{color:#ff9fb4;}
+  .grade-ring .rv{font-size:1.5rem;}
+  .chead{display:flex;align-items:center;gap:12px;}
+  .gradebig{font-size:2.4rem;font-weight:800;letter-spacing:-.03em;color:#c6b0ff;}
+  .crow{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;}
+  .cstat{font-size:.76rem;color:var(--t2);background:rgba(255,255,255,.05);border:1px solid var(--line);padding:6px 10px;border-radius:999px;}
+  .cstat.over{color:#ff9fb4;}
+  .ghd{display:flex;align-items:center;justify-content:space-between;padding:14px 15px;}
+  .ghd .gt{font-weight:700;font-size:.92rem;} .ghd .gc{font-size:.8rem;color:var(--t3);font-weight:600;}
+</style></head>
+<body>
+<p class="intro">Class detail (when you enter a class) — two redesign directions. Purple = this class's color.</p>
+<div class="row">
+
+  <!-- A · GRADE RING HERO -->
+  <div class="col">
+  <div class="phone"><div class="screen"><div class="content" style="--c:var(--purple)">
+    <div class="sb"><span>14:25</span><svg class="tb" viewBox="0 0 24 13" fill="none"><rect x="1" y="1" width="19" height="11" rx="3" stroke="#fff" opacity=".5"/><rect x="2.5" y="2.5" width="13" height="8" rx="1.5" fill="#fff"/></svg></div>
+    <button class="back"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>School</button>
+    <div class="topbar"><div><div class="h1" style="font-size:27px">Organic Chemistry</div><div style="color:var(--t2);font-size:.86rem;margin-top:4px">Dr. Lee · MWF 10:00</div></div></div>
+
+    <div class="panel" style="display:flex;flex-direction:column;gap:15px">
+      <div class="chead">
+        <div class="ring grade-ring" style="width:74px;height:74px"><svg width="74" height="74"><circle cx="37" cy="37" r="30" stroke="rgba(255,255,255,.10)" stroke-width="7" fill="none"/><circle cx="37" cy="37" r="30" stroke="var(--purple)" stroke-width="7" fill="none" stroke-dasharray="188" stroke-dashoffset="66" stroke-linecap="round" transform="rotate(-90 37 37)"/></svg><span class="rv" style="color:#c6b0ff">B+</span></div>
+        <div style="flex:1"><div style="font-size:.8rem;color:var(--t2);font-weight:600">Completion</div><div style="font-size:1.3rem;font-weight:800;margin:2px 0 8px">8 / 12 · 64%</div><div class="pbar"><i style="width:64%;background:var(--purple)"></i></div></div>
+      </div>
+      <div class="crow"><span class="cstat over">1 overdue</span><span class="cstat">3 upcoming</span><span class="cstat">Next Jun 24</span></div>
+    </div>
+
+    <div class="sec-head"><span class="sec-title">To do</span><span class="more">+ Add</span></div>
+    <div class="group">
+      <div class="as"><span class="dot" style="background:var(--purple)"></span><div class="as-t"><div class="as-title">Lab report — stereochemistry</div><div class="as-meta"><span class="pill tpill">Lab</span></div></div><span class="as-due over">Overdue</span></div>
+      <div class="as"><span class="dot" style="background:var(--purple)"></span><div class="as-t"><div class="as-title">Problem set 6</div><div class="as-meta"><span class="pill tpill">Homework</span></div></div><span class="as-due">Jun 24</span></div>
+      <div class="as"><span class="dot" style="background:var(--purple)"></span><div class="as-t"><div class="as-title">Read chapter 9</div><div class="as-meta"><span class="pill tpill">Reading</span></div></div><span class="as-due">Jun 26</span></div>
+    </div>
+
+    <div class="sec-head"><span class="sec-title">Calendar</span><span class="more">⌄</span></div>
+    <div class="group"><div class="ghd"><span class="gt">June 2026</span><span class="gc">4 items</span></div></div>
+    <div class="sec-head"><span class="sec-title">Timeline</span><span class="more">12 ⌄</span></div>
+    <div class="group"><div class="ghd"><span class="gt">Most recent · Jun 21</span><span class="gc">12</span></div></div>
+    <div class="fade"></div>
+  </div></div></div>
+  <div class="cap"><b>A · Grade hero</b><br>Class color throughout. A grade ring + completion bar + quick chips, then a To-do list, with Calendar &amp; Timeline collapsed below.</div>
+  </div>
+
+  <!-- B · STAT TILES -->
+  <div class="col">
+  <div class="phone"><div class="screen"><div class="content" style="--c:var(--purple)">
+    <div class="sb"><span>14:25</span><svg class="tb" viewBox="0 0 24 13" fill="none"><rect x="1" y="1" width="19" height="11" rx="3" stroke="#fff" opacity=".5"/><rect x="2.5" y="2.5" width="13" height="8" rx="1.5" fill="#fff"/></svg></div>
+    <button class="back"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>School</button>
+    <div class="topbar"><div><div class="h1" style="font-size:27px">Organic Chemistry</div><div style="color:var(--t2);font-size:.86rem;margin-top:4px">Dr. Lee · MWF 10:00</div></div><span class="add"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg></span></div>
+
+    <div class="tiles">
+      <div class="tile" style="--ic:var(--purple)"><span class="th"><span class="tic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 7v6c0 5 8 9 8 9s8-4 8-9V7z"/></svg></span>Grade</span><span class="tn" style="color:#c6b0ff">B+</span><span class="ts">Points-based</span></div>
+      <div class="tile" style="--ic:var(--green)"><span class="th"><span class="tic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg></span>Completed</span><span class="tn">8/12</span><span class="ts">64% done</span></div>
+      <div class="tile" style="--ic:var(--red)"><span class="th"><span class="tic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v5M12 16h.01"/><circle cx="12" cy="12" r="9"/></svg></span>Overdue</span><span class="tn">1</span><span class="ts">past due</span></div>
+      <div class="tile" style="--ic:var(--orange)"><span class="th"><span class="tic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18"/></svg></span>Next due</span><span class="tn" style="font-size:1.05rem">Jun 24</span><span class="ts">Problem set 6</span></div>
+    </div>
+
+    <div class="sec-head"><span class="sec-title">Progress</span><span class="more">Edit grade</span></div>
+    <div class="panel"><div style="display:flex;justify-content:space-between;font-size:.84rem;color:var(--t2);margin-bottom:8px"><span>Completion</span><span style="color:var(--text);font-weight:700">64%</span></div><div class="pbar"><i style="width:64%;background:var(--purple)"></i></div></div>
+
+    <div class="sec-head"><span class="sec-title">To do</span><span class="more">+ Add</span></div>
+    <div class="group">
+      <div class="as"><span class="dot" style="background:var(--purple)"></span><div class="as-t"><div class="as-title">Lab report — stereochemistry</div><div class="as-meta"><span class="pill tpill">Lab</span></div></div><span class="as-due over">Overdue</span></div>
+      <div class="as"><span class="dot" style="background:var(--purple)"></span><div class="as-t"><div class="as-title">Problem set 6</div><div class="as-meta"><span class="pill tpill">Homework</span></div></div><span class="as-due">Jun 24</span></div>
+    </div>
+    <div class="sec-head"><span class="sec-title">Calendar</span><span class="more">⌄</span></div>
+    <div class="group"><div class="ghd"><span class="gt">June 2026</span><span class="gc">4 items</span></div></div>
+    <div class="fade"></div>
+  </div></div></div>
+  <div class="cap"><b>B · Stat tiles</b><br>2×2 tiles (Grade / Completed / Overdue / Next due) like the section overviews, a progress panel, then To-do + Calendar.</div>
+  </div>
+
+</div></body></html>

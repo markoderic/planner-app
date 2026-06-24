@@ -1,0 +1,67 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="_base.css">
+<style>
+  .search{display:flex;align-items:center;gap:9px;background:var(--elevated);border:1px solid var(--line);border-radius:14px;padding:11px 13px;color:var(--t3);font-size:.92rem;margin-bottom:12px;}
+  .search svg{width:17px;height:17px;}
+  .yelchip.active{background:rgba(255,209,102,.18);color:#ffe2a0;}
+  .note{position:relative;display:flex;align-items:flex-start;gap:12px;padding:14px 15px;}
+  .note+.note::before{content:"";position:absolute;top:0;left:15px;right:0;height:1px;background:var(--hairline);}
+  .note-t{flex:1;min-width:0;}
+  .note-title{font-size:.97rem;font-weight:700;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .note-prev{font-size:.82rem;color:var(--t2);margin-top:3px;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+  .note-date{font-size:.72rem;color:var(--t3);margin-top:6px;}
+  .note-pin{flex:none;color:var(--yellow);} .note-pin svg{width:16px;height:16px;}
+  /* grid */
+  .ngrid{display:grid;grid-template-columns:1fr 1fr;gap:11px;}
+  .ncard{background:var(--elevated);border:1px solid var(--line);border-radius:var(--r-lg);padding:14px;min-height:120px;display:flex;flex-direction:column;box-shadow:inset 3px 0 0 var(--c,var(--yellow));}
+  .ncard .nt{font-size:.92rem;font-weight:700;letter-spacing:-.01em;}
+  .ncard .np{font-size:.78rem;color:var(--t2);margin-top:5px;line-height:1.4;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;flex:1;}
+  .ncard .nd{font-size:.68rem;color:var(--t3);margin-top:8px;}
+</style></head>
+<body>
+<p class="intro">Notes — two redesign directions, same functionality (folders, pin, search). Soft yellow accent.</p>
+<div class="row">
+
+  <!-- A · APPLE-NOTES LIST -->
+  <div class="col">
+  <div class="phone"><div class="screen"><div class="content">
+    <div class="sb"><span>14:25</span><svg class="tb" viewBox="0 0 24 13" fill="none"><rect x="1" y="1" width="19" height="11" rx="3" stroke="#fff" opacity=".5"/><rect x="2.5" y="2.5" width="13" height="8" rx="1.5" fill="#fff"/></svg></div>
+    <div class="topbar"><span class="h1">Notes</span><span class="add"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>New note</span></div>
+    <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3-3"/></svg>Search notes…</div>
+    <div class="chips" style="margin-bottom:6px"><span class="chip yelchip active">All notes</span><span class="chip">Pinned</span><span class="chip">Unfiled</span><span class="chip">+ Folder</span></div>
+    <div class="sec-head"><span class="sec-title">Pinned</span><span class="more">2</span></div>
+    <div class="group">
+      <div class="note"><div class="note-t"><div class="note-title">App ideas</div><div class="note-prev">Dating app for special needs, planner improvements, the finance tab tabs…</div><div class="note-date">Yesterday · Ideas</div></div><span class="note-pin"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M14 3l7 7-3 1-3 6-2-2-4 4-1-1 4-4-2-2 6-3z"/></svg></span></div>
+      <div class="note"><div class="note-t"><div class="note-title">Homework</div><div class="note-prev">Put talas academy Belgrade lab writeup, stats pset, read chapter 9 by Friday.</div><div class="note-date">5/30 · Notes</div></div><span class="note-pin"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M14 3l7 7-3 1-3 6-2-2-4 4-1-1 4-4-2-2 6-3z"/></svg></span></div>
+    </div>
+    <div class="sec-head"><span class="sec-title">Recent</span></div>
+    <div class="group">
+      <div class="note"><div class="note-t"><div class="note-title">Tips for improvement</div><div class="note-prev">Smoother animations, redesign each section, cohesive system…</div><div class="note-date">2/18 · Locked</div></div></div>
+      <div class="note"><div class="note-t"><div class="note-title">Done</div><div class="note-prev">Calendar in the app, finance tabs, health redesign.</div><div class="note-date">Yesterday</div></div></div>
+    </div>
+    <div class="fade"></div>
+  </div></div></div>
+  <div class="cap"><b>A · Notes list</b><br>Search + folder chips, a Pinned group and Recent group as clean rows (title, 2-line preview, date, pin). Dark Apple-Notes feel.</div>
+  </div>
+
+  <!-- B · CARD GRID -->
+  <div class="col">
+  <div class="phone"><div class="screen"><div class="content">
+    <div class="sb"><span>14:25</span><svg class="tb" viewBox="0 0 24 13" fill="none"><rect x="1" y="1" width="19" height="11" rx="3" stroke="#fff" opacity=".5"/><rect x="2.5" y="2.5" width="13" height="8" rx="1.5" fill="#fff"/></svg></div>
+    <div class="topbar"><span class="h1">Notes</span><span class="add"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>New</span></div>
+    <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3-3"/></svg>Search notes…</div>
+    <div class="chips" style="margin-bottom:12px"><span class="chip yelchip active">All</span><span class="chip">Pinned</span><span class="chip">Ideas</span><span class="chip">School</span><span class="chip">Unfiled</span></div>
+    <div class="ngrid">
+      <div class="ncard" style="--c:var(--yellow)"><div class="nt">App ideas</div><div class="np">Dating app for special needs, planner improvements, finance tabs…</div><div class="nd">Yesterday · 📌</div></div>
+      <div class="ncard" style="--c:var(--blue)"><div class="nt">Homework</div><div class="np">Talas academy lab writeup, stats pset, read chapter 9 Friday.</div><div class="nd">5/30 · School</div></div>
+      <div class="ncard" style="--c:var(--purple)"><div class="nt">Tips</div><div class="np">Smoother animations, cohesive redesign per section.</div><div class="nd">2/18 · Locked</div></div>
+      <div class="ncard" style="--c:var(--green)"><div class="nt">Done</div><div class="np">Calendar, finance tabs, health redesign shipped.</div><div class="nd">Yesterday</div></div>
+      <div class="ncard" style="--c:var(--orange)"><div class="nt">Dropshipping</div><div class="np">Product research, supplier list, ad angles.</div><div class="nd">10/24</div></div>
+      <div class="ncard" style="--c:var(--teal)"><div class="nt">Schedule</div><div class="np">Weekly routine, gym split, study blocks.</div><div class="nd">Jun 18</div></div>
+    </div>
+    <div class="fade"></div>
+  </div></div></div>
+  <div class="cap"><b>B · Card grid</b><br>A 2-column grid of note cards with a colored edge per folder + 4-line preview. More visual / browsable, like Apple Notes gallery view.</div>
+  </div>
+
+</div></body></html>
