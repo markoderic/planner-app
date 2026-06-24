@@ -239,6 +239,7 @@
         workoutMode: "lift",
         habitDay: "today",
         notesFolderId: "all",
+        notesSearch: "",
         notesEditingId: "",
         travelFocus: "",
         travelStateFocus: "",
@@ -844,7 +845,8 @@
       folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" />',
       pin: '<path d="M9 3h6l-1 6 3 3v2h-4v5l-1 2-1-2v-5H6v-2l3-3-1-6z" />',
       globe: '<circle cx="12" cy="12" r="9" /><path d="M3 12h18" /><ellipse cx="12" cy="12" rx="4" ry="9" />',
-      activity: '<path d="M3 12h4l2.5 7 5-16 2.5 9h4" />'
+      activity: '<path d="M3 12h4l2.5 7 5-16 2.5 9h4" />',
+      search: '<circle cx="11" cy="11" r="7" /><path d="m20 20-3-3" />'
     };
     return `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name] || icons.circle}</svg>`;
   }
@@ -1087,6 +1089,7 @@
     if (ui.activeTab === "travel") setupTravelMap();
     if (ui.activeTab === "finance") {
       setupFinanceHistory();
+      setupFinanceChart();
       app.querySelector(".fin-tab.active")?.scrollIntoView({ inline: "center", block: "nearest" });
     }
     animateProgressIndicators();
@@ -2125,13 +2128,156 @@
     return `<svg viewBox="0 0 100 36" preserveAspectRatio="none" class="fin-spark-svg" aria-hidden="true"><polyline points="${escapeHtml(coords)}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"></polyline></svg>`;
   }
 
+  // Reconstruct a real daily "current money" history by walking backward from
+  // today's balance through every posted (dated) cash flow, so the last point
+  // always equals finance.currentMoney (the big number above the chart).
+  function financeBalanceSeries(days, currentMoney) {
+    const todayStr = today();
+    const n = Math.max(2, Math.min(370, Math.round(days) || 2));
+    const flows = [];
+    appData.finance.income.forEach((e) => {
+      const d = incomeDate(e);
+      if (d && d <= todayStr) flows.push({ date: d, amt: entryNetIncome(e) });
+    });
+    appData.finance.savings.forEach((e) => {
+      if (e.date && e.date <= todayStr) flows.push({ date: e.date, amt: Number(e.amount) || 0 });
+    });
+    appData.finance.spending.forEach((e) => {
+      if (!spendingUsesCredit(e) && e.date && e.date <= todayStr) flows.push({ date: e.date, amt: -(Number(e.amount) || 0) });
+    });
+    debtPaymentHistoryEntries().forEach((p) => {
+      const d = paymentHistoryDate(p);
+      if (d && d <= todayStr) flows.push({ date: d, amt: -(Number(p.amount) || 0) });
+    });
+    const points = [];
+    for (let i = 0; i < n; i++) {
+      const d = dateString(addDays(parseDate(todayStr), -(n - 1 - i)));
+      const after = flows.reduce((s, f) => (f.date > d ? s + f.amt : s), 0);
+      points.push({ date: d, value: currentMoney - after });
+    }
+    return points;
+  }
+
+  // How many trailing days of history to chart for the selected finance span.
+  function financeHistoryDays() {
+    const span = ui.financeSpan;
+    if (span === "7") return 7;
+    if (span === "14" || span === "paycheck") return 14;
+    if (span === "30") return 30;
+    if (span === "today") return 7;
+    if (span === "month") return Math.max(2, new Date().getDate());
+    if (span === "custom" && ui.financeCustom && ui.financeCustom.start && ui.financeCustom.end) {
+      return Math.max(2, Math.min(366, daysBetween(ui.financeCustom.start, ui.financeCustom.end)));
+    }
+    return 30;
+  }
+
+  const FIN_CHART = { w: 300, h: 96, padTop: 12, padBottom: 16 };
+
+  function renderFinanceChart(points, color) {
+    if (!points || points.length < 2) return "";
+    const { w, h, padTop, padBottom } = FIN_CHART;
+    const vals = points.map((p) => p.value);
+    const min = Math.min(...vals);
+    const max = Math.max(...vals);
+    const span = (max - min) || 1;
+    const n = points.length;
+    const xAt = (i) => (i / (n - 1)) * w;
+    const yAt = (v) => padTop + (1 - (v - min) / span) * (h - padTop - padBottom);
+    const linePts = points.map((p, i) => `${xAt(i).toFixed(2)},${yAt(p.value).toFixed(2)}`);
+    const areaD = `M ${xAt(0).toFixed(2)},${(h - padBottom).toFixed(2)} L ${linePts.join(" L ")} L ${xAt(n - 1).toFixed(2)},${(h - padBottom).toFixed(2)} Z`;
+    const data = points.map((p) => ({ v: Math.round(p.value * 100) / 100, d: p.date }));
+    return `
+      <div class="fin-chart" data-fin-chart data-points="${escapeHtml(JSON.stringify(data))}" data-min="${min}" data-max="${max}" data-pad-top="${padTop}" data-pad-bottom="${padBottom}" data-vh="${h}">
+        <svg class="fin-chart-svg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">
+          <defs>
+            <linearGradient id="finChartFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="${color}" stop-opacity="0.26"></stop>
+              <stop offset="100%" stop-color="${color}" stop-opacity="0"></stop>
+            </linearGradient>
+          </defs>
+          <path class="fin-chart-area" d="${areaD}" fill="url(#finChartFill)"></path>
+          <polyline class="fin-chart-line" points="${linePts.join(" ")}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"></polyline>
+        </svg>
+        <div class="fin-chart-guide" data-fin-guide hidden></div>
+        <div class="fin-chart-dot" data-fin-dot hidden></div>
+        <div class="fin-chart-tip" data-fin-tip hidden></div>
+        <div class="fin-chart-hit" data-fin-hit></div>
+      </div>
+    `;
+  }
+
+  function setupFinanceChart() {
+    const chart = app.querySelector("[data-fin-chart]");
+    if (!chart) return;
+    let data;
+    try { data = JSON.parse(chart.dataset.points || "[]"); } catch { data = []; }
+    const n = data.length;
+    if (n < 2) return;
+    const min = Number(chart.dataset.min);
+    const max = Number(chart.dataset.max);
+    const span = (max - min) || 1;
+    const padTop = Number(chart.dataset.padTop);
+    const padBottom = Number(chart.dataset.padBottom);
+    const vh = Number(chart.dataset.vh);
+    const guide = chart.querySelector("[data-fin-guide]");
+    const dot = chart.querySelector("[data-fin-dot]");
+    const tip = chart.querySelector("[data-fin-tip]");
+    const hit = chart.querySelector("[data-fin-hit]");
+    if (!hit) return;
+
+    const show = (clientX) => {
+      const rect = chart.getBoundingClientRect();
+      if (!rect.width) return;
+      const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+      const idx = Math.round(ratio * (n - 1));
+      const p = data[idx];
+      const leftPct = (idx / (n - 1)) * 100;
+      const yView = padTop + (1 - (p.v - min) / span) * (vh - padTop - padBottom);
+      const topPct = (yView / vh) * 100;
+      guide.style.left = `${leftPct}%`;
+      dot.style.left = `${leftPct}%`;
+      dot.style.top = `${topPct}%`;
+      tip.innerHTML = `<span class="fin-tip-v">${escapeHtml(formatCurrency(p.v))}</span><span class="fin-tip-d">${escapeHtml(formatLongDate(p.d))}</span>`;
+      tip.style.left = `${leftPct}%`;
+      // Keep the tooltip pinned to whichever edge it would otherwise overflow.
+      tip.classList.toggle("pin-left", leftPct < 22);
+      tip.classList.toggle("pin-right", leftPct > 78);
+      guide.hidden = dot.hidden = tip.hidden = false;
+    };
+    const hide = () => { guide.hidden = dot.hidden = tip.hidden = true; chart.classList.remove("is-scrubbing"); };
+
+    hit.addEventListener("pointerdown", (e) => {
+      chart.classList.add("is-scrubbing");
+      try { hit.setPointerCapture(e.pointerId); } catch {}
+      show(e.clientX);
+    });
+    hit.addEventListener("pointermove", (e) => {
+      if (e.pointerType === "mouse" || chart.classList.contains("is-scrubbing")) show(e.clientX);
+    });
+    hit.addEventListener("pointerup", hide);
+    hit.addEventListener("pointercancel", hide);
+    hit.addEventListener("pointerleave", (e) => { if (e.pointerType === "mouse") hide(); });
+  }
+
   function renderFinanceHero(finance, safeFinance, safetyRange, range) {
-    const pts = financeBalancePoints(6, finance.currentMoney);
+    const series = financeBalanceSeries(financeHistoryDays(), finance.currentMoney);
+    let trend = "";
+    if (series.length >= 2) {
+      const first = series[0].value;
+      const last = series[series.length - 1].value;
+      const delta = last - first;
+      const pctChange = first ? (delta / Math.abs(first)) * 100 : 0;
+      const dir = delta > 0.005 ? "up" : delta < -0.005 ? "down" : "flat";
+      const sign = delta > 0 ? "+" : delta < 0 ? "−" : "";
+      trend = `<div class="fh-trend ${dir}">${dir === "up" ? "▲" : dir === "down" ? "▼" : "•"} ${sign}${escapeHtml(formatCurrency(Math.abs(delta)))} <span class="fh-trend-pct">(${sign}${Math.abs(pctChange).toFixed(1)}%)</span> <span class="fh-trend-lab">over ${financeHistoryDays()} days</span></div>`;
+    }
     return `
       <section class="card panel finance-hero">
         <div class="fh-lab">Current money</div>
         <div class="fh-big">${escapeHtml(formatCurrency(finance.currentMoney))}</div>
-        ${pts.length ? `<div class="fin-spark">${sparklineSvg(pts, "var(--green)")}</div>` : ""}
+        ${trend}
+        ${series.length >= 2 ? renderFinanceChart(series, "var(--green)") : ""}
         <div class="fh-mini">
           <div class="hm"><span class="n">${escapeHtml(formatCompactCurrency(safeFinance.safeToSpend))}</span><span class="l">Safe to spend</span></div>
           <div class="hm"><span class="n">${escapeHtml(formatCompactCurrency(finance.projectedBalance))}</span><span class="l">Projected</span></div>
@@ -4001,18 +4147,45 @@
       if (date === selected) classes.push("is-selected");
       if (dayEvents.length) classes.push("has-events");
       return `
-        <button type="button" class="${classes.join(" ")}" data-action="select-calendar-day" data-date="${escapeHtml(date)}">
+        <button type="button" class="${classes.join(" ")}" data-action="calendar-month-day" data-date="${escapeHtml(date)}">
           <span class="cal-num">${Number(date.slice(8))}</span>
           ${dots ? `<span class="cal-dots">${dots}</span>` : ""}
         </button>
       `;
     }).join("");
 
+    // Month + agenda: tapping a day reveals that day's schedule inline below the
+    // grid (the date header jumps to the full Day view).
+    const selectedInMonth = selected && selected.slice(0, 7) === ym ? selected : "";
+    let agenda;
+    if (selectedInMonth) {
+      const dayEvents = [...(eventsByDate[selectedInMonth] || [])].sort((a, b) => {
+        const am = timeToMinutes(a.start);
+        const bm = timeToMinutes(b.start);
+        if (am === null && bm === null) return 0;
+        if (am === null) return -1;
+        if (bm === null) return 1;
+        return am - bm;
+      });
+      const label = formatLongDate(selectedInMonth) + (selectedInMonth === todayStr ? " · Today" : "");
+      agenda = `
+        <div class="cal-agenda">
+          <div class="cal-agenda-head">
+            <button type="button" class="cal-agenda-date" data-action="select-calendar-day" data-date="${escapeHtml(selectedInMonth)}">${escapeHtml(label)}${icon("chevron")}</button>
+            <span class="tiny">${dayEvents.length} item${dayEvents.length === 1 ? "" : "s"}</span>
+          </div>
+          ${dayEvents.length ? `<div class="cal-agenda-list">${dayEvents.map(renderCalendarEventRow).join("")}</div>` : `<p class="tiny cal-hint">Nothing scheduled.</p>`}
+        </div>
+      `;
+    } else {
+      agenda = `<p class="tiny cal-hint">Tap a day to see its schedule.</p>`;
+    }
+
     return `
       ${calendarPeriodHeader(monthLabel)}
       <div class="cal-weekdays">${weekdayHeader}</div>
       <div class="cal-grid">${grid}</div>
-      <p class="tiny cal-hint">Tap a day to open its full schedule.</p>
+      ${agenda}
     `;
   }
 
@@ -4421,6 +4594,11 @@
     else if (filter === "unfiled") notes = allNotes.filter((n) => !n.folderId);
     else if (filter !== "all") notes = allNotes.filter((n) => n.folderId === filter);
 
+    const query = String(ui.notesSearch || "").trim().toLowerCase();
+    if (query) {
+      notes = notes.filter((n) => `${n.title || ""} ${n.body || ""}`.toLowerCase().includes(query));
+    }
+
     const sorted = [...notes].sort((a, b) => (Number(b.pinned) - Number(a.pinned)) || String(b.updatedAt).localeCompare(String(a.updatedAt)));
     const pinned = sorted.filter((n) => n.pinned);
     const others = sorted.filter((n) => !n.pinned);
@@ -4439,20 +4617,44 @@
           </button>`).join("")}
       </div>`;
 
+    const search = `
+      <div class="notes-search">
+        <span class="notes-search-ic">${icon("search")}</span>
+        <input type="search" class="notes-search-input" data-notes-search placeholder="Search notes…" value="${escapeHtml(ui.notesSearch || "")}" aria-label="Search notes">
+      </div>`;
+
     const isFolder = !["all", "pinned", "unfiled"].includes(filter);
     const listHtml = sorted.length ? `
-      ${pinned.length ? `<div class="notes-group-label">${icon("pin")}<span>Pinned</span></div><div class="notes-grid">${pinned.map(renderNoteCard).join("")}</div>` : ""}
-      ${others.length ? `${pinned.length ? `<div class="notes-group-label"><span>Notes</span></div>` : ""}<div class="notes-grid">${others.map(renderNoteCard).join("")}</div>` : ""}
-    ` : emptyState("No notes here yet. Tap “New note” to start one.");
+      ${pinned.length ? `<div class="notes-group-label">${icon("pin")}<span>Pinned</span></div><div class="note-row-group">${pinned.map(renderNoteRow).join("")}</div>` : ""}
+      ${others.length ? `${pinned.length ? `<div class="notes-group-label"><span>Recent</span></div>` : ""}<div class="note-row-group">${others.map(renderNoteRow).join("")}</div>` : ""}
+    ` : emptyState(query ? "No notes match your search." : "No notes here yet. Tap “New note” to start one.");
 
     return `
       <div class="view">
         ${topbar("Notes", "", `${actionButton("add-note-folder", "", "New folder", "folder", "secondary")}${actionButton("new-note", "", "New note", "plus", "primary")}`)}
+        ${search}
         ${chipRow}
         ${isFolder ? `<div class="notes-folder-actions">${actionButton("edit-note-folder", filter, "Rename", "edit", "secondary")}${actionButton("delete-note-folder", filter, "Delete folder", "trash", "secondary")}</div>` : ""}
         <section class="notes-list">${listHtml}</section>
       </div>
     `;
+  }
+
+  function renderNoteRow(note) {
+    const folder = note.folderId ? findById(appData.notes.folders, note.folderId) : null;
+    const meta = [noteTimeLabel(note.updatedAt), folder ? folder.name : ""].filter(Boolean).join(" · ");
+    const snippet = noteSnippet(note);
+    const color = safeHexColor(note.color, "");
+    const colorStyle = color ? ` style="--class-color:${color}; --class-color-rgb:${rgbText(color)};"` : "";
+    return `
+      <div class="note-row${color ? " has-color" : ""}${recentPinId === note.id ? " just-toggled" : ""}"${colorStyle} role="button" tabindex="0" data-action="open-note" data-id="${escapeHtml(note.id)}">
+        <div class="note-row-main">
+          <p class="note-row-title">${escapeHtml(note.title || "Untitled note")}</p>
+          <p class="note-row-snippet${snippet ? "" : " muted-note"}">${escapeHtml(snippet || "No additional text")}</p>
+          ${meta ? `<span class="note-row-meta">${escapeHtml(meta)}</span>` : ""}
+        </div>
+        ${actionButton("toggle-note-pin", note.id, note.pinned ? "Unpin" : "Pin", "pin", `icon-btn note-pin-btn${note.pinned ? " pinned" : ""}${recentPinId === note.id ? " just-toggled" : ""}`)}
+      </div>`;
   }
 
   function renderNoteCard(note) {
@@ -4654,7 +4856,14 @@
           ${map}
           <p class="tiny travel-hint">${focus ? "Pinch or use +/− to zoom · drag to pan" : "Tap a country or use the list below · pinch/scroll to zoom"}</p>
         </section>
-        ${focus ? renderTravelCountryPanel(focus) : ""}
+        ${focus ? renderTravelCountryPanel(focus) : `
+          <div class="sec-head"><span class="sec-title">Progress</span></div>
+          <div class="travel-stats">
+            <div class="travel-stat"><span class="travel-stat-n travel-stat-accent">${visitedCount}</span><span class="travel-stat-l">Visited</span></div>
+            <div class="travel-stat"><span class="travel-stat-n">${total - visitedCount}</span><span class="travel-stat-l">To go</span></div>
+            <div class="travel-stat"><span class="travel-stat-n">${pct(visitedCount, total)}%</span><span class="travel-stat-l">of world</span></div>
+          </div>
+        `}
         ${renderTravelList()}
       </div>
     `;
@@ -4914,24 +5123,31 @@
   }
 
   function renderMore() {
-    const views = [
-      { key: "shopping", label: "Shopping List", icon: "wallet" },
-      { key: "bucket", label: "Bucket List", icon: "spark" },
-      { key: "review", label: "Weekly Review", icon: "done" },
-      { key: "settings", label: "Settings", icon: "settings" }
+    const groups = [
+      { label: "Tools", items: [
+        { key: "shopping", label: "Shopping List", icon: "wallet", color: "var(--green)" },
+        { key: "bucket", label: "Bucket List", icon: "spark", color: "var(--purple)" }
+      ]},
+      { label: "App", items: [
+        { key: "review", label: "Weekly Review", icon: "done", color: "var(--orange)" },
+        { key: "settings", label: "Settings", icon: "settings", color: "var(--blue)" }
+      ]}
     ];
     return `
       <div class="view">
         ${topbar("More", "")}
-        <section class="more-list" aria-label="More sections">
-          ${views.map((view) => `
-            <button type="button" class="more-row ${ui.moreView === view.key ? "active" : ""}" data-action="set-more-view" data-view="${escapeHtml(view.key)}">
-              <span class="more-row-icon">${icon(view.icon)}</span>
-              <span class="more-row-label">${escapeHtml(view.label)}</span>
-              <span class="more-row-arrow">${icon("chevron")}</span>
-            </button>
-          `).join("")}
-        </section>
+        ${groups.map((g) => `
+          <div class="sec-head"><span class="sec-title">${escapeHtml(g.label)}</span></div>
+          <section class="more-group" aria-label="${escapeHtml(g.label)}">
+            ${g.items.map((view) => `
+              <button type="button" class="more-row2 ${ui.moreView === view.key ? "active" : ""}" data-action="set-more-view" data-view="${escapeHtml(view.key)}">
+                <span class="more-row2-ic" style="--ic:${view.color}">${icon(view.icon)}</span>
+                <span class="more-row2-label">${escapeHtml(view.label)}</span>
+                <span class="more-row2-arrow">${icon("chevron")}</span>
+              </button>
+            `).join("")}
+          </section>
+        `).join("")}
         <div class="more-content" data-more-content="${escapeHtml(ui.moreView)}">
           ${renderMoreView()}
         </div>
@@ -4987,11 +5203,11 @@
   }
 
   function selectMoreRow(view, button = null) {
-    app.querySelectorAll(".more-row").forEach((row) => {
+    app.querySelectorAll(".more-row2").forEach((row) => {
       row.classList.toggle("active", row.dataset.view === view);
       row.classList.remove("is-selecting");
     });
-    const selected = button || [...app.querySelectorAll(".more-row")].find((row) => row.dataset.view === view);
+    const selected = button || [...app.querySelectorAll(".more-row2")].find((row) => row.dataset.view === view);
     if (!selected) return;
     selected.classList.add("active", "is-selecting");
     window.setTimeout(() => {
@@ -5313,37 +5529,72 @@
       `;
     }
     const todayStats = nutritionStats(calculateDateRange("today"));
-    const weekStats = nutritionStats(calculateDateRange("week"));
+    const goals = appData.nutrition.goals || {};
+    const calGoal = Number(goals.calories) || 0;
+    const mealsToday = appData.nutrition.entries.filter((entry) => dateInRange(entry.date, calculateDateRange("today"))).length;
+    const calLeft = Math.max(0, calGoal - todayStats.calories);
     return `
-      <section class="section">
-        <div class="section-header">
-          <h2>Nutrition</h2>
-          <div class="actions">
-            ${actionButton("edit-nutrition-goals", "", "Goals", "target", "secondary")}
-            ${actionButton("add-nutrition", "", "Add meal", "plus", "primary")}
+      <section class="section nutrition-a">
+        <div class="card panel nutri-hero">
+          ${calorieRing(todayStats.caloriePercent, formatNumber(todayStats.calories), formatNumber(calGoal))}
+          <div class="nutri-hero-info">
+            <span class="nutri-hero-label">Calories today</span>
+            <span class="nutri-hero-big">${formatNumber(calLeft)} left</span>
+            <span class="nutri-hero-sub">${mealsToday} meal${mealsToday === 1 ? "" : "s"} logged · ${todayStats.caloriePercent}% of ${formatNumber(calGoal)}</span>
           </div>
         </div>
-        <div class="metric-grid">
-          ${metric("Calories today", formatNumber(todayStats.calories), `${todayStats.caloriePercent}% of target`)}
-          ${metric("Protein today", `${formatNumber(todayStats.protein)}g`, `${todayStats.proteinPercent}% of target`)}
-          ${metric("Carbs today", `${formatNumber(todayStats.carbs)}g`, `${todayStats.carbPercent}% of target`)}
-          ${metric("Fat today", `${formatNumber(todayStats.fat)}g`, `${todayStats.fatPercent}% of target`)}
-          ${metric("Weekly average", formatNumber(weekStats.calories / daysBetween(weekStats.range.start, weekStats.range.end)), "Calories per day")}
+
+        <div class="sec-head">
+          <span class="sec-title">Macros</span>
+          <button type="button" class="sec-action" data-action="edit-nutrition-goals" data-id="">Goals${icon("chevron")}</button>
+        </div>
+        <div class="card panel nutri-macros">
+          ${macroBar("Protein", todayStats.protein, goals.protein, "var(--blue)")}
+          ${macroBar("Carbs", todayStats.carbs, goals.carbs, "var(--orange)")}
+          ${macroBar("Fat", todayStats.fat, goals.fat, "var(--pink)")}
+        </div>
+
+        <div class="sec-head">
+          <span class="sec-title">Meals</span>
+          <button type="button" class="sec-action" data-action="add-nutrition" data-id="">${icon("plus")}Add meal</button>
         </div>
         <div class="card panel section">
-          <h2>Goal progress</h2>
-          ${progressRow("Calories", todayStats.caloriePercent, `${formatNumber(todayStats.calories)} / ${formatNumber(appData.nutrition.goals.calories)}`)}
-          ${progressRow("Protein", todayStats.proteinPercent, `${formatNumber(todayStats.protein)}g / ${formatNumber(appData.nutrition.goals.protein)}g`)}
-          ${progressRow("Carbs", todayStats.carbPercent, `${formatNumber(todayStats.carbs)}g / ${formatNumber(appData.nutrition.goals.carbs)}g`)}
-          ${progressRow("Fat", todayStats.fatPercent, `${formatNumber(todayStats.fat)}g / ${formatNumber(appData.nutrition.goals.fat)}g`)}
-        </div>
-        <div class="card panel section">
-          <h2>Meal log</h2>
           <div class="list">
             ${appData.nutrition.entries.length ? sortByDate(appData.nutrition.entries, "date").reverse().map(renderNutritionItem).join("") : emptyState("Add meal entries to track simple macro totals.")}
           </div>
         </div>
       </section>
+    `;
+  }
+
+  // Calorie ring for the nutrition hero: fills to % of goal, center shows eaten/goal.
+  function calorieRing(percent, eaten, goal) {
+    const p = clamp(Math.round(Number(percent) || 0), 0, 100);
+    const r = 34;
+    const c = 2 * Math.PI * r;
+    const off = c * (1 - p / 100);
+    return `
+      <div class="calorie-ring">
+        <svg width="92" height="92" viewBox="0 0 92 92" aria-hidden="true">
+          <circle cx="46" cy="46" r="${r}" fill="none" stroke="rgba(255,255,255,.10)" stroke-width="8"></circle>
+          <circle cx="46" cy="46" r="${r}" fill="none" stroke="var(--orange)" stroke-width="8" stroke-linecap="round"
+            stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}" transform="rotate(-90 46 46)"></circle>
+        </svg>
+        <span class="calorie-ring-val"><b>${escapeHtml(eaten)}</b><s>of ${escapeHtml(goal)}</s></span>
+      </div>
+    `;
+  }
+
+  function macroBar(label, value, goal, color) {
+    const g = Number(goal) || 0;
+    const v = Number(value) || 0;
+    const p = g ? clamp(Math.round((v / g) * 100), 0, 100) : 0;
+    return `
+      <div class="macro-row">
+        <span class="macro-name">${escapeHtml(label)}</span>
+        <span class="macro-track"><span style="width:${p}%;background:${color}"></span></span>
+        <span class="macro-val">${formatNumber(v)} / ${formatNumber(g)}g</span>
+      </div>
     `;
   }
 
@@ -7535,6 +7786,13 @@
       }
       return refreshCalendarBody();
     }
+    if (action === "calendar-month-day") {
+      // Month view: tapping a day toggles its inline agenda without leaving the
+      // month grid (the agenda's date header is what opens the full Day view).
+      const d = button.dataset.date || "";
+      ui.calendarSelectedDate = ui.calendarSelectedDate === d ? "" : d;
+      return refreshCalendarBody();
+    }
     if (action === "select-calendar-day") {
       ui.calendarSelectedDate = button.dataset.date || "";
       ui.calendarView = "day";
@@ -8492,6 +8750,16 @@
       updateTaxSettingFromControl(target);
       saveData();
       updateTaxLiveSummaries();
+    }
+    if (target.dataset?.notesSearch !== undefined) {
+      ui.notesSearch = target.value;
+      const caret = target.selectionStart;
+      render({ quiet: true });
+      const again = app.querySelector("[data-notes-search]");
+      if (again) {
+        again.focus();
+        try { again.setSelectionRange(caret, caret); } catch {}
+      }
     }
   });
 

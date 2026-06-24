@@ -38,13 +38,25 @@ Apple-restraint, dark, SF Pro, glass used sparingly (nav/modals/floating only).
 - **Finance** — hybrid: **balance hero** (current money + green sparkline `financeBalancePoints`/`sparklineSvg` + mini stats + span chips), **2×2 overview tiles**, **tabbed sub-nav** (`ui.financeSection`, `set-finance-section`) showing ONE numbered section at a time (Current money/Income/Bills/Spending/Savings/Debt/Investments/Forecast). Old floating "jump to" shortcut removed.
 - **Class detail** — direction **A · Grade hero** (built). `renderClassDetail` + `classGradeRing(percent, letter, color)` in app.js: topbar (back + title + meta, NO top add button), `.class-hero` panel (grade ring fills to completion %, letter grade centered in class color, completion bar, `.class-chips` overdue/upcoming/next, Edit grade + Edit class actions, notes), "To do" = `renderAssignmentGroups` (all actions preserved), Calendar via `renderSchoolCalendarCard({scope:"class",classId,open:false})` (collapsed), Timeline `<details>` (collapsed). CSS under "Class detail · grade hero" in styles.css. `renderSchoolCalendarCard` gained an `open` param (default true).
 
-## STATUS — mockups made, AWAITING user's choice + build (PENDING)
-Each file has 2 directions; user must pick, then build (presentation-only):
-- **Calendar** → `calendar.html` — A · Month + agenda (orange month grid, dots by type, tapped-day agenda below) | B · Agenda list (grouped by Today/Tomorrow/date). NOTE: classes already removed from calendar filters (only kind chips: All/Tasks/Meetings/Bills/Workouts).
-- **Nutrition** (Health tab) → `nutrition.html` — A · Calorie ring + macro bars + meals | B · Macro tiles (2×2) + meals + weekly avg.
-- **Notes** → `notes.html` — A · Notes list (search + folder chips + Pinned/Recent groups) | B · Card grid (2-col colored cards).
-- **Travel** → `travel.html` — A · Map hero + 3-stat row + searchable country list | B · Progress-first (visited ring + by-continent bars). Keep map/zoom/search/visited toggle.
-- **More** → `more.html` — A · Grouped settings (profile + inset groups) | B · Tool grid + settings list.
+## STATUS — ALL DONE (user picked direction A for every section, built 2026-06-24)
+All built presentation-only, logic preserved.
+- **Calendar** → DONE **A · Month + agenda**. `renderCalendarMonthBody` appends an inline agenda for the selected day (sorted, `renderCalendarEventRow`), date header is a button → full Day view. Month cells use action `calendar-month-day` (toggles selection inline, stays in month, `refreshCalendarBody`). Today/selected day = orange (`.cal-day.is-today/.is-selected`). CSS `.cal-agenda*`.
+- **Nutrition** (Health tab) → DONE **A · Calorie ring + macros + meals**. `renderNutrition` + helpers `calorieRing(percent,eaten,goal)` (orange ring) and `macroBar(label,value,goal,color)` (protein blue / carbs orange / fat pink). Meals list keeps all entries + edit/delete. CSS "Nutrition · calorie ring + macros".
+- **Notes** → DONE **A · Notes list**. Added `search` icon, `ui.notesSearch` state, search box (`data-notes-search`, live filter via global input listener with caret/focus restore + `render({quiet})`), grouped rows via `renderNoteRow` (`.note-row-group`/`.note-row`). Pinned/Recent groups. Delete lives in note editor.
+- **Travel** → DONE **A · Map hero + 3-stat row + list**. Map/zoom/search already existed; added a Progress 3-stat row (Visited / To go / % of world — no continent data in GEO so % used) before `renderTravelList`, only when no country focused. CSS `.travel-stats`.
+- **More** → DONE **A · Grouped settings**. `renderMore` now renders labeled groups (Tools / App) of `.more-row2` inset rows with colored icon tiles + chevrons; kept real sections (Shopping/Bucket/Weekly Review/Settings) + `set-more-view`. NOTE: `selectMoreRow` updated to target `.more-row2` (was `.more-row`). No profile header (no name/email stored in appData). CSS "More · grouped settings".
+
+Redesign of all planned sections is COMPLETE.
+
+## Finance "current money" history chart (built 2026-06-24)
+The hero sparkline was replaced with a real interactive stock-style chart.
+- `financeBalanceSeries(days, currentMoney)` reconstructs a **real daily balance history** by walking backward from today's balance through every posted dated flow (income `entryNetIncome`, savings, cash spending, debt-payment history). Last point always == `finance.currentMoney`.
+- `financeHistoryDays()` maps `ui.financeSpan` → trailing window (7/14/30, month→since 1st, paycheck→14, today→7, custom→range length). Chart rebuilds on span change (set-finance-span does full render).
+- `renderFinanceChart(points,color)` draws SVG line + gradient area + overlay (`.fin-chart`, geometry consts `FIN_CHART`). `setupFinanceChart()` (called in finance post-render hook beside `setupFinanceHistory`) wires pointer scrub: touch/drag or hover shows a guide line, dot, and tooltip with exact balance + date. `.fh-trend` shows delta + % over the window.
+- GOTCHA fixed: `.fin-chart-tip` sets `display:flex` which beat the `hidden` attribute → added `.fin-chart-tip[hidden]{display:none}`. Touch scroll handled via `touch-action:pan-y` on `.fin-chart`.
+- Old `financeBalancePoints`/`sparklineSvg` kept but no longer used by the hero.
+
+Current versions: styles v94, app v88, SW v111.
 
 ## Collapse animation (already fixed — don't regress)
 `toggleDetails` in app.js animates a `.details-body` wrapped in a single `.dcl` inner via **WAAPI height** (460ms, `--ease-out`), collapsing to a true 0 (no padding residual, no fallback-timer pause). Don't go back to grid `fr` or JS-rAF height.
