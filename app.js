@@ -245,6 +245,7 @@
         notesEditingId: "",
         travelFocus: "",
         travelStateFocus: "",
+        travelView: "map",
         dashboardSpan: "today",
         dashboardStyle: "cards",
         financeSpan: "30",
@@ -387,6 +388,7 @@
     appData.travel.countries = appData.travel.countries || {};
     appData.travel.cities = appData.travel.cities || {};
     appData.travel.states = appData.travel.states || {};
+    appData.travel.trips = appData.travel.trips || [];
     appData.bucketList = Array.isArray(appData.bucketList) ? appData.bucketList : [];
     appData.notes = appData.notes || { items: [], folders: [] };
     appData.notes.items = appData.notes.items || [];
@@ -849,7 +851,10 @@
       globe: '<circle cx="12" cy="12" r="9" /><path d="M3 12h18" /><ellipse cx="12" cy="12" rx="4" ry="9" />',
       activity: '<path d="M3 12h4l2.5 7 5-16 2.5 9h4" />',
       search: '<circle cx="11" cy="11" r="7" /><path d="m20 20-3-3" />',
-      repeat: '<path d="m17 2 4 4-4 4" /><path d="M3 11v-1a4 4 0 0 1 4-4h14" /><path d="m7 22-4-4 4-4" /><path d="M21 13v1a4 4 0 0 1-4 4H3" />'
+      repeat: '<path d="m17 2 4 4-4 4" /><path d="M3 11v-1a4 4 0 0 1 4-4h14" /><path d="m7 22-4-4 4-4" /><path d="M21 13v1a4 4 0 0 1-4 4H3" />',
+      list: '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />',
+      plane: '<path d="M17.8 19.2 16 11l3.5-3.5a2.12 2.12 0 0 0-3-3L13 8 4.8 6.2a1 1 0 0 0-.9 1.7l5.1 3.5-2 2-2.5-.5a1 1 0 0 0-.9 1.6l2.4 2.4 2.4 2.4a1 1 0 0 0 1.6-.9l-.5-2.5 2-2 3.5 5.1a1 1 0 0 0 1.7-.9z" />',
+      pin2: '<path d="M12 21s7-6.5 7-12a7 7 0 1 0-14 0c0 5.5 7 12 7 12z" /><circle cx="12" cy="9" r="2.5" />'
     };
     return `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name] || icons.circle}</svg>`;
   }
@@ -3665,7 +3670,7 @@
           ? `<section class="class-grid">${byClass.map(renderClassCard).join("")}</section>`
           : `<section>${emptyState("Add classes to group assignments, track grades, and build your calendar.")}</section>`}
 
-        <div class="sec-head"><span class="sec-title">Assignments</span>${actionButton("add-assignment", "", "Add", "plus", "secondary")}</div>
+        <div class="sec-head"><span class="sec-title">Assignments</span><span class="sec-actions">${actionButton("bulk-add-assignment", "", "Bulk add", "list", "secondary")}${actionButton("add-assignment", "", "Add", "plus", "secondary")}</span></div>
         <div class="assignment-tools">
           ${schoolClassFilterToggle()}
           ${schoolAssignmentFilterToggle()}
@@ -3744,7 +3749,10 @@
         <section class="card panel section">
           <div class="section-header">
             <h2>To do</h2>
-            ${actionButton("add-assignment", "", "Add", "plus", "secondary")}
+            <div class="actions">
+              ${actionButton("bulk-add-assignment", classId, "Bulk add", "list", "secondary")}
+              ${actionButton("add-assignment", "", "Add", "plus", "secondary")}
+            </div>
           </div>
           <div class="assignment-list">
             ${renderAssignmentGroups(assignments, { start: "1900-01-01", end: "2999-12-31" }, { ignoreStatusFilter: true })}
@@ -5055,23 +5063,34 @@
         </div>
       </div>`;
 
+    const view = focus ? "map" : (ui.travelView === "trips" ? "trips" : "map");
+    const toggle = focus ? "" : `
+      <div class="seg-toggle travel-toggle" role="group" aria-label="Travel view">
+        <button type="button" class="seg-btn ${view === "map" ? "active" : ""}" data-action="set-travel-view" data-travel-view="map">${icon("globe")}<span>Map</span></button>
+        <button type="button" class="seg-btn ${view === "trips" ? "active" : ""}" data-action="set-travel-view" data-travel-view="trips">${icon("plane")}<span>Trips</span></button>
+      </div>`;
+
+    const mapBody = `
+      <section class="card panel section travel-card">
+        ${map}
+        <p class="tiny travel-hint">${focus ? "Pinch or use +/− to zoom · drag to pan" : "Tap a country or use the list below · pinch/scroll to zoom"}</p>
+      </section>
+      ${focus ? renderTravelCountryPanel(focus) : `
+        <div class="sec-head"><span class="sec-title">Progress</span></div>
+        <div class="travel-stats">
+          <div class="travel-stat"><span class="travel-stat-n travel-stat-accent">${visitedCount}</span><span class="travel-stat-l">Visited</span></div>
+          <div class="travel-stat"><span class="travel-stat-n">${total - visitedCount}</span><span class="travel-stat-l">To go</span></div>
+          <div class="travel-stat"><span class="travel-stat-n">${pct(visitedCount, total)}%</span><span class="travel-stat-l">of world</span></div>
+        </div>
+      `}
+      ${renderTravelList()}`;
+
     return `
       <div class="view travel-view">
         ${focus ? `<button type="button" class="back-link" data-action="travel-back">${icon("chevron")}<span>World map</span></button>` : ""}
         ${topbar("Travel", `${visitedCount} of ${total} countries visited`)}
-        <section class="card panel section travel-card">
-          ${map}
-          <p class="tiny travel-hint">${focus ? "Pinch or use +/− to zoom · drag to pan" : "Tap a country or use the list below · pinch/scroll to zoom"}</p>
-        </section>
-        ${focus ? renderTravelCountryPanel(focus) : `
-          <div class="sec-head"><span class="sec-title">Progress</span></div>
-          <div class="travel-stats">
-            <div class="travel-stat"><span class="travel-stat-n travel-stat-accent">${visitedCount}</span><span class="travel-stat-l">Visited</span></div>
-            <div class="travel-stat"><span class="travel-stat-n">${total - visitedCount}</span><span class="travel-stat-l">To go</span></div>
-            <div class="travel-stat"><span class="travel-stat-n">${pct(visitedCount, total)}%</span><span class="travel-stat-l">of world</span></div>
-          </div>
-        `}
-        ${renderTravelList()}
+        ${toggle}
+        ${view === "trips" ? renderTravelTrips() : mapBody}
       </div>
     `;
   }
@@ -5100,6 +5119,139 @@
   function travelVisitBtn(action, key, dataAttr, value, isVisited, animKey) {
     const anim = recentVisitKey === animKey ? " just-visited" : "";
     return `<button type="button" class="${isVisited ? "secondary active" : "primary"} travel-visit-btn${anim}" data-action="${action}" data-${dataAttr}="${escapeHtml(value)}">${icon(isVisited ? "done" : "plus")}<span>${isVisited ? "Visited" : "Mark visited"}</span></button>`;
+  }
+
+  // ---------- Trip planner + automatic mileage ----------
+  // City map coords are an equirectangular projection of a 1000×500 world, so we
+  // can invert them to lat/long and compute real great-circle distances.
+  function cityLatLng(x, y) {
+    return { lat: 90 - (y / 500) * 180, lng: (x / 1000) * 360 - 180 };
+  }
+
+  function haversineMiles(a, b) {
+    const R = 3958.8; // Earth radius in miles
+    const toRad = (d) => (d * Math.PI) / 180;
+    const dLat = toRad(b.lat - a.lat);
+    const dLng = toRad(b.lng - a.lng);
+    const lat1 = toRad(a.lat);
+    const lat2 = toRad(b.lat);
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+    return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+  }
+
+  let travelCityIndexCache = null;
+  function travelCityIndex() {
+    if (travelCityIndexCache) return travelCityIndexCache;
+    const out = [];
+    if (window.GEO && window.GEO.cities) {
+      Object.entries(window.GEO.cities).forEach(([country, list]) => {
+        (list || []).forEach((c) => out.push({ name: c.n, country, x: c.x, y: c.y }));
+      });
+    }
+    out.sort((a, b) => a.name.localeCompare(b.name) || a.country.localeCompare(b.country));
+    travelCityIndexCache = out;
+    return out;
+  }
+
+  function travelCityOptions() {
+    return [{ value: "", label: "Select a city…" }, ...travelCityIndex().map((c) => ({ value: `${c.country}||${c.name}`, label: `${c.name}, ${c.country}` }))];
+  }
+
+  function resolveTravelCity(value) {
+    if (!value) return null;
+    const [country, name] = String(value).split("||");
+    const found = travelCityIndex().find((c) => c.country === country && c.name === name);
+    return found ? { name: found.name, country: found.country, x: found.x, y: found.y } : null;
+  }
+
+  function legMiles(leg) {
+    if (!leg || !leg.from || !leg.to) return 0;
+    const one = haversineMiles(cityLatLng(leg.from.x, leg.from.y), cityLatLng(leg.to.x, leg.to.y));
+    return leg.roundTrip ? one * 2 : one;
+  }
+
+  function tripMiles(trip) {
+    return (trip.legs || []).reduce((sum, leg) => sum + legMiles(leg), 0);
+  }
+
+  function travelTotalMiles() {
+    return (appData.travel.trips || []).reduce((sum, trip) => sum + tripMiles(trip), 0);
+  }
+
+  function tripDateLabel(trip) {
+    if (trip.startDate && trip.endDate) return `${formatDate(trip.startDate)} – ${formatDate(trip.endDate)}`;
+    if (trip.startDate) return formatDate(trip.startDate);
+    if (trip.endDate) return `Until ${formatDate(trip.endDate)}`;
+    return "No dates set";
+  }
+
+  function tripFields(initial = {}) {
+    return [
+      { name: "name", label: "Trip name", required: true, default: initial.name || "" },
+      { name: "startDate", label: "Start date", type: "date", default: initial.startDate || "" },
+      { name: "endDate", label: "End date", type: "date", default: initial.endDate || "" },
+      { name: "notes", label: "Notes", type: "textarea", default: initial.notes || "" }
+    ];
+  }
+
+  function legFields(initial = {}) {
+    return [
+      { name: "from", label: "From", type: "select", options: travelCityOptions(), default: initial.from ? `${initial.from.country}||${initial.from.name}` : "" },
+      { name: "to", label: "To", type: "select", options: travelCityOptions(), default: initial.to ? `${initial.to.country}||${initial.to.name}` : "" },
+      { name: "roundTrip", label: "Round trip (count the return miles too)", type: "checkbox", default: initial.roundTrip !== false }
+    ];
+  }
+
+  function renderTravelTrips() {
+    const trips = appData.travel.trips || [];
+    const totalMiles = travelTotalMiles();
+    const legCount = trips.reduce((n, t) => n + (t.legs || []).length, 0);
+    const stats = `
+      <div class="travel-stats trip-stats">
+        <div class="travel-stat"><span class="travel-stat-n travel-stat-accent">${formatNumber(Math.round(totalMiles))}</span><span class="travel-stat-l">Miles</span></div>
+        <div class="travel-stat"><span class="travel-stat-n">${trips.length}</span><span class="travel-stat-l">Trips</span></div>
+        <div class="travel-stat"><span class="travel-stat-n">${legCount}</span><span class="travel-stat-l">Flights</span></div>
+      </div>`;
+    const list = trips.length
+      ? trips.map(renderTripCard).join("")
+      : `<div class="card panel">${emptyState("No trips yet. Add a trip, then add city-to-city legs — miles are calculated automatically.")}</div>`;
+    return `
+      <div class="sec-head"><span class="sec-title">Your trips</span>${actionButton("add-trip", "", "Add trip", "plus", "secondary")}</div>
+      ${stats}
+      <section class="trip-list">${list}</section>
+    `;
+  }
+
+  function renderTripCard(trip) {
+    const miles = Math.round(tripMiles(trip));
+    const legs = trip.legs || [];
+    const legHtml = legs.length
+      ? legs.map((leg) => `
+        <div class="trip-leg">
+          <span class="trip-leg-icon">${icon("plane")}</span>
+          <span class="trip-leg-route">${escapeHtml(leg.from ? leg.from.name : "?")} <span class="trip-leg-arrow">${leg.roundTrip ? "⇄" : "→"}</span> ${escapeHtml(leg.to ? leg.to.name : "?")}</span>
+          <span class="trip-leg-miles">${formatNumber(Math.round(legMiles(leg)))} mi</span>
+          <button type="button" class="trip-leg-del" data-action="delete-trip-leg" data-id="${escapeHtml(trip.id)}" data-leg="${escapeHtml(leg.id)}" aria-label="Delete leg">${icon("x")}</button>
+        </div>`).join("")
+      : `<p class="tiny trip-empty-legs">No legs yet — add one to count miles.</p>`;
+    return `
+      <article class="trip-card">
+        <div class="trip-head">
+          <div class="trip-head-main">
+            <h3 class="trip-name">${escapeHtml(trip.name || "Trip")}</h3>
+            <span class="trip-dates">${escapeHtml(tripDateLabel(trip))}</span>
+          </div>
+          <span class="trip-miles">${formatNumber(miles)}<span class="trip-miles-unit">mi</span></span>
+        </div>
+        <div class="trip-legs">${legHtml}</div>
+        ${trip.notes ? `<p class="tiny trip-notes">${escapeHtml(trip.notes)}</p>` : ""}
+        <div class="trip-actions">
+          ${actionButton("add-trip-leg", trip.id, "Add leg", "plus", "secondary")}
+          ${actionButton("edit-trip", trip.id, "Edit", "edit", "secondary")}
+          ${actionButton("delete-trip", trip.id, "Delete", "trash", "secondary")}
+        </div>
+      </article>
+    `;
   }
 
   function renderTravelCountryPanel(csv) {
@@ -7679,6 +7831,59 @@
     ];
   }
 
+  const BULK_ASSIGNMENT_TYPES = ["assignment", "quiz", "exam", "project", "homework", "lab", "reading", "test", "paper", "essay", "other"];
+
+  // Parse a flexible date string used by bulk assignment entry: 2026-09-05, 9/5,
+  // 9/5/26, 9/5/2026, or anything Date can read. Returns "" if not a date.
+  function parseFlexibleDate(str) {
+    const s = String(str || "").trim();
+    if (!s) return "";
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    const m = s.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?$/);
+    if (m) {
+      const mo = Number(m[1]);
+      const da = Number(m[2]);
+      if (mo < 1 || mo > 12 || da < 1 || da > 31) return "";
+      const year = m[3] ? (m[3].length === 2 ? 2000 + Number(m[3]) : Number(m[3])) : new Date().getFullYear();
+      return `${year}-${String(mo).padStart(2, "0")}-${String(da).padStart(2, "0")}`;
+    }
+    const d = new Date(s);
+    return isNaN(d.getTime()) ? "" : dateString(d);
+  }
+
+  // Turn a multi-line block into assignments. Each line: "Title, due date, type"
+  // (date and type optional, any order at the end). Titles may contain commas.
+  function parseBulkAssignments(text, classId, defaultType) {
+    const created = [];
+    String(text || "").split(/\r?\n/).forEach((raw) => {
+      const line = raw.trim();
+      if (!line) return;
+      const segs = line.split(",").map((s) => s.trim());
+      while (segs.length > 1 && !segs[segs.length - 1]) segs.pop();
+      let type = defaultType || "";
+      let dueDate = "";
+      // Pull a trailing type keyword and a trailing date off the end, in any order.
+      for (let pass = 0; pass < 2 && segs.length > 1; pass++) {
+        const last = segs[segs.length - 1];
+        if (!dueDate && parseFlexibleDate(last)) { dueDate = parseFlexibleDate(last); segs.pop(); continue; }
+        if (BULK_ASSIGNMENT_TYPES.includes(last.toLowerCase())) { type = last.toLowerCase(); segs.pop(); continue; }
+        break;
+      }
+      const title = segs.join(", ").trim();
+      if (!title) return;
+      created.push(makeItem({ classId: classId || "", title, type, dueDate, status: "not started" }));
+    });
+    return created;
+  }
+
+  function bulkAssignmentFields(classId = "") {
+    return [
+      { name: "classId", label: "Class", type: "select", options: [{ value: "", label: "No class" }, ...appData.school.classes.map((k) => ({ value: k.id, label: k.name || "Class" }))], default: classId },
+      { name: "type", label: "Default type", type: "select", options: [{ value: "assignment", label: "Assignment" }, "quiz", "exam", "project", "homework", { value: "", label: "No type" }], default: "assignment", help: "Used for any row that doesn't name its own type." },
+      { name: "bulk", label: "Assignments (one per line)", type: "textarea", required: true, help: "Title, due date, type — date & type optional. e.g. \"Problem set 1, 9/5\" · \"Midterm, 2026-10-14, exam\" · \"Final project\"" }
+    ];
+  }
+
   function assignmentFields() {
     return [
       { name: "title", label: "Assignment title", required: true },
@@ -8123,6 +8328,11 @@
       ui.travelStateFocus = "";
       window.scrollTo({ top: 0, behavior: "auto" });
       return render();
+    }
+    if (action === "set-travel-view") {
+      ui.travelView = button.dataset.travelView === "trips" ? "trips" : "map";
+      saveUi();
+      return render({ quiet: true });
     }
     if (action === "travel-open-state") {
       const s = button.dataset.state || "";
@@ -8580,12 +8790,78 @@
         openEdit({ title: id ? "Edit assignment" : "Add assignment", fields: assignmentFields(), initial: { ...item, status: normalizedAssignmentStatus(item.status) }, onSubmit: (values) => upsert(appData.school.assignments, id, { ...values, status: normalizedAssignmentStatus(values.status) }), deleteAction: id ? "delete-assignment" : null, deleteId: id });
         break;
       }
+      case "bulk-add-assignment": {
+        const classId = id || button.dataset.id || "";
+        openEdit({
+          title: "Bulk add assignments",
+          submitLabel: "Add all",
+          fields: bulkAssignmentFields(classId),
+          onSubmit: (values) => {
+            const items = parseBulkAssignments(values.bulk, values.classId, values.type);
+            items.forEach((item) => appData.school.assignments.push(item));
+          }
+        });
+        break;
+      }
       case "delete-assignment":
         if (confirm("Delete this assignment?")) {
           deleteById(appData.school.assignments, id);
           rerender();
         }
         break;
+      case "add-trip":
+        openEdit({
+          title: "Add trip",
+          fields: tripFields(),
+          onSubmit: (v) => {
+            appData.travel.trips.push(makeItem({ name: v.name, startDate: v.startDate, endDate: v.endDate, notes: v.notes, legs: [] }));
+          }
+        });
+        break;
+      case "edit-trip": {
+        const trip = findById(appData.travel.trips, id);
+        if (!trip) break;
+        openEdit({
+          title: "Edit trip",
+          fields: tripFields(trip),
+          initial: trip,
+          onSubmit: (v) => { trip.name = v.name; trip.startDate = v.startDate; trip.endDate = v.endDate; trip.notes = v.notes; },
+          deleteAction: "delete-trip",
+          deleteId: trip.id
+        });
+        break;
+      }
+      case "delete-trip":
+        if (confirm("Delete this trip?")) {
+          deleteById(appData.travel.trips, id);
+          rerender();
+        }
+        break;
+      case "add-trip-leg": {
+        const trip = findById(appData.travel.trips, id);
+        if (!trip) break;
+        openEdit({
+          title: "Add leg",
+          submitLabel: "Add leg",
+          fields: legFields(),
+          onSubmit: (v) => {
+            const from = resolveTravelCity(v.from);
+            const to = resolveTravelCity(v.to);
+            if (!from || !to) return;
+            trip.legs = trip.legs || [];
+            trip.legs.push(makeItem({ from, to, roundTrip: v.roundTrip !== false && v.roundTrip !== "false" }));
+          }
+        });
+        break;
+      }
+      case "delete-trip-leg": {
+        const trip = findById(appData.travel.trips, id);
+        if (!trip) break;
+        const legId = button.dataset.leg;
+        trip.legs = (trip.legs || []).filter((leg) => leg.id !== legId);
+        rerender();
+        break;
+      }
       case "edit-gym-plan":
         openEdit({
           title: "Workout plan days",

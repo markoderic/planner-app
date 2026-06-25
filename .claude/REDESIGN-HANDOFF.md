@@ -64,10 +64,16 @@ The hero sparkline was replaced with a real interactive stock-style chart.
 - **Interactive finance chart now multi-instance.** `renderFinanceChart(points,color,gradId)`, `setupFinanceChart()` loops over all `[data-fin-chart]` via `setupFinanceChartInstance`; dot color from `--chart-color`.
 - **Global search (Dashboard).** `ui.dashboardSearch` + `.dash-search` box (reuses `.notes-search`), live filter via global input listener (focus/caret restore). `globalSearchResults(query)` searches tasks/assignments/notes/spending/income/bills; `renderSearchResults` groups them (`SEARCH_GROUPS`). `search-open` handler routes to the right tab/section (notes opens the note). When query non-empty the dashboard body is replaced by results.
 
+- **Bulk-add assignments.** `bulk-add-assignment` action in class-detail To-do header + school Assignments header. `bulkAssignmentFields(classId)` = class select + default type + textarea. `parseBulkAssignments(text,classId,defaultType)` parses "Title, date, type" per line (date/type optional, titles may contain commas); `parseFlexibleDate` handles YYYY-MM-DD, M/D, M/D/YY(YY). Icons added: `list`, `plane`, `pin2`.
+- **Trip planner + auto mileage (Travel).** `ui.travelView` map|trips, segmented toggle in `renderTravel`. `appData.travel.trips[]` (each {name,startDate,endDate,notes,legs:[{from,to,roundTrip}]}). City coords are equirectangular (`cityLatLng`: lng=(x/1000)*360−180, lat=90−(y/500)*180 — verified vs Kabul/NYC-Paris). `haversineMiles` great-circle; `travelCityIndex`/`travelCityOptions`/`resolveTravelCity` (value "Country||City"); `legMiles` (×2 if roundTrip), `tripMiles`, `travelTotalMiles`. `renderTravelTrips`/`renderTripCard`, `tripFields`/`legFields`. Handlers: `set-travel-view` (early if-chain, before openEdit), `add/edit/delete-trip` + `add-trip-leg`/`delete-trip-leg` (switch cases, after openEdit). CSS "Travel · trip planner" (teal). Possible v2: per-leg dates → calendar events; per-leg round-trip already supported.
+
+## Home-screen tab reordering (described to user, NOT built — awaiting go-ahead)
+Recommended approach: a "Customize tabs" screen in Settings — a drag-reorder list of all 9 sections split into "Bottom bar" (top ~5) vs "More menu" (rest), persisted in settings. Fixes the overcrowded 9-tab scrolling nav. Fancier alt: iOS jiggle long-press drag on the nav itself.
+
 ## iOS notifications (explained to user, NOT built)
 Web push on iOS needs: app installed to Home Screen (done) → permission prompt on a tap → service-worker `pushManager` subscription → a **backend/cron** to send pushes (app is currently client-side localStorage only). Pure local scheduled notifications aren't reliable on iOS web. Easiest no-backend win = in-app "due today/overdue" banner on the dashboard.
 
-Current versions: styles v97, app v92, SW v115.
+Current versions: styles v98, app v94, SW v117.
 
 ## Collapse animation (already fixed — don't regress)
 `toggleDetails` in app.js animates a `.details-body` wrapped in a single `.dcl` inner via **WAAPI height** (460ms, `--ease-out`), collapsing to a true 0 (no padding residual, no fallback-timer pause). Don't go back to grid `fr` or JS-rAF height.
