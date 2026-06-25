@@ -1,0 +1,102 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="_base.css">
+<style>
+  :root{ --blue:#4f8cff; --cyan:#36d3ff; --purple:#9d6fff; --green:#47dc9a; --orange:#ffae52; --pink:#ff5c8a; --teal:#2fd9c0; }
+  .ov{background:var(--elevated);border:1px solid var(--line);border-radius:var(--r-lg);padding:16px;}
+  .ov-row{display:flex;align-items:center;gap:18px;}
+  .ringbox{position:relative;flex:none;display:grid;place-items:center;}
+  .ringbox svg{transform:rotate(-90deg);}
+  .ringbox .rv{position:absolute;display:flex;flex-direction:column;align-items:center;line-height:1;}
+  .ringbox .rv b{font-size:1.5rem;font-weight:800;letter-spacing:-.02em;} .ringbox .rv s{font-size:.6rem;color:var(--t2);text-decoration:none;margin-top:3px;}
+  .ov-info{flex:1;min-width:0;}
+  .ov-lab{font-size:.8rem;color:var(--t2);font-weight:600;} .ov-big{font-size:1.35rem;font-weight:800;letter-spacing:-.02em;margin:2px 0 9px;}
+  .ovchips{display:flex;gap:7px;flex-wrap:wrap;}
+  .ovchip{font-size:.74rem;font-weight:600;color:var(--t2);background:rgba(255,255,255,.05);border:1px solid var(--line);padding:5px 9px;border-radius:999px;}
+  .ovchip.over{color:#ff9fb4;border-color:rgba(255,92,138,.3);}
+  .classrings{display:flex;gap:14px;overflow-x:auto;padding:2px 0;}
+  .cring{flex:none;display:flex;flex-direction:column;align-items:center;gap:7px;width:74px;}
+  .cring svg{transform:rotate(-90deg);} .cring .crv{position:relative;display:grid;place-items:center;}
+  .cring .crv span{position:absolute;font-size:.74rem;font-weight:800;}
+  .cring .cn{font-size:.7rem;color:var(--t2);text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%;}
+  .barrow{display:grid;grid-template-columns:74px 1fr 38px;align-items:center;gap:10px;margin-bottom:11px;}
+  .barrow:last-child{margin-bottom:0;}
+  .barrow .bn{font-size:.82rem;color:var(--t2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .barrow .bt{height:9px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;}
+  .barrow .bt i{display:block;height:100%;border-radius:999px;}
+  .barrow .bv{font-size:.74rem;font-weight:700;color:var(--t2);text-align:right;font-variant-numeric:tabular-nums;}
+  .ovbar-top{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:10px;}
+  .ovbar-top b{font-size:1.5rem;font-weight:800;letter-spacing:-.02em;} .ovbar-top s{font-size:.78rem;color:var(--t2);text-decoration:none;}
+  .bigbar{height:12px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;margin-bottom:14px;}
+  .bigbar i{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--blue),var(--purple));}
+  .gauge-wrap{display:flex;align-items:center;gap:18px;}
+  .gauge{position:relative;flex:none;}
+  .gauge .gv{position:absolute;left:0;right:0;bottom:6px;text-align:center;}
+  .gauge .gv b{font-size:1.4rem;font-weight:800;} .gauge .gv s{display:block;font-size:.6rem;color:var(--t2);text-decoration:none;}
+</style></head>
+<body>
+<p class="intro">School — top overview (above “Classes”). Assignment progress for the selected span, Better-Canvas style. Shape (bar / ring / half-ring) &amp; universal-vs-per-class will be a setting; these show the layout. Blue accent.</p>
+<div class="row">
+
+  <!-- A · OVERALL RING -->
+  <div class="col">
+  <div class="phone"><div class="screen"><div class="content" style="--c:var(--blue)">
+    <div class="sb"><span>14:25</span><svg class="tb" viewBox="0 0 24 13" fill="none"><rect x="1" y="1" width="19" height="11" rx="3" stroke="#fff" opacity=".5"/><rect x="2.5" y="2.5" width="13" height="8" rx="1.5" fill="#fff"/></svg></div>
+    <div class="topbar"><div class="h1">School</div><span class="add"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg></span></div>
+    <div class="seg"><button class="on">This week</button><button>Month</button><button>All</button></div>
+    <div class="ov">
+      <div class="ov-row">
+        <div class="ringbox" style="width:88px;height:88px"><svg width="88" height="88"><circle cx="44" cy="44" r="36" stroke="rgba(255,255,255,.10)" stroke-width="9" fill="none"/><circle cx="44" cy="44" r="36" stroke="var(--blue)" stroke-width="9" fill="none" stroke-dasharray="226" stroke-dashoffset="75" stroke-linecap="round"/></svg><span class="rv"><b>67%</b><s>done</s></span></div>
+        <div class="ov-info">
+          <div class="ov-lab">Assignments this week</div>
+          <div class="ov-big">8 / 12</div>
+          <div class="ovchips"><span class="ovchip over">1 overdue</span><span class="ovchip">2 due today</span><span class="ovchip">B+ avg</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="sec-head"><span class="sec-title">Classes</span><span class="more">+ Add</span></div>
+    <div class="fade"></div>
+  </div></div></div>
+  <div class="cap"><b>A · Overall ring</b><br>One completion ring for the whole span (8/12 · 67%) + quick chips (overdue / due today / GPA). Clean and focused.</div>
+  </div>
+
+  <!-- B · PER-CLASS RINGS -->
+  <div class="col">
+  <div class="phone"><div class="screen"><div class="content" style="--c:var(--blue)">
+    <div class="sb"><span>14:25</span><svg class="tb" viewBox="0 0 24 13" fill="none"><rect x="1" y="1" width="19" height="11" rx="3" stroke="#fff" opacity=".5"/><rect x="2.5" y="2.5" width="13" height="8" rx="1.5" fill="#fff"/></svg></div>
+    <div class="topbar"><div class="h1">School</div><span class="add"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg></span></div>
+    <div class="seg"><button class="on">This week</button><button>Month</button><button>All</button></div>
+    <div class="ov">
+      <div class="ov-lab" style="margin-bottom:12px">Progress by class · <span style="color:var(--t)">67% overall</span></div>
+      <div class="classrings">
+        <div class="cring"><div class="crv"><svg width="58" height="58"><circle cx="29" cy="29" r="23" stroke="rgba(255,255,255,.10)" stroke-width="6" fill="none"/><circle cx="29" cy="29" r="23" stroke="var(--purple)" stroke-width="6" fill="none" stroke-dasharray="144" stroke-dashoffset="40" stroke-linecap="round"/></svg><span>72%</span></div><span class="cn">Org Chem</span></div>
+        <div class="cring"><div class="crv"><svg width="58" height="58"><circle cx="29" cy="29" r="23" stroke="rgba(255,255,255,.10)" stroke-width="6" fill="none"/><circle cx="29" cy="29" r="23" stroke="var(--cyan)" stroke-width="6" fill="none" stroke-dasharray="144" stroke-dashoffset="72" stroke-linecap="round"/></svg><span>50%</span></div><span class="cn">Stats</span></div>
+        <div class="cring"><div class="crv"><svg width="58" height="58"><circle cx="29" cy="29" r="23" stroke="rgba(255,255,255,.10)" stroke-width="6" fill="none"/><circle cx="29" cy="29" r="23" stroke="var(--green)" stroke-width="6" fill="none" stroke-dasharray="144" stroke-dashoffset="14" stroke-linecap="round"/></svg><span>90%</span></div><span class="cn">History</span></div>
+        <div class="cring"><div class="crv"><svg width="58" height="58"><circle cx="29" cy="29" r="23" stroke="rgba(255,255,255,.10)" stroke-width="6" fill="none"/><circle cx="29" cy="29" r="23" stroke="var(--orange)" stroke-width="6" fill="none" stroke-dasharray="144" stroke-dashoffset="100" stroke-linecap="round"/></svg><span>30%</span></div><span class="cn">Bio</span></div>
+      </div>
+    </div>
+    <div class="sec-head"><span class="sec-title">Classes</span><span class="more">+ Add</span></div>
+    <div class="fade"></div>
+  </div></div></div>
+  <div class="cap"><b>B · Per-class rings</b><br>A small ring per class (its own color &amp; %), scrolls sideways. See exactly which class you’re behind in at a glance.</div>
+  </div>
+
+  <!-- C · STACKED BARS -->
+  <div class="col">
+  <div class="phone"><div class="screen"><div class="content" style="--c:var(--blue)">
+    <div class="sb"><span>14:25</span><svg class="tb" viewBox="0 0 24 13" fill="none"><rect x="1" y="1" width="19" height="11" rx="3" stroke="#fff" opacity=".5"/><rect x="2.5" y="2.5" width="13" height="8" rx="1.5" fill="#fff"/></svg></div>
+    <div class="topbar"><div class="h1">School</div><span class="add"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg></span></div>
+    <div class="seg"><button class="on">This week</button><button>Month</button><button>All</button></div>
+    <div class="ov">
+      <div class="ovbar-top"><span><b>8 / 12</b> <s>done this week</s></span><span style="font-weight:800;color:var(--blue)">67%</span></div>
+      <div class="bigbar"><i style="width:67%"></i></div>
+      <div class="barrow"><span class="bn">Org Chem</span><span class="bt"><i style="width:72%;background:var(--purple)"></i></span><span class="bv">5/7</span></div>
+      <div class="barrow"><span class="bn">Stats</span><span class="bt"><i style="width:50%;background:var(--cyan)"></i></span><span class="bv">1/2</span></div>
+      <div class="barrow"><span class="bn">History</span><span class="bt"><i style="width:90%;background:var(--green)"></i></span><span class="bv">2/2</span></div>
+    </div>
+    <div class="sec-head"><span class="sec-title">Classes</span><span class="more">+ Add</span></div>
+    <div class="fade"></div>
+  </div></div></div>
+  <div class="cap"><b>C · Stacked bars</b><br>One overall bar, then a labeled mini-bar per class. Most detail; reads like a checklist of progress.</div>
+  </div>
+
+</div></body></html>

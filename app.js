@@ -48,6 +48,8 @@
     weeklyReview: true,
     nutrition: true,
     gymDetails: true,
+    schoolProgressShape: "bar",
+    schoolProgressMode: "class",
     tax: {
       autoOhio: true,
       annualGrossIncome: 0,
@@ -3659,6 +3661,122 @@
     return renderSchoolOverview();
   }
 
+  // ---------- School assignment-progress overview (customizable) ----------
+  function schoolProgressData(range) {
+    const all = appData.school.assignments.filter((a) => dateInRange(a.dueDate, range));
+    const doneIn = (list) => list.filter(assignmentComplete).length;
+    const overall = { completed: doneIn(all), total: all.length };
+    overall.percent = pct(overall.completed, overall.total);
+    const perClass = appData.school.classes.map((k) => {
+      const items = all.filter((a) => a.classId === k.id);
+      const completed = doneIn(items);
+      return { id: k.id, name: k.name || "Class", color: safeHexColor(k.accentColor, "#7c5cff"), completed, total: items.length, percent: pct(completed, items.length) };
+    }).filter((c) => c.total > 0);
+    const unassigned = all.filter((a) => !a.classId);
+    if (unassigned.length) perClass.push({ id: "", name: "No class", color: "#6f7685", completed: doneIn(unassigned), total: unassigned.length, percent: pct(doneIn(unassigned), unassigned.length) });
+    return { overall, perClass };
+  }
+
+  function progBar(percent, color, h = 10) {
+    return `<span class="prog-bar" style="height:${h}px"><i style="width:${clamp(percent)}%;background:${color}"></i></span>`;
+  }
+  function progRing(percent, color, size = 64, stroke = 8) {
+    const p = clamp(percent);
+    const r = (size - stroke) / 2 - 1;
+    const c = 2 * Math.PI * r;
+    const off = (c * (1 - p / 100)).toFixed(1);
+    const cx = size / 2;
+    return `<svg class="prog-ring" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" aria-hidden="true"><circle cx="${cx}" cy="${cx}" r="${r}" fill="none" stroke="rgba(255,255,255,.1)" stroke-width="${stroke}"/><circle cx="${cx}" cy="${cx}" r="${r}" fill="none" stroke="${color}" stroke-width="${stroke}" stroke-linecap="round" stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${off}" transform="rotate(-90 ${cx} ${cx})"/></svg>`;
+  }
+  function progHalf(percent, color, w = 130, stroke = 11) {
+    const p = clamp(percent);
+    const r = (w - stroke) / 2;
+    const cx = w / 2;
+    const cy = r + stroke / 2;
+    const h = Math.ceil(cy + stroke / 2);
+    const len = Math.PI * r;
+    const off = (len * (1 - p / 100)).toFixed(1);
+    const d = `M ${(stroke / 2).toFixed(1)} ${cy} A ${r} ${r} 0 0 1 ${(w - stroke / 2).toFixed(1)} ${cy}`;
+    return `<svg class="prog-half" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true"><path d="${d}" fill="none" stroke="rgba(255,255,255,.1)" stroke-width="${stroke}" stroke-linecap="round"/><path d="${d}" fill="none" stroke="${color}" stroke-width="${stroke}" stroke-linecap="round" stroke-dasharray="${len.toFixed(1)}" stroke-dashoffset="${off}"/></svg>`;
+  }
+  function progConcentric(items, size = 110) {
+    const stroke = 7;
+    const gap = 4.5;
+    const cx = size / 2;
+    let inner = "";
+    items.forEach((it, i) => {
+      const r = (size / 2) - stroke / 2 - 1 - i * (stroke + gap);
+      if (r < stroke) return;
+      const c = 2 * Math.PI * r;
+      const off = (c * (1 - clamp(it.percent) / 100)).toFixed(1);
+      inner += `<circle cx="${cx}" cy="${cx}" r="${r}" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="${stroke}"/><circle cx="${cx}" cy="${cx}" r="${r}" fill="none" stroke="${it.color}" stroke-width="${stroke}" stroke-linecap="round" stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${off}" transform="rotate(-90 ${cx} ${cx})"/>`;
+    });
+    return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" aria-hidden="true">${inner}</svg>`;
+  }
+  function progHalfConcentric(items, w = 150) {
+    const stroke = 8;
+    const gap = 5;
+    const cx = w / 2;
+    let maxR = 0;
+    let inner = "";
+    items.forEach((it, i) => {
+      const r = (w - stroke) / 2 - i * (stroke + gap);
+      if (r < stroke) return;
+      maxR = Math.max(maxR, r);
+      const cy = (w - stroke) / 2 + stroke / 2;
+      const len = Math.PI * r;
+      const off = (len * (1 - clamp(it.percent) / 100)).toFixed(1);
+      const d = `M ${(cx - r).toFixed(1)} ${cy} A ${r} ${r} 0 0 1 ${(cx + r).toFixed(1)} ${cy}`;
+      inner += `<path d="${d}" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="${stroke}" stroke-linecap="round"/><path d="${d}" fill="none" stroke="${it.color}" stroke-width="${stroke}" stroke-linecap="round" stroke-dasharray="${len.toFixed(1)}" stroke-dashoffset="${off}"/>`;
+    });
+    const cy = (w - stroke) / 2 + stroke / 2;
+    const h = Math.ceil(cy + stroke / 2);
+    return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true">${inner}</svg>`;
+  }
+  function progStacked(perClass, total) {
+    const segs = perClass.map((c) => {
+      const w = total ? (c.completed / total) * 100 : 0;
+      return w > 0 ? `<i style="width:${w}%;background:${c.color}" title="${escapeHtml(c.name)}"></i>` : "";
+    }).join("");
+    return `<span class="prog-bar prog-stacked" style="height:12px">${segs}</span>`;
+  }
+  function progLegend(perClass) {
+    return `<div class="sp-legend">${perClass.map((c) => `<span class="sp-leg"><i style="background:${c.color}"></i>${escapeHtml(c.name)} <b>${c.completed}/${c.total}</b></span>`).join("")}</div>`;
+  }
+
+  function renderSchoolProgress(range) {
+    const shape = ["bar", "ring", "halfring"].includes(appData.settings.schoolProgressShape) ? appData.settings.schoolProgressShape : "bar";
+    const mode = ["class", "combined", "overall"].includes(appData.settings.schoolProgressMode) ? appData.settings.schoolProgressMode : "class";
+    const data = schoolProgressData(range);
+    const o = data.overall;
+    if (!o.total) {
+      return `<section class="card panel school-progress">${emptyState("No assignments in this time span. Add some or widen the range.")}</section>`;
+    }
+    const accent = "var(--accent)";
+    const head = `<div class="sp-head"><span class="sp-title">Assignments · ${escapeHtml(range.label || "")}</span><span class="sp-overall">${o.completed}/${o.total} · ${o.percent}%</span></div>`;
+    const classes = data.perClass;
+    let body = "";
+
+    if (mode === "overall" || !classes.length) {
+      if (shape === "ring") body = `<div class="sp-center">${progRing(o.percent, accent, 104, 11)}<span class="sp-center-val">${o.percent}%</span></div>`;
+      else if (shape === "halfring") body = `<div class="sp-center sp-center-half">${progHalf(o.percent, accent, 168, 13)}<span class="sp-half-val">${o.percent}%</span></div>`;
+      else body = progBar(o.percent, accent, 12);
+    } else if (mode === "combined") {
+      if (shape === "ring") body = `<div class="sp-combined">${progConcentric(classes)}${progLegend(classes)}</div>`;
+      else if (shape === "halfring") body = `<div class="sp-combined">${progHalfConcentric(classes)}${progLegend(classes)}</div>`;
+      else body = `${progStacked(classes, o.total)}${progLegend(classes)}`;
+    } else { // per class (separate)
+      if (shape === "ring") {
+        body = `<div class="sp-cells">${classes.map((c) => `<div class="sp-cell"><div class="sp-cell-ring">${progRing(c.percent, c.color, 60, 6)}<span class="sp-cell-pct">${c.percent}%</span></div><span class="sp-cell-name">${escapeHtml(c.name)}</span></div>`).join("")}</div>`;
+      } else if (shape === "halfring") {
+        body = `<div class="sp-cells">${classes.map((c) => `<div class="sp-cell"><div class="sp-cell-half">${progHalf(c.percent, c.color, 96, 9)}<span class="sp-cell-half-pct">${c.percent}%</span></div><span class="sp-cell-name">${escapeHtml(c.name)}</span></div>`).join("")}</div>`;
+      } else {
+        body = classes.map((c) => `<div class="sp-barrow"><span class="sp-bn">${escapeHtml(c.name)}</span>${progBar(c.percent, c.color, 9)}<span class="sp-bv">${c.completed}/${c.total}</span></div>`).join("");
+      }
+    }
+    return `<section class="card panel school-progress">${head}${body}</section>`;
+  }
+
   function renderSchoolOverview() {
     const range = schoolRange();
     const stats = schoolStats(range);
@@ -3674,12 +3792,7 @@
         ${rangeToggle("school", ui.schoolSpan)}
         ${customRangeControls("school", range)}
 
-        <section class="stat-chips">
-          <div class="stat-chip"><span class="n">${dueToday.length}</span><span class="l">Due today</span></div>
-          <div class="stat-chip"><span class="n" style="color:var(--danger)">${stats.overdue.length}</span><span class="l">Overdue</span></div>
-          <div class="stat-chip"><span class="n">${stats.openDue.length}</span><span class="l">In range</span></div>
-          <div class="stat-chip"><span class="n" style="color:var(--green)">${completedInRange.length}</span><span class="l">Done</span></div>
-        </section>
+        ${renderSchoolProgress(range)}
 
         <div class="sec-head"><span class="sec-title">Classes</span>${actionButton("add-class", "", "Add class", "plus", "secondary")}</div>
         ${appData.school.classes.length
@@ -6196,6 +6309,19 @@
         </div>
 
         <div class="card panel section">
+          <h3>School progress</h3>
+          <span class="tiny">The assignment progress overview at the top of the School tab.</span>
+          <label class="field"><span>Shape</span></label>
+          <div class="segmented">
+            ${[["bar", "Bar"], ["ring", "Ring"], ["halfring", "Half-ring"]].map(([v, l]) => `<button type="button" class="${appData.settings.schoolProgressShape === v ? "active" : ""}" data-action="set-school-progress-shape" data-shape="${v}">${l}</button>`).join("")}
+          </div>
+          <label class="field"><span>Group by</span></label>
+          <div class="segmented">
+            ${[["class", "Per class"], ["combined", "Combined"], ["overall", "Overall"]].map(([v, l]) => `<button type="button" class="${appData.settings.schoolProgressMode === v ? "active" : ""}" data-action="set-school-progress-mode" data-mode="${v}">${l}</button>`).join("")}
+          </div>
+        </div>
+
+        <div class="card panel section">
           <h3>Tax estimate</h3>
           <label class="checkbox-row"><input type="checkbox" data-tax-setting="autoOhio" ${appData.settings.tax.autoOhio ? "checked" : ""}> <span>Use automatic tax estimate<small>Federal, FICA, Ohio state, municipal, and optional school district.</small></span></label>
           ${renderTaxControlPanel("settings")}
@@ -7183,6 +7309,41 @@
       document.body.style.top = "";
       window.scrollTo(0, scrollLockY);
     }
+  }
+
+  // Long-press action sheet for a note: Edit or Delete.
+  function openNoteActions(id) {
+    const note = findById(appData.notes.items, id);
+    if (!note) return;
+    modalRoot.innerHTML = `
+      <div class="modal-backdrop">
+        <div class="action-sheet">
+          <div class="action-sheet-title">${escapeHtml(note.title || "Untitled note")}</div>
+          <div class="action-sheet-list">
+            <button type="button" class="action-sheet-btn" data-note-edit>${icon("edit")}<span>Edit note</span></button>
+            <button type="button" class="action-sheet-btn danger-action" data-note-delete>${icon("trash")}<span>Delete note</span></button>
+          </div>
+          <button type="button" class="action-sheet-cancel" data-action="close-modal">Cancel</button>
+        </div>
+      </div>`;
+    lockBodyScroll();
+    const backdrop = modalRoot.querySelector(".modal-backdrop");
+    backdrop.addEventListener("click", (e) => { if (e.target === backdrop) closeModal(); });
+    backdrop.querySelector("[data-note-edit]").addEventListener("click", () => {
+      closeModal();
+      ui.notesEditingId = id;
+      notesFocusPending = true;
+      render();
+    });
+    backdrop.querySelector("[data-note-delete]").addEventListener("click", () => {
+      closeModal();
+      if (confirm("Delete this note?")) {
+        deleteById(appData.notes.items, id);
+        if (ui.notesEditingId === id) ui.notesEditingId = "";
+        saveData();
+        render({ quiet: true });
+      }
+    });
   }
 
   // Interactive bulk-add: fill one assignment's boxes, "Add to list" collapses it
@@ -9248,6 +9409,14 @@
         saveData();
         render();
         break;
+      case "set-school-progress-shape":
+        appData.settings.schoolProgressShape = ["bar", "ring", "halfring"].includes(button.dataset.shape) ? button.dataset.shape : "bar";
+        rerender();
+        break;
+      case "set-school-progress-mode":
+        appData.settings.schoolProgressMode = ["class", "combined", "overall"].includes(button.dataset.mode) ? button.dataset.mode : "class";
+        rerender();
+        break;
       case "save-categories": {
         appData.settings.taskCategories = parseCategoryList(document.getElementById("settings-task-categories").value);
         appData.settings.billCategories = parseCategoryList(document.getElementById("settings-bill-categories").value);
@@ -9488,6 +9657,51 @@
   document.addEventListener("touchmove", (event) => {
     if (event.touches && event.touches.length > 1) event.preventDefault();
   }, { passive: false });
+
+  // Edge-swipe back: a drag in from the very left edge fires the on-screen back
+  // button (class detail, note editor, travel country) — alongside the button.
+  let edgeSwipe = null;
+  document.addEventListener("touchstart", (event) => {
+    if (event.touches.length !== 1) { edgeSwipe = null; return; }
+    const t = event.touches[0];
+    if (t.clientX > 26) { edgeSwipe = null; return; }
+    if (modalRoot.querySelector(".modal-backdrop")) { edgeSwipe = null; return; }
+    const back = app.querySelector(".back-link");
+    edgeSwipe = back ? { x: t.clientX, y: t.clientY, back, fired: false } : null;
+  }, { passive: true });
+  document.addEventListener("touchmove", (event) => {
+    if (!edgeSwipe || edgeSwipe.fired || event.touches.length !== 1) return;
+    const t = event.touches[0];
+    if (t.clientX - edgeSwipe.x > 64 && Math.abs(t.clientY - edgeSwipe.y) < 44) {
+      edgeSwipe.fired = true;
+      edgeSwipe.back.click();
+    }
+  }, { passive: true });
+  document.addEventListener("touchend", () => { edgeSwipe = null; }, { passive: true });
+
+  // Long-press a note to get an Edit / Delete action sheet.
+  let notePressTimer = null;
+  let noteLongPressed = false;
+  const clearNotePress = () => { if (notePressTimer) { clearTimeout(notePressTimer); notePressTimer = null; } };
+  document.addEventListener("touchstart", (event) => {
+    if (event.touches.length !== 1) return;
+    const row = event.target.closest?.(".note-row");
+    if (!row || !row.dataset.id) return;
+    const id = row.dataset.id;
+    notePressTimer = window.setTimeout(() => {
+      notePressTimer = null;
+      noteLongPressed = true;
+      if (navigator.vibrate) try { navigator.vibrate(8); } catch {}
+      openNoteActions(id);
+    }, 480);
+  }, { passive: true });
+  document.addEventListener("touchmove", clearNotePress, { passive: true });
+  document.addEventListener("touchend", clearNotePress, { passive: true });
+  document.addEventListener("touchcancel", clearNotePress, { passive: true });
+  // Swallow the click that fires when the finger lifts after a long-press.
+  document.addEventListener("click", (event) => {
+    if (noteLongPressed) { noteLongPressed = false; event.stopPropagation(); event.preventDefault(); }
+  }, true);
 
   window.addEventListener("keydown", (event) => {
     if (event.key === "Escape") closeModal();

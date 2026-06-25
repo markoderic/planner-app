@@ -81,7 +81,13 @@ Web push on iOS needs: app installed to Home Screen (done) → permission prompt
 - **Chart tooltip robustness.** `setupFinanceChartInstance` `show()` now positions the tip in **pixels**, clamped inside the chart rect, flipping below the point when near the top — never clipped. `.fin-chart-tip` CSS reset to `left/top:0` (JS drives position); removed pin-left/right + fixed top.
 - **Loader redesign.** `index.html` loader is now `.loader-ring` (conic-gradient blue→purple→pink arc, `loaderSpin` 1s) + pulsing `PLANNER` wordmark. Replaced the old `.loader-track` progress bar. NOTE: `index.html` is SW-cached (no `?v=`), so loader/markup changes need a SW cache bump (CACHE_NAME) + a reload or two to show; app.js/styles.css use `?v=` so they refresh immediately.
 
-Current versions: styles v101, app v98, SW v122.
+- **Calendar highlight color fix.** `.cal-day.is-today/.is-selected` now use `--accent`/`--accent-rgb` (the settings accent) instead of hardcoded orange.
+- **Edge-swipe back.** Global touch handlers: a drag in from `clientX<=26` that moves right >64px (|dy|<44) clicks the visible `.back-link` (all back buttons share that class) — works for class detail / note editor / travel. Skipped when a modal is open.
+- **Note long-press menu.** Long-press (480ms) a `.note-row` opens `openNoteActions(id)` — an `.action-sheet` modal with Edit / Delete (+ Cancel + backdrop close). A capture-phase click guard swallows the post-long-press click. `.action-sheet*` CSS.
+- **School top overview redesign + customizable progress.** Replaced the stat-chips with `renderSchoolProgress(range)` — assignment completion for the selected span. Settings (`appData.settings.schoolProgressShape` = bar|ring|halfring, default **bar**; `schoolProgressMode` = class|combined|overall, default **class**) via "School progress" card in Settings (`set-school-progress-shape`/`-mode` handlers). Shapes: `progBar/progRing/progHalf`; combined ring/half = `progConcentric`/`progHalfConcentric` (concentric, one per class, Apple-Watch style); combined bar = `progStacked` (segments per class). `schoolProgressData(range)` computes overall + per-class (incl. "No class"). `.school-progress`/`.sp-*`/`.prog-*` CSS.
+- **DEFERRED (next):** note-editor "paper" redesign — larger paper-like writing area, distinct view vs edit, color picker = whole-note color. Not started.
+
+Current versions: styles v103, app v100, SW v124.
 
 ## Collapse animation (already fixed — don't regress)
 `toggleDetails` in app.js animates a `.details-body` wrapped in a single `.dcl` inner via **WAAPI height** (460ms, `--ease-out`), collapsing to a true 0 (no padding residual, no fallback-timer pause). Don't go back to grid `fr` or JS-rAF height.
