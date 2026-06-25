@@ -1090,7 +1090,7 @@ h3 {
 }
 
 .timeline-card > summary {
-  min-height: 54px;
+  min-height: 44px;
 }
 
 .assignment-card.overdue {
@@ -2178,12 +2178,12 @@ details.is-details-animating {
 }
 
 details summary {
-  min-height: 54px;
+  min-height: 44px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 12px;
-  padding: 0 14px;
+  padding: 4px 14px;
   cursor: pointer;
   list-style: none;
 }
@@ -3563,7 +3563,7 @@ body.modal-open {
 }
 
 .assignment-group > summary {
-  min-height: 48px;
+  min-height: 42px;
   grid-template-columns: minmax(0, 1fr) auto auto;
 }
 
@@ -3883,7 +3883,7 @@ body.modal-open {
 .grade-card > summary,
 .grades-overview > summary,
 .calendar-card > summary {
-  min-height: 54px;
+  min-height: 44px;
 }
 
 .grade-display {
@@ -5373,6 +5373,39 @@ body.modal-open {
   color: var(--subtle);
 }
 
+/* ============ Note editor — paper read/edit ============ */
+.note-doc-view { display: flex; flex-direction: column; gap: 14px; }
+.note-doc-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.note-doc-bar .back-link { margin-bottom: 0; }
+.note-doc-tools { display: flex; align-items: center; gap: 8px; }
+
+.note-edit-btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px 8px 11px; border: 0; border-radius: 999px; background: rgba(255, 255, 255, 0.07); color: var(--text); font-size: 0.84rem; font-weight: 700; cursor: pointer; transition: background var(--dur) var(--ease-out), transform var(--dur-fast) var(--ease-spring); }
+.note-edit-btn:active { transform: scale(0.96); background: rgba(255, 255, 255, 0.12); }
+.note-edit-btn .icon { width: 16px; height: 16px; }
+.note-done-pill { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px 8px 12px; border: 0; border-radius: 999px; background: var(--accent); color: var(--accent-contrast); font-size: 0.84rem; font-weight: 760; cursor: pointer; transition: transform var(--dur-fast) var(--ease-spring); }
+.note-done-pill:active { transform: scale(0.96); }
+.note-done-pill .icon { width: 16px; height: 16px; }
+
+/* The "paper" sheet — a clean tall surface with the note's color as a top edge */
+.note-sheet { position: relative; flex: 1; min-height: 64vh; background: var(--elevated); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 22px 20px 26px; box-shadow: inset 0 3px 0 var(--note-accent, var(--accent)), 0 14px 36px rgba(0, 0, 0, 0.32); overflow: hidden; cursor: text; }
+.note-read .note-sheet { cursor: pointer; }
+
+.note-doc-title { margin: 0 0 5px; font-size: 1.6rem; font-weight: 800; letter-spacing: -0.02em; line-height: 1.2; overflow-wrap: anywhere; }
+.note-doc-title.is-empty { color: var(--subtle); }
+.note-doc-meta { font-size: 0.76rem; color: var(--subtle); font-weight: 600; margin-bottom: 18px; }
+.note-doc-body { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 1.05rem; line-height: 1.75; color: rgba(245, 247, 250, 0.92); }
+.note-doc-body.note-doc-empty { color: var(--subtle); font-style: italic; }
+
+.note-edit-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.note-edit-meta .note-color-row { flex: 1; }
+.note-edit-meta .note-folder-select { width: auto; max-width: 45%; min-height: 38px; }
+
+/* Inside the editing sheet the inputs are borderless so it reads like paper */
+.note-sheet-edit { display: flex; flex-direction: column; }
+.note-sheet-edit .note-title-input { font-size: 1.6rem; font-weight: 800; letter-spacing: -0.02em; padding: 0; margin-bottom: 12px; min-height: 0; }
+.note-sheet-edit .note-body-input { flex: 1; min-height: 52vh; border: 0; border-radius: 0; background: transparent; padding: 0; font-size: 1.05rem; line-height: 1.75; resize: none; overflow: hidden; }
+.note-sheet-edit .note-body-input:focus { border: 0; }
+
 /* ============ Travel / world map ============ */
 .travel-view { gap: 14px; }
 
@@ -6104,7 +6137,7 @@ body.modal-open {
 
 .fin-chart { position: relative; width: 100%; height: 132px; margin-top: 2px; touch-action: pan-y; }
 .fin-chart-svg { width: 100%; height: 100%; display: block; overflow: visible; }
-.fin-chart-line { transition: opacity 160ms ease; }
+.fin-chart-line, .fin-chart-area { transition: d 480ms var(--ease-out); }
 
 .fin-chart-guide { position: absolute; top: 4px; bottom: 16px; width: 1px; margin-left: -0.5px; background: rgba(255, 255, 255, 0.28); pointer-events: none; }
 .fin-chart-dot { position: absolute; width: 11px; height: 11px; margin: -5.5px 0 0 -5.5px; border-radius: 999px; background: var(--chart-color, var(--green)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--chart-color, var(--green)) 25%, transparent), 0 0 0 6px color-mix(in srgb, var(--chart-color, var(--green)) 12%, transparent); pointer-events: none; }
@@ -6112,7 +6145,7 @@ body.modal-open {
 .fin-chart-tip[hidden] { display: none; }
 .fin-tip-v { font-size: 0.92rem; font-weight: 800; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
 .fin-tip-d { font-size: 0.68rem; color: var(--subtle); font-weight: 600; }
-.fin-chart-hit { position: absolute; inset: 0; cursor: crosshair; }
+.fin-chart-hit { position: absolute; inset: -8px 0; cursor: crosshair; touch-action: none; }
 .fh-mini { display: flex; gap: 10px; }
 .fh-mini .hm { flex: 1; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 10px 11px; display: flex; flex-direction: column; gap: 2px; }
 .fh-mini .hm .n { font-size: 1rem; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
@@ -6276,6 +6309,24 @@ body.modal-open {
 .sp-leg { display: inline-flex; align-items: center; gap: 6px; font-size: 0.76rem; color: var(--muted); }
 .sp-leg i { width: 9px; height: 9px; border-radius: 999px; flex: none; }
 .sp-leg b { color: var(--text); font-weight: 700; }
+
+/* ============ Order tracking (More · Tools) ============ */
+.order-list { display: flex; flex-direction: column; gap: 10px; }
+.order-card { display: flex; align-items: flex-start; gap: 12px; padding: 14px; border-radius: var(--radius-lg); background: var(--elevated); border: 1px solid var(--line); }
+.order-card-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.order-card-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.order-name { font-size: 0.98rem; font-weight: 700; letter-spacing: -0.01em; }
+.order-status { font-size: 0.68rem; font-weight: 700; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
+.order-ordered { color: var(--muted); background: rgba(255, 255, 255, 0.07); }
+.order-shipped, .order-in-transit { color: #9fc4ff; background: rgba(79, 140, 255, 0.16); }
+.order-out-for-delivery { color: #ffd29a; background: rgba(255, 174, 82, 0.16); }
+.order-delivered { color: #9af0c8; background: rgba(71, 220, 154, 0.16); }
+.order-meta { font-size: 0.78rem; color: var(--muted); overflow-wrap: anywhere; }
+.order-notes { margin: 2px 0 0; color: var(--subtle); }
+.order-actions { display: flex; align-items: center; gap: 4px; flex: none; }
+.order-track { display: inline-flex; align-items: center; gap: 5px; padding: 7px 11px; border-radius: 999px; background: rgba(54, 211, 255, 0.14); color: #8fe3ff; font-size: 0.78rem; font-weight: 700; text-decoration: none; }
+.order-track .icon { width: 15px; height: 15px; }
+.order-track:active { transform: scale(0.96); }
 .search-results { display: grid; gap: 6px; animation: rise 240ms var(--ease-out); }
 .search-group { display: flex; flex-direction: column; background: var(--elevated); border: 1px solid var(--line); border-radius: var(--radius-lg); overflow: hidden; margin-bottom: 8px; }
 .search-row { position: relative; display: grid; grid-template-columns: 34px minmax(0, 1fr) 18px; align-items: center; gap: 12px; padding: 12px 14px; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; transition: background var(--dur) var(--ease-out); }

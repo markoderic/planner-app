@@ -245,6 +245,7 @@
         notesSearch: "",
         dashboardSearch: "",
         notesEditingId: "",
+        noteEditMode: false,
         travelFocus: "",
         travelStateFocus: "",
         travelView: "map",
@@ -392,6 +393,7 @@
     appData.travel.states = appData.travel.states || {};
     appData.travel.trips = appData.travel.trips || [];
     appData.bucketList = Array.isArray(appData.bucketList) ? appData.bucketList : [];
+    appData.orders = Array.isArray(appData.orders) ? appData.orders : [];
     appData.notes = appData.notes || { items: [], folders: [] };
     appData.notes.items = appData.notes.items || [];
     appData.notes.folders = appData.notes.folders || [];
@@ -855,6 +857,7 @@
       search: '<circle cx="11" cy="11" r="7" /><path d="m20 20-3-3" />',
       repeat: '<path d="m17 2 4 4-4 4" /><path d="M3 11v-1a4 4 0 0 1 4-4h14" /><path d="m7 22-4-4 4-4" /><path d="M21 13v1a4 4 0 0 1-4 4H3" />',
       list: '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />',
+      package: '<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><path d="m3.3 7 8.7 5 8.7-5" /><path d="M12 22V12" />',
       plane: '<path d="M17.8 19.2 16 11l3.5-3.5a2.12 2.12 0 0 0-3-3L13 8 4.8 6.2a1 1 0 0 0-.9 1.7l5.1 3.5-2 2-2.5-.5a1 1 0 0 0-.9 1.6l2.4 2.4 2.4 2.4a1 1 0 0 0 1.6-.9l-.5-2.5 2-2 3.5 5.1a1 1 0 0 0 1.7-.9z" />',
       pin2: '<path d="M12 21s7-6.5 7-12a7 7 0 1 0-14 0c0 5.5 7 12 7 12z" /><circle cx="12" cy="9" r="2.5" />'
     };
@@ -2297,11 +2300,31 @@
     return 30;
   }
 
-  const FIN_CHART = { w: 300, h: 96, padTop: 12, padBottom: 16 };
+  const FIN_CHART = { w: 300, h: 96, padTop: 12, padBottom: 16, samples: 64 };
+  // Remember each chart's last path so a span change morphs the line instead of
+  // teleporting (keyed by gradient id: current-money vs net-worth).
+  const finChartPrevD = {};
 
-  function renderFinanceChart(points, color, gradId = "finChartFill") {
-    if (!points || points.length < 2) return "";
-    const { w, h, padTop, padBottom } = FIN_CHART;
+  // Resample a series to a fixed number of points so every span has the same
+  // path-command count — that's what lets the SVG `d` smoothly interpolate.
+  function resampleSeries(points, n) {
+    if (points.length < 2) return points;
+    const last = points.length - 1;
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const t = (i / (n - 1)) * last;
+      const lo = Math.floor(t);
+      const hi = Math.min(last, lo + 1);
+      const f = t - lo;
+      out.push({ value: points[lo].value + (points[hi].value - points[lo].value) * f, date: (f < 0.5 ? points[lo] : points[hi]).date });
+    }
+    return out;
+  }
+
+  function renderFinanceChart(rawPoints, color, gradId = "finChartFill") {
+    if (!rawPoints || rawPoints.length < 2) return "";
+    const { w, h, padTop, padBottom, samples } = FIN_CHART;
+    const points = resampleSeries(rawPoints, samples);
     const vals = points.map((p) => p.value);
     const min = Math.min(...vals);
     const max = Math.max(...vals);
@@ -2310,10 +2333,11 @@
     const xAt = (i) => (i / (n - 1)) * w;
     const yAt = (v) => padTop + (1 - (v - min) / span) * (h - padTop - padBottom);
     const linePts = points.map((p, i) => `${xAt(i).toFixed(2)},${yAt(p.value).toFixed(2)}`);
+    const lineD = `M ${linePts.join(" L ")}`;
     const areaD = `M ${xAt(0).toFixed(2)},${(h - padBottom).toFixed(2)} L ${linePts.join(" L ")} L ${xAt(n - 1).toFixed(2)},${(h - padBottom).toFixed(2)} Z`;
     const data = points.map((p) => ({ v: Math.round(p.value * 100) / 100, d: p.date }));
     return `
-      <div class="fin-chart" data-fin-chart style="--chart-color:${color}" data-points="${escapeHtml(JSON.stringify(data))}" data-min="${min}" data-max="${max}" data-pad-top="${padTop}" data-pad-bottom="${padBottom}" data-vh="${h}">
+      <div class="fin-chart" data-fin-chart data-grad-id="${gradId}" style="--chart-color:${color}" data-points="${escapeHtml(JSON.stringify(data))}" data-min="${min}" data-max="${max}" data-pad-top="${padTop}" data-pad-bottom="${padBottom}" data-vh="${h}">
         <svg class="fin-chart-svg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">
           <defs>
             <linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">
@@ -2322,7 +2346,7 @@
             </linearGradient>
           </defs>
           <path class="fin-chart-area" d="${areaD}" fill="url(#${gradId})"></path>
-          <polyline class="fin-chart-line" points="${linePts.join(" ")}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"></polyline>
+          <path class="fin-chart-line" d="${lineD}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"></path>
         </svg>
         <div class="fin-chart-guide" data-fin-guide hidden></div>
         <div class="fin-chart-dot" data-fin-dot hidden></div>
@@ -2342,6 +2366,30 @@
     try { data = JSON.parse(chart.dataset.points || "[]"); } catch { data = []; }
     const n = data.length;
     if (n < 2) return;
+
+    // Morph the line/area from the previous span's shape to the new one.
+    const gradId = chart.dataset.gradId || "finChartFill";
+    const lineEl = chart.querySelector(".fin-chart-line");
+    const areaEl = chart.querySelector(".fin-chart-area");
+    if (lineEl && areaEl) {
+      const targetLine = lineEl.getAttribute("d");
+      const targetArea = areaEl.getAttribute("d");
+      const prev = finChartPrevD[gradId];
+      if (prev && prev.line && prev.line !== targetLine) {
+        lineEl.style.transition = "none";
+        areaEl.style.transition = "none";
+        lineEl.setAttribute("d", prev.line);
+        areaEl.setAttribute("d", prev.area);
+        void chart.offsetWidth; // reflow so the next change animates from prev
+        window.requestAnimationFrame(() => {
+          lineEl.style.transition = "";
+          areaEl.style.transition = "";
+          lineEl.setAttribute("d", targetLine);
+          areaEl.setAttribute("d", targetArea);
+        });
+      }
+      finChartPrevD[gradId] = { line: targetLine, area: targetArea };
+    }
     const min = Number(chart.dataset.min);
     const max = Number(chart.dataset.max);
     const span = (max - min) || 1;
@@ -5015,38 +5063,70 @@
 
   function renderNoteEditor(note) {
     const folders = appData.notes.folders || [];
+    const accent = safeHexColor(note.color, "") || "var(--accent)";
+    const accentVar = `--note-accent:${accent};`;
+    const editing = Boolean(ui.noteEditMode);
+
+    if (!editing) {
+      const folder = note.folderId ? findById(appData.notes.folders, note.folderId) : null;
+      const meta = [folder ? folder.name : "", `Edited ${noteTimeLabel(note.updatedAt)}`].filter(Boolean).join(" · ");
+      const hasBody = String(note.body || "").trim().length > 0;
+      return `
+        <div class="view note-doc-view note-read${recentPinId === note.id ? " just-toggled" : ""}" style="${accentVar}">
+          <div class="note-doc-bar">
+            <button type="button" class="back-link" data-action="notes-back">${icon("chevron")}<span>Notes</span></button>
+            <div class="note-doc-tools">
+              ${actionButton("toggle-note-pin", note.id, note.pinned ? "Unpin" : "Pin", "pin", `icon-btn note-pin-btn${note.pinned ? " pinned" : ""}${recentPinId === note.id ? " just-toggled" : ""}`)}
+              <button type="button" class="note-edit-btn" data-action="enter-note-edit" data-id="${escapeHtml(note.id)}">${icon("edit")}<span>Edit</span></button>
+            </div>
+          </div>
+          <article class="note-sheet" role="button" tabindex="0" data-action="enter-note-edit" data-id="${escapeHtml(note.id)}">
+            <h1 class="note-doc-title${note.title ? "" : " is-empty"}">${escapeHtml(note.title || "Untitled note")}</h1>
+            ${meta ? `<div class="note-doc-meta">${escapeHtml(meta)}</div>` : ""}
+            ${hasBody
+              ? `<div class="note-doc-body">${escapeHtml(note.body)}</div>`
+              : `<div class="note-doc-body note-doc-empty">Tap to start writing…</div>`}
+          </article>
+        </div>
+      `;
+    }
+
     const swatches = ["", ...colorSwatches];
     return `
-      <div class="view note-editor-view${recentPinId === note.id ? " just-toggled" : ""}">
-        <div class="note-editor-bar">
+      <div class="view note-doc-view note-edit${recentPinId === note.id ? " just-toggled" : ""}" style="${accentVar}">
+        <div class="note-doc-bar">
           <button type="button" class="back-link" data-action="notes-back">${icon("chevron")}<span>Notes</span></button>
-          <div class="note-editor-tools">
-            ${actionButton("toggle-note-pin", note.id, note.pinned ? "Unpin" : "Pin", "pin", `icon-btn note-pin-btn${note.pinned ? " pinned" : ""}${recentPinId === note.id ? " just-toggled" : ""}`)}
+          <div class="note-doc-tools">
             ${actionButton("delete-note", note.id, "Delete", "trash")}
+            <button type="button" class="note-done-pill" data-action="note-done-edit" data-id="${escapeHtml(note.id)}">${icon("check")}<span>Done</span></button>
           </div>
         </div>
-        <div class="note-color-row" role="group" aria-label="Note color">
-          ${swatches.map((c) => {
-            const active = safeHexColor(note.color, "") === c || (!note.color && !c);
-            return `<button type="button" class="note-swatch ${active ? "active" : ""} ${c ? "" : "note-swatch-none"}" data-action="set-note-color" data-id="${escapeHtml(note.id)}" data-color="${escapeHtml(c)}" ${c ? `style="background:${escapeHtml(c)}"` : ""} aria-label="${c ? c : "No color"}"></button>`;
-          }).join("")}
+        <div class="note-edit-meta">
+          <div class="note-color-row" role="group" aria-label="Note color">
+            ${swatches.map((c) => {
+              const active = safeHexColor(note.color, "") === c || (!note.color && !c);
+              return `<button type="button" class="note-swatch ${active ? "active" : ""} ${c ? "" : "note-swatch-none"}" data-action="set-note-color" data-id="${escapeHtml(note.id)}" data-color="${escapeHtml(c)}" ${c ? `style="background:${escapeHtml(c)}"` : ""} aria-label="${c ? c : "No color"}"></button>`;
+            }).join("")}
+          </div>
+          <select class="note-folder-select" data-note-field="folderId" data-id="${escapeHtml(note.id)}" aria-label="Folder">
+            <option value="" ${!note.folderId ? "selected" : ""}>No folder</option>
+            ${folders.map((f) => `<option value="${escapeHtml(f.id)}" ${note.folderId === f.id ? "selected" : ""}>${escapeHtml(f.name)}</option>`).join("")}
+          </select>
         </div>
-        <input type="text" class="note-title-input" data-note-field="title" data-id="${escapeHtml(note.id)}" placeholder="Title" value="${escapeHtml(note.title)}">
-        <select class="note-folder-select" data-note-field="folderId" data-id="${escapeHtml(note.id)}" aria-label="Folder">
-          <option value="" ${!note.folderId ? "selected" : ""}>No folder</option>
-          ${folders.map((f) => `<option value="${escapeHtml(f.id)}" ${note.folderId === f.id ? "selected" : ""}>${escapeHtml(f.name)}</option>`).join("")}
-        </select>
-        <textarea class="note-body-input" data-note-field="body" data-id="${escapeHtml(note.id)}" placeholder="Start writing…">${escapeHtml(note.body)}</textarea>
+        <article class="note-sheet note-sheet-edit">
+          <input type="text" class="note-title-input" data-note-field="title" data-id="${escapeHtml(note.id)}" placeholder="Title" value="${escapeHtml(note.title)}">
+          <textarea class="note-body-input" data-note-field="body" data-id="${escapeHtml(note.id)}" placeholder="Start writing…">${escapeHtml(note.body)}</textarea>
+        </article>
         <p class="tiny note-saved-hint" data-note-saved>Saved · ${escapeHtml(noteTimeLabel(note.updatedAt))}</p>
-        <button type="button" class="primary note-done-btn" data-action="notes-back">${icon("check")}<span>Done</span></button>
       </div>
     `;
   }
 
   function setupNotesEditor() {
-    const view = app.querySelector(".note-editor-view");
+    const view = app.querySelector(".note-doc-view");
     if (!view) return;
     const noteId = view.querySelector("[data-note-field]")?.dataset.id;
+    if (!noteId) return; // read mode has no editable fields
     const note = findById(appData.notes.items, noteId);
     if (!note) return;
     const hint = view.querySelector("[data-note-saved]");
@@ -5055,16 +5135,19 @@
       saveData();
       if (hint) hint.textContent = `Saved · ${noteTimeLabel(note.updatedAt)}`;
     };
+    const body = view.querySelector(".note-body-input");
+    const autoGrow = () => { if (body) { body.style.height = "auto"; body.style.height = `${body.scrollHeight}px`; } };
     view.querySelectorAll("[data-note-field]").forEach((el) => {
       const field = el.dataset.noteField;
-      const handler = () => { note[field] = el.value; persist(); };
+      const handler = () => { note[field] = el.value; persist(); if (el === body) autoGrow(); };
       el.addEventListener("input", handler);
       el.addEventListener("change", handler);
     });
+    autoGrow();
     if (notesFocusPending) {
       notesFocusPending = false;
-      const target = note.title ? view.querySelector(".note-body-input") : view.querySelector(".note-title-input");
-      window.requestAnimationFrame(() => { try { target?.focus(); } catch {} });
+      const target = note.title ? body : view.querySelector(".note-title-input");
+      window.requestAnimationFrame(() => { try { target?.focus(); autoGrow(); } catch {} });
     }
   }
 
@@ -5605,6 +5688,7 @@
     const groups = [
       { label: "Tools", items: [
         { key: "shopping", label: "Shopping List", icon: "wallet", color: "var(--green)" },
+        { key: "orders", label: "Order Tracking", icon: "package", color: "var(--cyan)" },
         { key: "bucket", label: "Bucket List", icon: "spark", color: "var(--purple)" }
       ]},
       { label: "App", items: [
@@ -5638,7 +5722,70 @@
     if (ui.moreView === "review") return renderWeeklyReview();
     if (ui.moreView === "settings") return renderSettings();
     if (ui.moreView === "bucket") return renderBucketList();
+    if (ui.moreView === "orders") return renderOrders();
     return renderShopping();
+  }
+
+  const ORDER_STATUSES = ["Ordered", "Shipped", "In transit", "Out for delivery", "Delivered"];
+
+  function orderFields() {
+    return [
+      { name: "name", label: "Item / order name", required: true },
+      { name: "provider", label: "Carrier / store", placeholder: "USPS · UPS · FedEx · Amazon…" },
+      { name: "trackingNumber", label: "Tracking number" },
+      { name: "status", label: "Status", type: "select", options: ORDER_STATUSES },
+      { name: "orderDate", label: "Order date", type: "date" },
+      { name: "eta", label: "Estimated arrival", type: "date" },
+      { name: "trackUrl", label: "Tracking link", type: "url", help: "Optional — paste the carrier's tracking URL to get a Track button." },
+      { name: "notes", label: "Notes", type: "textarea" }
+    ];
+  }
+
+  function renderOrderCard(order) {
+    const status = ORDER_STATUSES.includes(order.status) ? order.status : "Ordered";
+    const meta = [order.provider, order.trackingNumber ? `#${order.trackingNumber}` : "", order.eta ? `ETA ${formatDate(order.eta)}` : ""].filter(Boolean).join(" · ");
+    return `
+      <article class="order-card">
+        <div class="order-card-main">
+          <div class="order-card-top">
+            <span class="order-name">${escapeHtml(order.name || "Order")}</span>
+            <span class="order-status order-${slugKey(status)}">${escapeHtml(status)}</span>
+          </div>
+          ${meta ? `<div class="order-meta">${escapeHtml(meta)}</div>` : ""}
+          ${order.notes ? `<p class="tiny order-notes">${escapeHtml(order.notes)}</p>` : ""}
+        </div>
+        <div class="order-actions">
+          ${order.trackUrl ? `<a class="order-track" href="${escapeHtml(order.trackUrl)}" target="_blank" rel="noopener noreferrer">${icon("plane")}<span>Track</span></a>` : ""}
+          ${actionButton("edit-order", order.id, "Edit", "edit")}
+          ${actionButton("delete-order", order.id, "Delete", "trash")}
+        </div>
+      </article>
+    `;
+  }
+
+  function renderOrders() {
+    const orders = appData.orders || [];
+    const active = orders.filter((o) => o.status !== "Delivered");
+    const delivered = orders.filter((o) => o.status === "Delivered");
+    const sortByEta = (list) => [...list].sort((a, b) => String(a.eta || "9999").localeCompare(String(b.eta || "9999")));
+    return `
+      <section class="section">
+        <div class="section-header">
+          <div>
+            <h2>Order Tracking</h2>
+            <span class="tiny">${active.length} in progress · ${delivered.length} delivered</span>
+          </div>
+          ${actionButton("add-order", "", "Add order", "plus", "primary")}
+        </div>
+        ${orders.length ? "" : emptyState("Keep packages in one place — add an order with its carrier and tracking number.")}
+        ${active.length ? `<div class="order-list">${sortByEta(active).map(renderOrderCard).join("")}</div>` : ""}
+        ${delivered.length ? `
+          <details class="card finance-history">
+            <summary><span>Delivered</span><span class="tiny">${delivered.length}</span></summary>
+            <div class="details-body"><div class="order-list">${sortByEta(delivered).map(renderOrderCard).join("")}</div></div>
+          </details>` : ""}
+      </section>
+    `;
   }
 
   function renderBucketList() {
@@ -9216,6 +9363,18 @@
           rerender();
         }
         break;
+      case "add-order":
+      case "edit-order": {
+        const item = id ? findById(appData.orders, id) : { status: "Ordered" };
+        openEdit({ title: id ? "Edit order" : "Add order", fields: orderFields(), initial: item, onSubmit: (values) => upsert(appData.orders, id, values), deleteAction: id ? "delete-order" : null, deleteId: id });
+        break;
+      }
+      case "delete-order":
+        if (confirm("Delete this order?")) {
+          deleteById(appData.orders, id);
+          rerender();
+        }
+        break;
       case "add-bucket": {
         const input = document.getElementById("bucket-input");
         const text = (input?.value || "").trim();
@@ -9244,6 +9403,7 @@
         const note = makeItem({ title: "", body: "", folderId, color: "", pinned: false, updatedAt: nowIso() });
         appData.notes.items.push(note);
         ui.notesEditingId = note.id;
+        ui.noteEditMode = true; // new notes open straight into edit mode
         notesFocusPending = true;
         saveData();
         render();
@@ -9251,11 +9411,21 @@
       }
       case "open-note":
         ui.notesEditingId = id;
+        ui.noteEditMode = false; // open into the read view first
+        render();
+        break;
+      case "enter-note-edit":
+        ui.noteEditMode = true;
         notesFocusPending = true;
+        render();
+        break;
+      case "note-done-edit":
+        ui.noteEditMode = false;
         render();
         break;
       case "notes-back":
         ui.notesEditingId = "";
+        ui.noteEditMode = false;
         render();
         break;
       case "set-notes-folder":
