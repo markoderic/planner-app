@@ -91,7 +91,8 @@
       debts: [],
       investments: [],
       savings: [],
-      savingsGoals: []
+      savingsGoals: [],
+      budgets: []
     },
     school: {
       classes: [],
@@ -240,6 +241,7 @@
         habitDay: "today",
         notesFolderId: "all",
         notesSearch: "",
+        dashboardSearch: "",
         notesEditingId: "",
         travelFocus: "",
         travelStateFocus: "",
@@ -846,7 +848,8 @@
       pin: '<path d="M9 3h6l-1 6 3 3v2h-4v5l-1 2-1-2v-5H6v-2l3-3-1-6z" />',
       globe: '<circle cx="12" cy="12" r="9" /><path d="M3 12h18" /><ellipse cx="12" cy="12" rx="4" ry="9" />',
       activity: '<path d="M3 12h4l2.5 7 5-16 2.5 9h4" />',
-      search: '<circle cx="11" cy="11" r="7" /><path d="m20 20-3-3" />'
+      search: '<circle cx="11" cy="11" r="7" /><path d="m20 20-3-3" />',
+      repeat: '<path d="m17 2 4 4-4 4" /><path d="M3 11v-1a4 4 0 0 1 4-4h14" /><path d="m7 22-4-4 4-4" /><path d="M21 13v1a4 4 0 0 1-4 4H3" />'
     };
     return `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name] || icons.circle}</svg>`;
   }
@@ -1555,10 +1558,17 @@
     const sublineParts = [`${todayFocus.length} ${todayFocus.length === 1 ? "thing" : "things"} to do today`];
     if (nextEv) sublineParts.push(`next at ${formatTime(nextEv.start)}`);
 
+    const searchQuery = String(ui.dashboardSearch || "").trim();
+    const dashSearchBar = `
+      <div class="notes-search dash-search">
+        <span class="notes-search-ic">${icon("search")}</span>
+        <input type="search" class="notes-search-input" data-dash-search placeholder="Search tasks, notes, money…" value="${escapeHtml(ui.dashboardSearch || "")}" aria-label="Search everything">
+      </div>`;
     return `
       <div class="view dashboard-view">
         ${topbar("Today", formatLongDate(today()), actionButton("open-quick-add", "", "Quick add", "plus", "primary"))}
-
+        ${dashSearchBar}
+        ${searchQuery ? renderSearchResults(searchQuery) : `
         <section class="card panel dash-hero">
           <div class="dash-hero-top">
             <div class="dash-hero-text">
@@ -1619,7 +1629,59 @@
         </section>
 
         ${renderDashboardGoals()}
+        `}
       </div>
+    `;
+  }
+
+  const SEARCH_GROUPS = [
+    { type: "task", label: "Tasks", icon: "check", color: "var(--purple)" },
+    { type: "assignment", label: "Assignments", icon: "book", color: "var(--blue)" },
+    { type: "note", label: "Notes", icon: "note", color: "#ffd166" },
+    { type: "spending", label: "Spending", icon: "wallet", color: "var(--green)" },
+    { type: "income", label: "Income", icon: "wallet", color: "var(--green)" },
+    { type: "bill", label: "Bills", icon: "calendar", color: "var(--orange)" }
+  ];
+
+  // Search across tasks, assignments, notes, and money in one place.
+  function globalSearchResults(query) {
+    const q = query.toLowerCase();
+    const has = (...vals) => vals.some((v) => String(v || "").toLowerCase().includes(q));
+    const out = [];
+    appData.tasks.filter((t) => has(t.title, t.notes, t.category)).forEach((t) => out.push({ type: "task", id: t.id, title: t.title || "Task", sub: [t.category, t.dueDate ? formatDate(t.dueDate) : ""].filter(Boolean).join(" · "), done: !!t.completed }));
+    (appData.school.assignments || []).filter((a) => has(a.title, a.type)).forEach((a) => out.push({ type: "assignment", id: a.id, title: a.title || "Assignment", sub: [a.classId ? className(a.classId) : "", a.dueDate ? formatDate(a.dueDate) : ""].filter(Boolean).join(" · ") }));
+    (appData.notes.items || []).filter((n) => has(n.title, n.body)).forEach((n) => out.push({ type: "note", id: n.id, title: n.title || "Untitled note", sub: noteSnippet(n) }));
+    appData.finance.spending.filter((s) => has(s.note, s.category)).forEach((s) => out.push({ type: "spending", id: s.id, title: s.note || s.category || "Spending", sub: [formatCurrency(s.amount), s.date ? formatDate(s.date) : ""].filter(Boolean).join(" · ") }));
+    appData.finance.income.filter((i) => has(i.source, i.notes)).forEach((i) => out.push({ type: "income", id: i.id, title: i.source || "Income", sub: incomeDate(i) ? formatDate(incomeDate(i)) : "" }));
+    appData.finance.bills.filter((b) => has(b.name, b.category)).forEach((b) => out.push({ type: "bill", id: b.id, title: b.name || "Bill", sub: [formatCurrency(b.amount), b.category].filter(Boolean).join(" · ") }));
+    return out;
+  }
+
+  function renderSearchResults(query) {
+    const results = globalSearchResults(query);
+    if (!results.length) return `<section class="card panel">${emptyState(`No results for “${query}”.`)}</section>`;
+    return `
+      <section class="search-results">
+        ${SEARCH_GROUPS.map((g) => {
+          const rows = results.filter((r) => r.type === g.type);
+          if (!rows.length) return "";
+          return `
+            <div class="sec-head"><span class="sec-title">${g.label}</span><span class="sec-hint">${rows.length}</span></div>
+            <div class="search-group">
+              ${rows.map((r) => `
+                <button type="button" class="search-row" data-action="search-open" data-type="${escapeHtml(r.type)}" data-id="${escapeHtml(r.id)}">
+                  <span class="search-ic" style="--ic:${g.color}">${icon(g.icon)}</span>
+                  <span class="search-main">
+                    <span class="search-title ${r.done ? "is-done" : ""}">${escapeHtml(r.title)}</span>
+                    ${r.sub ? `<span class="search-sub">${escapeHtml(r.sub)}</span>` : ""}
+                  </span>
+                  <span class="search-go">${icon("chevron")}</span>
+                </button>
+              `).join("")}
+            </div>
+          `;
+        }).join("")}
+      </section>
     `;
   }
 
@@ -2039,6 +2101,41 @@
     return task.completedAt || task.dueDate || task.createdAt || "";
   }
 
+  const TASK_REPEAT_LABELS = { daily: "Daily", weekly: "Weekly", biweekly: "Every 2 weeks", monthly: "Monthly" };
+
+  function nextRecurrenceDate(dateStr, repeat) {
+    const d = parseDate(dateStr);
+    if (!d) return "";
+    if (repeat === "daily") return dateString(addDays(d, 1));
+    if (repeat === "weekly") return dateString(addDays(d, 7));
+    if (repeat === "biweekly") return dateString(addDays(d, 14));
+    if (repeat === "monthly") return dateString(addMonths(d, 1));
+    return "";
+  }
+
+  // When a repeating task is completed, leave the finished one in history and
+  // create the next occurrence on its next date. The guard prevents duplicates
+  // if the task is toggled complete more than once.
+  function maybeSpawnRecurringTask(item) {
+    if (!item || !item.repeat || !TASK_REPEAT_LABELS[item.repeat] || !item.dueDate || item.recurrenceSpawned) return;
+    const next = nextRecurrenceDate(item.dueDate, item.repeat);
+    if (!next) return;
+    item.recurrenceSpawned = true;
+    appData.tasks.push(makeItem({
+      title: item.title,
+      category: item.category || "",
+      dueDate: next,
+      startTime: item.startTime || "",
+      endTime: item.endTime || "",
+      classId: item.classId || "",
+      priority: item.priority || "",
+      color: item.color || "",
+      notes: item.notes || "",
+      repeat: item.repeat,
+      completed: false
+    }));
+  }
+
   function renderTaskItem(task) {
     const timeLabel = taskTimeLabel(task);
     const dateText = task.dueDate ? formatDate(task.dueDate) : (task.completed ? "" : "No date");
@@ -2050,7 +2147,7 @@
         <button type="button" class="tk-main" data-action="edit-task" data-id="${escapeHtml(task.id)}">
           <span class="tk-text">
             <span class="tk-title">${escapeHtml(task.title)}</span>
-            ${(task.category || metaBits) ? `<span class="tk-meta">${task.category ? `<span class="tk-cat">${escapeHtml(task.category)}</span>` : ""}${metaBits ? `<span>${escapeHtml(metaBits)}</span>` : ""}</span>` : ""}
+            ${(task.category || metaBits || TASK_REPEAT_LABELS[task.repeat]) ? `<span class="tk-meta">${task.category ? `<span class="tk-cat">${escapeHtml(task.category)}</span>` : ""}${TASK_REPEAT_LABELS[task.repeat] ? `<span class="tk-repeat">${icon("repeat")}${escapeHtml(TASK_REPEAT_LABELS[task.repeat])}</span>` : ""}${metaBits ? `<span>${escapeHtml(metaBits)}</span>` : ""}</span>` : ""}
           </span>
           <span class="tk-go"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></span>
         </button>
@@ -2158,6 +2255,23 @@
     return points;
   }
 
+  // Net worth = cash + investments − debt. We have a real cash history and can
+  // reconstruct debt from its payment history (debt was higher before payments);
+  // investment value has no history so it's held at its current value.
+  function financeNetWorthSeries(days, finance) {
+    const cash = financeBalanceSeries(days, finance.currentMoney);
+    const todayStr = today();
+    const invNow = finance.investmentValue || 0;
+    const debtNow = finance.totalDebt || 0;
+    const debtPayments = debtPaymentHistoryEntries()
+      .map((p) => ({ date: paymentHistoryDate(p), amt: Number(p.amount) || 0 }))
+      .filter((p) => p.date && p.date <= todayStr);
+    return cash.map((pt) => {
+      const paidAfter = debtPayments.reduce((s, p) => (p.date > pt.date ? s + p.amt : s), 0);
+      return { date: pt.date, value: pt.value + invNow - (debtNow + paidAfter) };
+    });
+  }
+
   // How many trailing days of history to chart for the selected finance span.
   function financeHistoryDays() {
     const span = ui.financeSpan;
@@ -2174,7 +2288,7 @@
 
   const FIN_CHART = { w: 300, h: 96, padTop: 12, padBottom: 16 };
 
-  function renderFinanceChart(points, color) {
+  function renderFinanceChart(points, color, gradId = "finChartFill") {
     if (!points || points.length < 2) return "";
     const { w, h, padTop, padBottom } = FIN_CHART;
     const vals = points.map((p) => p.value);
@@ -2188,15 +2302,15 @@
     const areaD = `M ${xAt(0).toFixed(2)},${(h - padBottom).toFixed(2)} L ${linePts.join(" L ")} L ${xAt(n - 1).toFixed(2)},${(h - padBottom).toFixed(2)} Z`;
     const data = points.map((p) => ({ v: Math.round(p.value * 100) / 100, d: p.date }));
     return `
-      <div class="fin-chart" data-fin-chart data-points="${escapeHtml(JSON.stringify(data))}" data-min="${min}" data-max="${max}" data-pad-top="${padTop}" data-pad-bottom="${padBottom}" data-vh="${h}">
+      <div class="fin-chart" data-fin-chart style="--chart-color:${color}" data-points="${escapeHtml(JSON.stringify(data))}" data-min="${min}" data-max="${max}" data-pad-top="${padTop}" data-pad-bottom="${padBottom}" data-vh="${h}">
         <svg class="fin-chart-svg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">
           <defs>
-            <linearGradient id="finChartFill" x1="0" y1="0" x2="0" y2="1">
+            <linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stop-color="${color}" stop-opacity="0.26"></stop>
               <stop offset="100%" stop-color="${color}" stop-opacity="0"></stop>
             </linearGradient>
           </defs>
-          <path class="fin-chart-area" d="${areaD}" fill="url(#finChartFill)"></path>
+          <path class="fin-chart-area" d="${areaD}" fill="url(#${gradId})"></path>
           <polyline class="fin-chart-line" points="${linePts.join(" ")}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"></polyline>
         </svg>
         <div class="fin-chart-guide" data-fin-guide hidden></div>
@@ -2208,7 +2322,10 @@
   }
 
   function setupFinanceChart() {
-    const chart = app.querySelector("[data-fin-chart]");
+    app.querySelectorAll("[data-fin-chart]").forEach(setupFinanceChartInstance);
+  }
+
+  function setupFinanceChartInstance(chart) {
     if (!chart) return;
     let data;
     try { data = JSON.parse(chart.dataset.points || "[]"); } catch { data = []; }
@@ -2328,7 +2445,25 @@
   }
 
   function renderAccounts(finance, safeFinance = finance, safetyRange = finance.range) {
+    const nwSeries = financeNetWorthSeries(financeHistoryDays(), finance);
+    let nwChart = "";
+    if (nwSeries.length >= 2) {
+      const first = nwSeries[0].value;
+      const last = nwSeries[nwSeries.length - 1].value;
+      const delta = last - first;
+      const dir = delta > 0.005 ? "up" : delta < -0.005 ? "down" : "flat";
+      const sign = delta > 0 ? "+" : delta < 0 ? "−" : "";
+      nwChart = `
+        <div class="sec-head"><span class="sec-title">Net worth over time</span><span class="sec-hint">last ${financeHistoryDays()} days</span></div>
+        <section class="card panel finance-hero">
+          <div class="fh-big fh-big-sm">${escapeHtml(formatCurrency(finance.netWorth))}</div>
+          <div class="fh-trend ${dir}">${dir === "up" ? "▲" : dir === "down" ? "▼" : "•"} ${sign}${escapeHtml(formatCurrency(Math.abs(delta)))} <span class="fh-trend-lab">cash + investments − debt</span></div>
+          ${renderFinanceChart(nwSeries, "var(--purple)", "finChartNw")}
+        </section>
+      `;
+    }
     return `
+      ${nwChart}
       <div class="metric-grid">
         ${metric("Available money", formatCurrency(finance.accountMoney), "Balances + income received − spending")}
         ${metric("Income received", formatCurrency(finance.postedIncome), "Added to your current money")}
@@ -2998,7 +3133,12 @@
     const unnecessaryTotal = Math.max(0, total - necessaryTotal);
     const cashDebitTotal = sum(entries.filter((entry) => !spendingUsesCredit(entry)), (entry) => entry.amount);
     const creditTotal = sum(entries.filter(spendingUsesCredit), (entry) => entry.amount);
-    const byCategory = groupTotals(entries, "category", (entry) => entry.amount);
+    // The category breakdown and budgets are month-to-date so they stay meaningful
+    // even when the selected span is a forward-looking budgeting window.
+    const monthRange = calculateDateRange("month");
+    const monthEntries = appData.finance.spending.filter((entry) => dateInRange(entry.date, monthRange));
+    const monthByCategory = groupTotals(monthEntries, "category", (entry) => entry.amount);
+    const monthTotal = sum(monthEntries, (entry) => entry.amount);
     return `
       <div class="metric-grid">
         ${metric("Spending today", formatCurrency(sum(appData.finance.spending.filter((entry) => entry.date === today()), (entry) => entry.amount)), "")}
@@ -3010,7 +3150,12 @@
         ${metric("Necessary spending", formatCurrency(necessaryTotal), "Needs in this range")}
         ${metric("Average daily", formatCurrency(total / daysBetween(range.start, range.end)), "Selected range")}
       </div>
-      ${renderBarChart(byCategory, total)}
+      <div class="sec-head"><span class="sec-title">By category</span><span class="sec-hint">This month</span></div>
+      <div class="card panel">${renderCategoryBreakdown(monthByCategory, monthTotal)}</div>
+
+      <div class="sec-head"><span class="sec-title">Monthly budgets</span>${actionButton("add-budget", "", "Add budget", "plus", "secondary")}</div>
+      ${renderSpendingBudgets()}
+
       <details class="card finance-history" open>
         <summary>
           <span>Transaction history</span>
@@ -3027,6 +3172,68 @@
         </div>
       </details>
     `;
+  }
+
+  const CATEGORY_COLORS = ["#4f8cff", "#47dc9a", "#ffae52", "#ff5c8a", "#9d6fff", "#36d3ff", "#2fd9c0", "#ffd166"];
+
+  // Colored stacked bar + legend showing where money went, by category.
+  function renderCategoryBreakdown(byCategory, total) {
+    const entries = Object.entries(byCategory || {}).sort((a, b) => b[1] - a[1]);
+    if (!entries.length || total <= 0) return emptyState("No spending in this range yet.");
+    return `
+      <div class="cat-breakdown">
+        <div class="cat-bar">
+          ${entries.map(([label, v], i) => `<span class="cat-bar-seg" style="width:${((v / total) * 100).toFixed(2)}%;background:${CATEGORY_COLORS[i % CATEGORY_COLORS.length]}" title="${escapeHtml(label || "Other")}"></span>`).join("")}
+        </div>
+        <div class="cat-legend">
+          ${entries.map(([label, v], i) => `
+            <div class="cat-leg-row">
+              <span class="cat-leg-dot" style="background:${CATEGORY_COLORS[i % CATEGORY_COLORS.length]}"></span>
+              <span class="cat-leg-name">${escapeHtml(label || "Other")}</span>
+              <span class="cat-leg-pct">${Math.round((v / total) * 100)}%</span>
+              <span class="cat-leg-amt">${escapeHtml(formatCurrency(v))}</span>
+            </div>
+          `).join("")}
+        </div>
+      </div>
+    `;
+  }
+
+  // Per-category monthly budgets: spent-this-month vs the set amount.
+  function renderSpendingBudgets() {
+    const budgets = appData.finance.budgets || [];
+    if (!budgets.length) {
+      return `<div class="card panel budget-empty">${emptyState("Set a monthly budget per category to see how much you have left to spend.")}<div class="budget-empty-action">${actionButton("add-budget", "", "Add budget", "plus", "secondary")}</div></div>`;
+    }
+    const monthRange = calculateDateRange("month");
+    const monthSpend = groupTotals(appData.finance.spending.filter((e) => dateInRange(e.date, monthRange)), "category", (e) => e.amount);
+    const monthLabel = new Intl.DateTimeFormat(undefined, { month: "long" }).format(new Date());
+    return `
+      <div class="budget-list">
+        ${budgets.map((b) => {
+          const spent = monthSpend[b.category] || 0;
+          const amt = Number(b.amount) || 0;
+          const p = amt ? (spent / amt) * 100 : 0;
+          const state = p > 100 ? "over" : p >= 80 ? "warn" : "ok";
+          const left = amt - spent;
+          return `
+            <button type="button" class="budget-row ${state}" data-action="edit-budget" data-id="${escapeHtml(b.id)}">
+              <div class="budget-top"><span class="budget-cat">${escapeHtml(b.category || "Category")}</span><span class="budget-amt">${escapeHtml(formatCurrency(spent))} / ${escapeHtml(formatCurrency(amt))}</span></div>
+              <div class="budget-track"><span style="width:${Math.min(100, Math.max(0, p)).toFixed(1)}%"></span></div>
+              <div class="budget-sub">${left >= 0 ? `${escapeHtml(formatCurrency(left))} left` : `${escapeHtml(formatCurrency(-left))} over`} · ${escapeHtml(monthLabel)}</div>
+            </button>
+          `;
+        }).join("")}
+      </div>
+    `;
+  }
+
+  function budgetFields(initial = {}) {
+    const cats = appData.settings.spendingCategories || [];
+    return [
+      { name: "category", label: "Category", type: "select", required: true, options: cats.map((c) => ({ value: c, label: c })), default: initial.category || cats[0] || "" },
+      { name: "amount", label: "Monthly budget", type: "number", step: "0.01", min: 0, required: true, default: initial.amount ?? "" }
+    ];
   }
 
   function renderSpendingItem(entry) {
@@ -6545,6 +6752,7 @@
     window.setTimeout(() => {
       item.completed = true;
       item.completedAt = nowIso();
+      maybeSpawnRecurringTask(item);
       saveData();
       render({ quiet: true });
     }, 300);
@@ -7260,6 +7468,7 @@
       { name: "title", label: "Title", required: true },
       { name: "category", label: "Category", type: "select", options: [{ value: "", label: "No category" }, ...appData.settings.taskCategories.map((category) => ({ value: category, label: category }))], default: initial.category || "" },
       { name: "dueDate", label: "Date", type: "date", default: initial.dueDate ?? today(), help: "Optional. Leave blank for an \"Anytime\" task with no timeframe; pick a date to sort it into Today / Upcoming / Overdue." },
+      { name: "repeat", label: "Repeat", type: "select", options: [{ value: "", label: "Don't repeat" }, { value: "daily", label: "Daily" }, { value: "weekly", label: "Weekly" }, { value: "biweekly", label: "Every 2 weeks" }, { value: "monthly", label: "Monthly" }], default: initial.repeat || "", help: "Needs a date. When you complete this task, the next one is created automatically on its next date." },
       { name: "startTime", label: "Start time", type: "time", default: initial.startTime || initial.reminderTime || "", help: "Optional. Add a time to place this on the calendar." },
       { name: "endTime", label: "End time", type: "time", default: initial.endTime || "", help: "Optional. Set with a start time for a scheduled block (e.g. a meeting)." },
       { name: "classId", label: "Class (optional)", type: "select", options: [{ value: "", label: "No class" }, ...appData.school.classes.map((klass) => ({ value: klass.id, label: klass.name || "Class" }))], default: initial.classId || "" },
@@ -7995,6 +8204,7 @@
         }
         item.completed = !item.completed;
         item.completedAt = item.completed ? nowIso() : "";
+        if (item.completed) maybeSpawnRecurringTask(item);
         recentCompletion = { id, complete: Boolean(item.completed) };
         rerender();
         window.setTimeout(() => {
@@ -8158,6 +8368,48 @@
           showToast("Savings entry deleted.");
         }
         break;
+      case "add-budget":
+      case "edit-budget": {
+        appData.finance.budgets = appData.finance.budgets || [];
+        const item = id ? findById(appData.finance.budgets, id) : {};
+        openEdit({
+          title: id ? "Edit budget" : "Add budget",
+          fields: budgetFields(item),
+          initial: item,
+          onSubmit: (values) => upsert(appData.finance.budgets, id, { ...values, amount: Number(values.amount) || 0 }),
+          deleteAction: id ? "delete-budget" : null,
+          deleteId: id
+        });
+        break;
+      }
+      case "delete-budget":
+        if (confirm("Delete this budget?")) {
+          deleteById(appData.finance.budgets, id);
+          rerender();
+          showToast("Budget deleted.");
+        }
+        break;
+      case "search-open": {
+        const type = button.dataset.type;
+        const sid = button.dataset.id;
+        ui.dashboardSearch = "";
+        if (type === "task") {
+          ui.activeTab = "tasks";
+        } else if (type === "assignment") {
+          ui.activeTab = "school";
+          ui.schoolView = "overview";
+        } else if (type === "note") {
+          ui.activeTab = "notes";
+          ui.notesEditingId = sid;
+        } else if (type === "spending" || type === "income" || type === "bill") {
+          ui.activeTab = "finance";
+          ui.financeSection = type === "spending" ? "spending" : type === "income" ? "income" : "bills";
+        }
+        saveUi();
+        window.scrollTo({ top: 0, behavior: "auto" });
+        render();
+        break;
+      }
       case "add-savings-goal":
       case "edit-savings-goal": {
         const item = id ? findById(appData.finance.savingsGoals, id) : {};
@@ -8756,6 +9008,16 @@
       const caret = target.selectionStart;
       render({ quiet: true });
       const again = app.querySelector("[data-notes-search]");
+      if (again) {
+        again.focus();
+        try { again.setSelectionRange(caret, caret); } catch {}
+      }
+    }
+    if (target.dataset?.dashSearch !== undefined) {
+      ui.dashboardSearch = target.value;
+      const caret = target.selectionStart;
+      render({ quiet: true });
+      const again = app.querySelector("[data-dash-search]");
       if (again) {
         again.focus();
         try { again.setSelectionRange(caret, caret); } catch {}

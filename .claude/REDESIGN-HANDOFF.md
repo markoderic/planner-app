@@ -56,7 +56,18 @@ The hero sparkline was replaced with a real interactive stock-style chart.
 - GOTCHA fixed: `.fin-chart-tip` sets `display:flex` which beat the `hidden` attribute → added `.fin-chart-tip[hidden]{display:none}`. Touch scroll handled via `touch-action:pan-y` on `.fin-chart`.
 - Old `financeBalancePoints`/`sparklineSvg` kept but no longer used by the hero.
 
-Current versions: styles v94, app v88, SW v111.
+## Feature additions (built 2026-06-24)
+- **Recurring tasks.** `taskFields` has a "Repeat" select (daily/weekly/biweekly/monthly). On completion (both `toggle-task` and `animateTaskCompletion` paths) `maybeSpawnRecurringTask(item)` creates the next occurrence (`nextRecurrenceDate`); `recurrenceSpawned` guard prevents dupes. Row shows a ↻ pill (`TASK_REPEAT_LABELS`, `.tk-repeat`, new `repeat` icon).
+- **Spending → By category.** `renderCategoryBreakdown(byCategory,total)` = colored stacked bar + legend (`CATEGORY_COLORS`). Uses **month-to-date** (`monthByCategory`) not the forward span, so it stays meaningful.
+- **Spending → Monthly budgets.** `appData.finance.budgets [{id,category,amount}]` (added to finance defaults). `renderSpendingBudgets()` shows spent-this-month vs amount with ok/warn/over states. `budgetFields`, handlers `add-budget`/`edit-budget`/`delete-budget`. `.budget-*` CSS.
+- **Net worth over time chart.** In Current money section (`renderAccounts`). `financeNetWorthSeries(days,finance)` = cash series + investments(flat, no history) − debt(reconstructed from payment history). Purple chart.
+- **Interactive finance chart now multi-instance.** `renderFinanceChart(points,color,gradId)`, `setupFinanceChart()` loops over all `[data-fin-chart]` via `setupFinanceChartInstance`; dot color from `--chart-color`.
+- **Global search (Dashboard).** `ui.dashboardSearch` + `.dash-search` box (reuses `.notes-search`), live filter via global input listener (focus/caret restore). `globalSearchResults(query)` searches tasks/assignments/notes/spending/income/bills; `renderSearchResults` groups them (`SEARCH_GROUPS`). `search-open` handler routes to the right tab/section (notes opens the note). When query non-empty the dashboard body is replaced by results.
+
+## iOS notifications (explained to user, NOT built)
+Web push on iOS needs: app installed to Home Screen (done) → permission prompt on a tap → service-worker `pushManager` subscription → a **backend/cron** to send pushes (app is currently client-side localStorage only). Pure local scheduled notifications aren't reliable on iOS web. Easiest no-backend win = in-app "due today/overdue" banner on the dashboard.
+
+Current versions: styles v97, app v92, SW v115.
 
 ## Collapse animation (already fixed — don't regress)
 `toggleDetails` in app.js animates a `.details-body` wrapped in a single `.dcl` inner via **WAAPI height** (460ms, `--ease-out`), collapsing to a true 0 (no padding residual, no fallback-timer pause). Don't go back to grid `fr` or JS-rAF height.

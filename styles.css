@@ -6006,6 +6006,8 @@ body.modal-open {
 .tk-meta { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 0.78rem; color: var(--muted); }
 .tk-meta > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tk-cat { flex: none; font-size: 0.66rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: rgba(157,111,255,.16); color: #c6b0ff; }
+.tk-repeat { flex: none; display: inline-flex; align-items: center; gap: 3px; font-size: 0.7rem; font-weight: 600; color: var(--subtle); }
+.tk-repeat .icon { width: 12px; height: 12px; }
 .tk-go { flex: none; color: var(--text-3, var(--subtle)); display: grid; place-items: center; }
 .tk-go .icon { width: 16px; height: 16px; }
 
@@ -6088,7 +6090,7 @@ body.modal-open {
 .fin-chart-line { transition: opacity 160ms ease; }
 
 .fin-chart-guide { position: absolute; top: 4px; bottom: 16px; width: 1px; margin-left: -0.5px; background: rgba(255, 255, 255, 0.28); pointer-events: none; }
-.fin-chart-dot { position: absolute; width: 11px; height: 11px; margin: -5.5px 0 0 -5.5px; border-radius: 999px; background: var(--green); box-shadow: 0 0 0 3px rgba(71, 220, 154, 0.25), 0 0 0 6px rgba(71, 220, 154, 0.12); pointer-events: none; }
+.fin-chart-dot { position: absolute; width: 11px; height: 11px; margin: -5.5px 0 0 -5.5px; border-radius: 999px; background: var(--chart-color, var(--green)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--chart-color, var(--green)) 25%, transparent), 0 0 0 6px color-mix(in srgb, var(--chart-color, var(--green)) 12%, transparent); pointer-events: none; }
 .fin-chart-tip { position: absolute; top: -2px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 6px 10px; border-radius: 10px; background: var(--elevated-2); border: 1px solid var(--line); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4); white-space: nowrap; pointer-events: none; z-index: 2; }
 .fin-chart-tip[hidden] { display: none; }
 .fin-chart-tip.pin-left { transform: translateX(-12px); }
@@ -6113,6 +6115,36 @@ body.modal-open {
 .fin-tab.active .fin-tab-num { opacity: 0.8; }
 
 .finance-section-body { display: grid; gap: 14px; animation: rise 280ms var(--ease-out); }
+
+.fh-big-sm { font-size: 1.7rem; }
+
+/* Spending · category breakdown */
+.cat-breakdown { display: grid; gap: 14px; }
+.cat-bar { display: flex; height: 12px; border-radius: 999px; overflow: hidden; background: rgba(255, 255, 255, 0.06); }
+.cat-bar-seg { height: 100%; }
+.cat-bar-seg:not(:last-child) { box-shadow: 1px 0 0 var(--bg); }
+.cat-legend { display: grid; gap: 9px; }
+.cat-leg-row { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto auto; align-items: center; gap: 9px; }
+.cat-leg-dot { width: 10px; height: 10px; border-radius: 999px; }
+.cat-leg-name { min-width: 0; font-size: 0.88rem; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cat-leg-pct { font-size: 0.78rem; color: var(--subtle); font-weight: 600; font-variant-numeric: tabular-nums; }
+.cat-leg-amt { font-size: 0.86rem; font-weight: 700; font-variant-numeric: tabular-nums; min-width: 64px; text-align: right; }
+
+/* Spending · per-category budgets */
+.budget-empty { display: grid; gap: 10px; }
+.budget-empty-action { display: flex; justify-content: center; }
+.budget-list { display: grid; gap: 10px; }
+.budget-row { display: grid; gap: 8px; padding: 14px; border-radius: var(--radius-lg); background: var(--elevated); border: 1px solid var(--line); text-align: left; color: inherit; cursor: pointer; transition: transform var(--dur-fast) var(--ease-spring), background var(--dur) var(--ease-out); }
+.budget-row:active { transform: scale(0.99); background: var(--elevated-2); }
+.budget-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.budget-cat { font-size: 0.96rem; font-weight: 700; letter-spacing: -0.01em; }
+.budget-amt { font-size: 0.84rem; font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
+.budget-track { height: 8px; border-radius: 999px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
+.budget-track > span { display: block; height: 100%; border-radius: 999px; background: var(--green); transition: width 760ms var(--ease-out); }
+.budget-row.warn .budget-track > span { background: var(--orange); }
+.budget-row.over .budget-track > span { background: #ff5c7a; }
+.budget-sub { font-size: 0.76rem; color: var(--subtle); font-weight: 600; }
+.budget-row.over .budget-sub { color: #ff9fb4; }
 
 /* ============ Nutrition (Health tab) · calorie ring + macros ============ */
 .nutri-hero { display: flex; align-items: center; gap: 18px; }
@@ -6157,6 +6189,22 @@ body.modal-open {
 .note-row-meta { margin-top: 2px; font-size: 0.74rem; color: var(--subtle); font-weight: 600; }
 
 .note-row .note-pin-btn { flex: none; align-self: flex-start; }
+
+/* ============ Global search (dashboard) ============ */
+.dash-search { margin-top: 2px; }
+.search-results { display: grid; gap: 6px; animation: rise 240ms var(--ease-out); }
+.search-group { display: flex; flex-direction: column; background: var(--elevated); border: 1px solid var(--line); border-radius: var(--radius-lg); overflow: hidden; margin-bottom: 8px; }
+.search-row { position: relative; display: grid; grid-template-columns: 34px minmax(0, 1fr) 18px; align-items: center; gap: 12px; padding: 12px 14px; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; transition: background var(--dur) var(--ease-out); }
+.search-row:active { background: var(--elevated-2); }
+.search-row + .search-row::before { content: ""; position: absolute; top: 0; left: 60px; right: 0; height: 1px; background: var(--hairline); }
+.search-ic { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; color: var(--ic); background: color-mix(in srgb, var(--ic) 17%, transparent); }
+.search-ic .icon { width: 17px; height: 17px; }
+.search-main { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.search-title { font-size: 0.94rem; font-weight: 600; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.search-title.is-done { color: var(--muted); text-decoration: line-through; text-decoration-color: rgba(255, 255, 255, 0.3); }
+.search-sub { font-size: 0.78rem; color: var(--subtle); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.search-go { display: grid; place-items: center; color: var(--subtle); }
+.search-go .icon { width: 16px; height: 16px; }
 
 /* ============ Travel · progress stat row ============ */
 .travel-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; }
