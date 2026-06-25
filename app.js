@@ -2360,16 +2360,28 @@
       const p = data[idx];
       const leftPct = (idx / (n - 1)) * 100;
       const yView = padTop + (1 - (p.v - min) / span) * (vh - padTop - padBottom);
-      const topPct = (yView / vh) * 100;
+      const dotX = (leftPct / 100) * rect.width;
+      const dotY = (yView / vh) * rect.height;
       guide.style.left = `${leftPct}%`;
       dot.style.left = `${leftPct}%`;
-      dot.style.top = `${topPct}%`;
+      dot.style.top = `${dotY}px`;
+      guide.hidden = dot.hidden = false;
+      // Reveal the tip first so it has measurable size, then place it in pixels —
+      // always clamped inside the chart, flipping below the point when it's near
+      // the top so it can never be cut off.
       tip.innerHTML = `<span class="fin-tip-v">${escapeHtml(formatCurrency(p.v))}</span><span class="fin-tip-d">${escapeHtml(formatLongDate(p.d))}</span>`;
-      tip.style.left = `${leftPct}%`;
-      // Keep the tooltip pinned to whichever edge it would otherwise overflow.
-      tip.classList.toggle("pin-left", leftPct < 22);
-      tip.classList.toggle("pin-right", leftPct > 78);
-      guide.hidden = dot.hidden = tip.hidden = false;
+      tip.classList.remove("pin-left", "pin-right");
+      tip.style.transform = "none";
+      tip.hidden = false;
+      const tipW = tip.offsetWidth;
+      const tipH = tip.offsetHeight;
+      let left = dotX - tipW / 2;
+      left = Math.max(4, Math.min(rect.width - tipW - 4, left));
+      let top = dotY - tipH - 14;
+      if (top < 4) top = dotY + 16;
+      top = Math.max(4, Math.min(rect.height - tipH - 4, top));
+      tip.style.left = `${left}px`;
+      tip.style.top = `${top}px`;
     };
     const hide = () => { guide.hidden = dot.hidden = tip.hidden = true; chart.classList.remove("is-scrubbing"); };
 

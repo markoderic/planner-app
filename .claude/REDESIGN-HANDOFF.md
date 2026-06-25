@@ -77,7 +77,11 @@ Web push on iOS needs: app installed to Home Screen (done) → permission prompt
 - **Assignments simplified.** Removed the status filter bar (`schoolAssignmentFilterToggle`, now unused) from the school Assignments section — kept the class filter. `renderAssignmentGroups` always builds Overdue / To do / Completed and hides any empty group (`if (!g.items.length) return ""`); in-progress is not its own group. Class-detail + school section both head "Assignments".
 - **Tasks hide empty groups.** `renderTaskGroup` returns "" when the group has no tasks (no more placeholder boxes); when all of Today/Overdue/Upcoming/Anytime/history are empty, one empty state shows instead.
 
-Current versions: styles v100, app v97, SW v121.
+- **No text selection.** `html,body { user-select:none; -webkit-touch-callout:none }`; inputs/textareas/selects/contenteditable re-enabled to `user-select:text`. Stops accidental highlight on long-press.
+- **Chart tooltip robustness.** `setupFinanceChartInstance` `show()` now positions the tip in **pixels**, clamped inside the chart rect, flipping below the point when near the top — never clipped. `.fin-chart-tip` CSS reset to `left/top:0` (JS drives position); removed pin-left/right + fixed top.
+- **Loader redesign.** `index.html` loader is now `.loader-ring` (conic-gradient blue→purple→pink arc, `loaderSpin` 1s) + pulsing `PLANNER` wordmark. Replaced the old `.loader-track` progress bar. NOTE: `index.html` is SW-cached (no `?v=`), so loader/markup changes need a SW cache bump (CACHE_NAME) + a reload or two to show; app.js/styles.css use `?v=` so they refresh immediately.
+
+Current versions: styles v101, app v98, SW v122.
 
 ## Collapse animation (already fixed — don't regress)
 `toggleDetails` in app.js animates a `.details-body` wrapped in a single `.dcl` inner via **WAAPI height** (460ms, `--ease-out`), collapsing to a true 0 (no padding residual, no fallback-timer pause). Don't go back to grid `fr` or JS-rAF height.
