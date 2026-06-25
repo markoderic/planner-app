@@ -1983,17 +1983,19 @@
           ${["All", ...appData.settings.taskCategories].map((cat) => `<button type="button" class="chip ${ui.taskFilter === cat ? "active" : ""}" data-action="set-task-filter" data-task-cat="${escapeHtml(cat)}">${escapeHtml(cat)}</button>`).join("")}
         </div>
         <div class="task-groups">
+          ${(todayTasks.length || overdue.length || upcoming.length || anytime.length || completedTasks.length)
+            ? `
           ${renderTaskGroup("Today", todayTasks)}
           ${renderTaskGroup("Overdue", overdue, { open: overdue.length > 0 })}
           ${renderTaskGroup("Upcoming", upcoming, { open: upcoming.length > 0 })}
-          ${renderTaskGroup("Anytime", anytime, { open: anytime.length > 0, emptyMessage: "Tasks with no date land here. Leave a task's date blank to keep it timeframe-free." })}
+          ${renderTaskGroup("Anytime", anytime, { open: anytime.length > 0 })}
           ${renderTaskGroup("Task history", completedTasks, {
             open: false,
             countLabel: `${completedTasks.length} complete`,
-            emptyMessage: "Completed custom tasks will appear here.",
             sortMode: "history",
             className: "task-history-group"
-          })}
+          })}`
+            : emptyState("No tasks yet. Tap “Add task” to create one.")}
         </div>
       </div>
     `;
@@ -2084,15 +2086,17 @@
   }
 
   function renderTaskGroup(title, tasks, options = {}) {
+    // Only render a group box when it actually has tasks — empty Today / Overdue /
+    // Anytime / history boxes are hidden instead of showing a placeholder.
+    if (!tasks.length) return "";
     const open = options.open ?? true;
     const countLabel = options.countLabel || String(tasks.length);
-    const emptyMessage = options.emptyMessage || `No ${title.toLowerCase()} tasks.`;
     const sortedTasks = options.sortMode === "history" ? sortTaskHistory(tasks) : sortByDate(tasks);
     return `
       <details class="card ${escapeHtml(options.className || "")}" ${open ? "open" : ""}>
         <summary><span>${escapeHtml(title)}</span><span class="tiny">${escapeHtml(countLabel)}</span></summary>
         <div class="details-body">
-          ${tasks.length ? `<div class="tk-list">${sortedTasks.map(renderTaskItem).join("")}</div>` : emptyState(emptyMessage)}
+          <div class="tk-list">${sortedTasks.map(renderTaskItem).join("")}</div>
         </div>
       </details>
     `;
@@ -3673,7 +3677,6 @@
         <div class="sec-head"><span class="sec-title">Assignments</span><span class="sec-actions">${actionButton("bulk-add-assignment", "", "Bulk add", "list", "secondary")}${actionButton("add-assignment", "", "Add", "plus", "secondary")}</span></div>
         <div class="assignment-tools">
           ${schoolClassFilterToggle()}
-          ${schoolAssignmentFilterToggle()}
         </div>
         <div class="assignment-list">
           ${renderAssignmentGroups(filterAssignmentsByClass(appData.school.assignments), range)}
@@ -3748,7 +3751,7 @@
 
         <section class="card panel section">
           <div class="section-header">
-            <h2>To do</h2>
+            <h2>Assignments</h2>
             <div class="actions">
               ${actionButton("bulk-add-assignment", classId, "Bulk add", "list", "secondary")}
               ${actionButton("add-assignment", "", "Add", "plus", "secondary")}
@@ -3960,30 +3963,22 @@
   }
 
   function renderAssignmentGroups(assignments, range, options = {}) {
-    const filter = options.ignoreStatusFilter ? "all" : (validSchoolAssignmentFilter(ui.schoolAssignmentFilter) ? ui.schoolAssignmentFilter : "active");
     const inRange = (a) => dateInRange(a.dueDate, range);
     const overdue = sortByDate(assignments.filter((a) => !assignmentComplete(a) && isBeforeToday(a.dueDate)));
-    // Not-started and in-progress assignments live in one "To do" list, so
-    // marking something in progress highlights it in place rather than yanking
-    // it into a separate bar.
-    let todo = sortByDate(assignments.filter((a) => !assignmentComplete(a) && !isBeforeToday(a.dueDate) && inRange(a)));
-    if (filter === "not-started") todo = todo.filter((a) => normalizedAssignmentStatus(a.status) === "not started");
-    if (filter === "in-progress") todo = todo.filter((a) => normalizedAssignmentStatus(a.status) === "in progress");
+    // Assigned and in-progress assignments share one "Assignments" list — marking
+    // something in progress highlights it in place instead of moving it to a bar.
+    // Overdue and Completed are their own boxes that only appear when they have items.
+    const todo = sortByDate(assignments.filter((a) => !assignmentComplete(a) && !isBeforeToday(a.dueDate) && inRange(a)));
     const completed = [...assignments.filter((a) => assignmentComplete(a) && inRange(a))].sort((a, b) => String(b.dueDate || "").localeCompare(String(a.dueDate || "")));
 
-    const show = {
-      overdue: ["active", "all", "overdue"].includes(filter),
-      todo: ["active", "all", "not-started", "in-progress"].includes(filter),
-      completed: ["all", "completed"].includes(filter)
-    };
     const groups = [
-      { key: "overdue", title: "Overdue", items: overdue, open: true, visible: show.overdue },
-      { key: "todo", title: "To do", items: todo, open: true, visible: show.todo },
-      { key: "completed", title: "Completed", items: completed, open: false, visible: show.completed }
-    ].filter((g) => g.visible);
+      { key: "overdue", title: "Overdue", items: overdue, open: true },
+      { key: "todo", title: "To do", items: todo, open: true },
+      { key: "completed", title: "Completed", items: completed, open: false }
+    ];
 
     const totalShown = groups.reduce((n, g) => n + g.items.length, 0);
-    if (!totalShown) return emptyState("No assignments match these filters.");
+    if (!totalShown) return emptyState("No assignments yet. Tap “Add” or “Bulk add” to create some.");
 
     return groups.map((g) => {
       if (!g.items.length) return "";
@@ -7178,6 +7173,116 @@
     }
   }
 
+  // Interactive bulk-add: fill one assignment's boxes, "Add to list" collapses it
+  // into a running summary, fresh boxes appear, repeat, then "Done" commits all.
+  function openBulkAssignmentModal(classId = "") {
+    const pending = [];
+    const typeOptions = [
+      { value: "assignment", label: "Assignment" },
+      { value: "quiz", label: "Quiz" },
+      { value: "exam", label: "Exam" },
+      { value: "project", label: "Project" },
+      { value: "homework", label: "Homework" },
+      { value: "", label: "No type" }
+    ];
+    const classOptions = [{ value: "", label: "No class" }, ...appData.school.classes.map((k) => ({ value: k.id, label: k.name || "Class" }))];
+    modalRoot.innerHTML = `
+      <div class="modal-backdrop">
+        <div class="modal" id="bulk-modal">
+          <div class="modal-header">
+            <h2 class="modal-title">Bulk add assignments</h2>
+            ${actionButton("close-modal", "", "Close", "x")}
+          </div>
+          <div class="modal-body">
+            <label class="field"><span>Class</span>
+              <select id="bulk-class">${classOptions.map((o) => `<option value="${escapeHtml(o.value)}" ${o.value === classId ? "selected" : ""}>${escapeHtml(o.label)}</option>`).join("")}</select>
+            </label>
+
+            <div class="bulk-summary" data-bulk-summary hidden></div>
+
+            <div class="bulk-entry">
+              <span class="bulk-entry-label" data-bulk-entry-label>New assignment</span>
+              <label class="field"><span>Title</span><input id="bulk-title" type="text" placeholder="e.g. Problem set 1" autocomplete="off"></label>
+              <div class="bulk-entry-grid">
+                <label class="field"><span>Due date</span><input id="bulk-date" type="date"></label>
+                <label class="field"><span>Time <em>(optional)</em></span><input id="bulk-time" type="time"></label>
+              </div>
+              <label class="field"><span>Type</span>
+                <select id="bulk-type">${typeOptions.map((o) => `<option value="${escapeHtml(o.value)}" ${o.value === "assignment" ? "selected" : ""}>${escapeHtml(o.label)}</option>`).join("")}</select>
+              </label>
+              <button type="button" class="secondary bulk-add-btn" data-bulk-add>${icon("plus")}<span>Add to list</span></button>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="secondary" data-action="close-modal">Cancel</button>
+            <button type="button" class="primary" data-bulk-done>Done <span class="bulk-done-count" data-bulk-count></span></button>
+          </div>
+        </div>
+      </div>
+    `;
+    lockBodyScroll();
+
+    const modal = modalRoot.querySelector("#bulk-modal");
+    const summaryEl = modal.querySelector("[data-bulk-summary]");
+    const titleEl = modal.querySelector("#bulk-title");
+    const dateEl = modal.querySelector("#bulk-date");
+    const timeEl = modal.querySelector("#bulk-time");
+    const typeEl = modal.querySelector("#bulk-type");
+    const countEl = modal.querySelector("[data-bulk-count]");
+    const labelEl = modal.querySelector("[data-bulk-entry-label]");
+
+    const typeLabel = (v) => (typeOptions.find((o) => o.value === v) || {}).label || "";
+    const renderSummary = () => {
+      countEl.textContent = pending.length ? `· add ${pending.length}` : "";
+      labelEl.textContent = pending.length ? `Assignment ${pending.length + 1}` : "New assignment";
+      if (!pending.length) { summaryEl.hidden = true; summaryEl.innerHTML = ""; return; }
+      summaryEl.hidden = false;
+      summaryEl.innerHTML = `
+        <span class="bulk-summary-head">${pending.length} added</span>
+        ${pending.map((a, i) => `
+          <div class="bulk-chip">
+            <span class="bulk-chip-main">
+              <span class="bulk-chip-title">${escapeHtml(a.title)}</span>
+              <span class="bulk-chip-meta">${[a.dueDate ? formatDate(a.dueDate) : "No date", a.dueTime ? formatTime(a.dueTime) : "", typeLabel(a.type)].filter(Boolean).join(" · ")}</span>
+            </span>
+            <button type="button" class="bulk-chip-del" data-bulk-remove="${i}" aria-label="Remove">${icon("x")}</button>
+          </div>`).join("")}
+      `;
+    };
+
+    const addCurrent = () => {
+      const title = titleEl.value.trim();
+      if (!title) { titleEl.focus(); modal.querySelector(".bulk-entry").classList.add("bulk-shake"); window.setTimeout(() => modal.querySelector(".bulk-entry")?.classList.remove("bulk-shake"), 400); return false; }
+      pending.push({ title, dueDate: dateEl.value || "", dueTime: timeEl.value || "", type: typeEl.value || "" });
+      // Keep date + type for the next one (semesters repeat); clear title + time.
+      titleEl.value = "";
+      timeEl.value = "";
+      renderSummary();
+      titleEl.focus();
+      return true;
+    };
+
+    modal.querySelector("[data-bulk-add]").addEventListener("click", addCurrent);
+    titleEl.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); addCurrent(); } });
+    summaryEl.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-bulk-remove]");
+      if (!btn) return;
+      pending.splice(Number(btn.dataset.bulkRemove), 1);
+      renderSummary();
+    });
+    modal.querySelector("[data-bulk-done]").addEventListener("click", () => {
+      // Include a filled-but-not-yet-added current entry so nothing is lost.
+      if (titleEl.value.trim()) addCurrent();
+      if (!pending.length) { closeModal(); return; }
+      const cls = modal.querySelector("#bulk-class").value || "";
+      pending.forEach((a) => appData.school.assignments.push(makeItem({ classId: cls, title: a.title, dueDate: a.dueDate, dueTime: a.dueTime, type: a.type, status: "not started" })));
+      saveData();
+      closeModal();
+      render({ quiet: true });
+    });
+    window.requestAnimationFrame(() => titleEl.focus());
+  }
+
   function openForm({ title, fields, initial = {}, submitLabel = "Save", onSubmit, livePreview = null, deleteAction = null, deleteId = "", deleteLabel = "Delete" }) {
     const showDelete = Boolean(deleteAction && deleteId);
     modalRoot.innerHTML = `
@@ -8792,15 +8897,7 @@
       }
       case "bulk-add-assignment": {
         const classId = id || button.dataset.id || "";
-        openEdit({
-          title: "Bulk add assignments",
-          submitLabel: "Add all",
-          fields: bulkAssignmentFields(classId),
-          onSubmit: (values) => {
-            const items = parseBulkAssignments(values.bulk, values.classId, values.type);
-            items.forEach((item) => appData.school.assignments.push(item));
-          }
-        });
+        openBulkAssignmentModal(classId);
         break;
       }
       case "delete-assignment":
