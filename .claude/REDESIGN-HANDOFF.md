@@ -104,10 +104,15 @@ Already has `self.skipWaiting()` (install) + `self.clients.claim()` (activate) A
 - **Progress fill animation.** School progress shapes mount EMPTY (arcs at full dash-offset / bars at width 0) with the real value in `data-target`; `setupSchoolProgress()` (post-render hook, school tab) sets them to target after a 40ms timeout so the CSS transition (`.sp-svg circle/path` stroke-dashoffset 760ms, `.prog-bar i` width 700ms) fills them up — on view, on completing an assignment, and on span change. (`progBar(...,animate)`, `progConcentric`/`progHalfConcentric` emit `data-target`.)
 - **Interactive swipe-back.** Replaced the threshold edge-swipe with a drag: touchstart at `clientX<=28` over a `.view` with a `.back-link`; touchmove translates the view with the finger (light resistance past full width) + slight fade, `preventDefault` once horizontal; touchend commits (glide off → `back.click()`) past 38% of width, else springs back with overshoot `cubic-bezier(0.34,1.56,0.64,1)`. Cancels on vertical scroll / open modal.
 
+- **Searchable city picker (trips).** New `datalist` field type in `renderField` (text input + `<datalist>`). `legFields` from/to use it (options = `travelCityDisplayList()` "City, Country"). `resolveTravelCity` now resolves display strings (via `travelCityDisplayMap`) and old "Country||City".
+- **Map pan/zoom responsiveness.** `setupTravelPanZoom`: removed the early `return` on `[data-action]` so a drag pans even when started on a country; tracks `moved` and swallows the follow-up click (`suppressClickUntil`) so dragging never opens a country; pinch exponent 0.55→0.9, wheel 0.93/1.08→0.85/1.18.
+- **Task checkmark centering.** `.tk-check`/`.hb-check` switched from `display:grid;place-items:center` to flexbox + `.icon{display:block}` (the inline-block icon wasn't centering). Now 5.5px on all sides.
+- **Money trend redesign (Dashboard).** `renderDashboardMoneyGraph` rebuilt as refined grouped bars (`.mt-*`): header net (`data-mt-net`, signed/colored) + a live readout (`data-mt-readout`) + 6 month columns (current highlighted) + legend. `setupMoneyTrend` (dashboard post-render hook) grows bars from 0 and wires pointer scrub (`data-mt-bars`, touch-action pan-y) to highlight a month and update the readout/net. Months embedded as `data-months` JSON. Old `.money-*` CSS now unused.
+
 ## Future direction (user goal, NOT started)
 User wants to eventually **rewrite the app in Swift** for the App Store and make **every single thing customizable**. Keep new features customizable/data-driven where reasonable.
 
-Current versions: styles v108, app v107, SW v131.
+Current versions: styles v110, app v109, SW v134.
 
 ## Collapse animation (already fixed — don't regress)
 `toggleDetails` in app.js animates a `.details-body` wrapped in a single `.dcl` inner via **WAAPI height** (460ms, `--ease-out`), collapsing to a true 0 (no padding residual, no fallback-timer pause). Don't go back to grid `fr` or JS-rAF height.

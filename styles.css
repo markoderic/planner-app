@@ -6034,9 +6034,9 @@ body.modal-open {
 .hb-row + .hb-row::before, .tk-row + .tk-row::before { content: ""; position: absolute; top: 0; left: 51px; right: 0; height: 1px; background: var(--hairline); }
 
 /* round / square complete control */
-.hb-check, .tk-check { flex: none; width: 26px; height: 26px; border-radius: 50%; border: 2px solid rgba(255,255,255,.22); background: transparent; display: grid; place-items: center; cursor: pointer; color: #06301f; transition: background var(--dur) var(--ease-out), border-color var(--dur) var(--ease-out), transform var(--dur-fast) var(--ease-spring); }
+.hb-check, .tk-check { flex: none; width: 26px; height: 26px; border-radius: 50%; border: 2px solid rgba(255,255,255,.22); background: transparent; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #06301f; transition: background var(--dur) var(--ease-out), border-color var(--dur) var(--ease-out), transform var(--dur-fast) var(--ease-spring); }
 .tk-check { border-radius: 9px; }
-.hb-check .icon, .tk-check .icon { width: 15px; height: 15px; }
+.hb-check .icon, .tk-check .icon { width: 15px; height: 15px; display: block; }
 .hb-check.done, .tk-check.done { background: var(--green); border-color: var(--green); }
 .hb-check:active, .tk-check:active { transform: scale(0.88); }
 
@@ -6329,6 +6329,30 @@ body.modal-open {
 @keyframes viewSlideBack { from { opacity: 0; transform: translateX(-26px); } to { opacity: 1; transform: none; } }
 .view-slide-fwd { animation: viewSlideFwd 320ms var(--ease-out); }
 .view-slide-back { animation: viewSlideBack 320ms var(--ease-out); }
+
+/* ============ Dashboard money trend (refined grouped bars, scrub-able) ============ */
+.money-trend-card { display: flex; flex-direction: column; gap: 12px; }
+.mt-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.mt-h { margin: 0; font-size: 1.02rem; font-weight: 760; letter-spacing: -0.01em; }
+.mt-sub { font-size: 0.76rem; color: var(--subtle); }
+.mt-net { font-size: 1.4rem; font-weight: 800; letter-spacing: -0.02em; color: var(--green); font-variant-numeric: tabular-nums; }
+.mt-net.neg { color: #ff7a98; }
+.mt-readout { min-height: 20px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; }
+.mt-ro-label { font-size: 0.84rem; font-weight: 700; }
+.mt-ro-stats { font-size: 0.8rem; color: var(--muted); }
+.mt-ro-stats b { font-weight: 800; font-variant-numeric: tabular-nums; }
+.mt-ro-stats .inc { color: var(--green); } .mt-ro-stats .sp { color: #ff7a98; } .mt-ro-stats .sv { color: var(--cyan); }
+.mt-bars { display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; height: 132px; padding-top: 6px; touch-action: pan-y; }
+.mt-col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 7px; height: 100%; border-radius: 10px; padding: 4px 0 0; transition: background var(--dur) var(--ease-out); }
+.mt-col.cur { background: rgba(255, 255, 255, 0.05); }
+.mt-set { display: flex; align-items: flex-end; justify-content: center; gap: 3px; height: 100%; width: 100%; }
+.mt-set i { width: 7px; border-radius: 4px 4px 0 0; transition: height 640ms var(--ease-out); }
+.mt-set .inc { background: var(--green); } .mt-set .sp { background: #ff5c8a; } .mt-set .sv { background: var(--cyan); }
+.mt-x { font-size: 0.66rem; color: var(--subtle); }
+.mt-col.cur .mt-x { color: var(--text); font-weight: 700; }
+.mt-legend { display: flex; gap: 14px; justify-content: center; }
+.mt-legend span { display: inline-flex; align-items: center; gap: 6px; font-size: 0.74rem; color: var(--muted); }
+.mt-legend i { width: 9px; height: 9px; border-radius: 3px; }
 .search-results { display: grid; gap: 6px; animation: rise 240ms var(--ease-out); }
 .search-group { display: flex; flex-direction: column; background: var(--elevated); border: 1px solid var(--line); border-radius: var(--radius-lg); overflow: hidden; margin-bottom: 8px; }
 .search-row { position: relative; display: grid; grid-template-columns: 34px minmax(0, 1fr) 18px; align-items: center; gap: 12px; padding: 12px 14px; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; transition: background var(--dur) var(--ease-out); }

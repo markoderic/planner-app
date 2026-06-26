@@ -1100,6 +1100,7 @@
     if (ui.activeTab === "calendar") scrollCalendarTimeline();
     if (ui.activeTab === "tasks") restoreHabitSwipe();
     if (ui.activeTab === "notes") setupNotesEditor();
+    if (ui.activeTab === "dashboard") setupMoneyTrend();
     if (ui.activeTab === "school") setupSchoolProgress();
     if (ui.activeTab === "travel") setupTravelMap();
     if (ui.activeTab === "finance") {
@@ -1762,41 +1763,66 @@
   }
 
   function renderDashboardMoneyGraph(months) {
-    const current = months[months.length - 1] || { income: 0, spending: 0, savings: 0, net: 0 };
+    const last = months.length - 1;
     const maxValue = Math.max(1, ...months.flatMap((month) => [month.income, month.spending, month.savings]));
+    const data = months.map((m) => ({ label: m.label, income: m.income, spending: m.spending, savings: m.savings, net: m.net }));
+    const cols = months.map((month, i) => `
+      <div class="mt-col ${i === last ? "cur" : ""}" data-i="${i}">
+        <div class="mt-set">
+          <i class="inc" data-h="${moneyBarHeight(month.income, maxValue)}%" style="height:0"></i>
+          <i class="sp" data-h="${moneyBarHeight(month.spending, maxValue)}%" style="height:0"></i>
+          <i class="sv" data-h="${moneyBarHeight(month.savings, maxValue)}%" style="height:0"></i>
+        </div>
+        <span class="mt-x">${escapeHtml(month.label)}</span>
+      </div>`).join("");
     return `
-      <section class="card panel section money-trend-card">
-        <div class="section-header">
-          <div>
-            <h2>Money trend</h2>
-            <span class="tiny">Monthly income, spending, and savings</span>
-          </div>
-          <span class="money-net ${current.net >= 0 ? "positive" : "negative"}">${formatCompactCurrency(current.net)}</span>
+      <section class="card panel money-trend-card" data-money-trend data-months="${escapeHtml(JSON.stringify(data))}">
+        <div class="mt-head">
+          <div><h2 class="mt-h">Money trend</h2><span class="mt-sub">Hold a month for details</span></div>
+          <span class="mt-net" data-mt-net></span>
         </div>
-        <div class="money-trend-summary">
-          <span><b>${formatCompactCurrency(current.income)}</b> income</span>
-          <span><b>${formatCompactCurrency(current.spending)}</b> spent</span>
-          <span><b>${formatCompactCurrency(current.savings)}</b> saved</span>
-        </div>
-        <div class="money-trend-chart" aria-label="Six month money trend">
-          ${months.map((month) => `
-            <div class="money-month">
-              <div class="money-bars">
-                <span class="income" title="Income ${formatCurrency(month.income)}" style="--level:${moneyBarHeight(month.income, maxValue)}%"></span>
-                <span class="spending" title="Spending ${formatCurrency(month.spending)}" style="--level:${moneyBarHeight(month.spending, maxValue)}%"></span>
-                <span class="savings" title="Savings ${formatCurrency(month.savings)}" style="--level:${moneyBarHeight(month.savings, maxValue)}%"></span>
-              </div>
-              <span>${escapeHtml(month.label)}</span>
-            </div>
-          `).join("")}
-        </div>
-        <div class="money-legend">
-          <span><i class="income"></i>Income</span>
-          <span><i class="spending"></i>Spending</span>
-          <span><i class="savings"></i>Savings</span>
+        <div class="mt-readout" data-mt-readout></div>
+        <div class="mt-bars" data-mt-bars>${cols}</div>
+        <div class="mt-legend">
+          <span><i style="background:var(--green)"></i>Income</span>
+          <span><i style="background:#ff5c8a"></i>Spent</span>
+          <span><i style="background:var(--cyan)"></i>Saved</span>
         </div>
       </section>
     `;
+  }
+
+  function setupMoneyTrend() {
+    const card = app.querySelector("[data-money-trend]");
+    if (!card) return;
+    let months;
+    try { months = JSON.parse(card.dataset.months || "[]"); } catch { months = []; }
+    if (!months.length) return;
+    const bars = card.querySelector("[data-mt-bars]");
+    const readout = card.querySelector("[data-mt-readout]");
+    const netEl = card.querySelector("[data-mt-net]");
+    const cols = [...card.querySelectorAll(".mt-col")];
+    // Grow the bars up from 0.
+    window.setTimeout(() => card.querySelectorAll(".mt-set i[data-h]").forEach((i) => { i.style.height = i.dataset.h; }), 40);
+    const signed = (n) => `${n > 0 ? "+" : ""}${formatCompactCurrency(n)}`;
+    const update = (idx) => {
+      const i = Math.max(0, Math.min(months.length - 1, idx));
+      cols.forEach((c, n) => c.classList.toggle("cur", n === i));
+      const m = months[i];
+      if (readout) readout.innerHTML = `<span class="mt-ro-label">${escapeHtml(m.label)}</span><span class="mt-ro-stats"><b class="inc">${formatCompactCurrency(m.income)}</b> in · <b class="sp">${formatCompactCurrency(m.spending)}</b> out · <b class="sv">${formatCompactCurrency(m.savings)}</b> saved</span>`;
+      if (netEl) { netEl.textContent = signed(m.net); netEl.classList.toggle("neg", m.net < 0); }
+    };
+    update(months.length - 1);
+    const colFromX = (clientX) => {
+      const r = bars.getBoundingClientRect();
+      return Math.round(((clientX - r.left) / Math.max(1, r.width)) * (months.length - 1));
+    };
+    bars.addEventListener("pointerdown", (e) => { card.classList.add("mt-scrub"); try { bars.setPointerCapture(e.pointerId); } catch {} update(colFromX(e.clientX)); });
+    bars.addEventListener("pointermove", (e) => { if (e.pointerType === "mouse" || card.classList.contains("mt-scrub")) update(colFromX(e.clientX)); });
+    const end = () => card.classList.remove("mt-scrub");
+    bars.addEventListener("pointerup", end);
+    bars.addEventListener("pointercancel", end);
+    bars.addEventListener("pointerleave", (e) => { if (e.pointerType === "mouse") { end(); update(months.length - 1); } });
   }
 
   function moneyBarHeight(value, maxValue) {
@@ -5383,10 +5409,30 @@
     return [{ value: "", label: "Select a city…" }, ...travelCityIndex().map((c) => ({ value: `${c.country}||${c.name}`, label: `${c.name}, ${c.country}` }))];
   }
 
+  let travelCityByDisplay = null;
+  function travelCityDisplayMap() {
+    if (travelCityByDisplay) return travelCityByDisplay;
+    travelCityByDisplay = {};
+    travelCityIndex().forEach((c) => { travelCityByDisplay[`${c.name}, ${c.country}`] = c; });
+    return travelCityByDisplay;
+  }
+  function travelCityDisplayList() {
+    return travelCityIndex().map((c) => `${c.name}, ${c.country}`);
+  }
   function resolveTravelCity(value) {
     if (!value) return null;
-    const [country, name] = String(value).split("||");
-    const found = travelCityIndex().find((c) => c.country === country && c.name === name);
+    const v = String(value).trim();
+    // Searchable text input gives "City, Country"; old select gave "Country||City".
+    let found = travelCityDisplayMap()[v];
+    if (!found && v.includes("||")) {
+      const [country, name] = v.split("||");
+      found = travelCityIndex().find((c) => c.country === country && c.name === name);
+    }
+    if (!found) {
+      const lower = v.toLowerCase();
+      found = travelCityIndex().find((c) => `${c.name}, ${c.country}`.toLowerCase() === lower) ||
+        travelCityIndex().find((c) => c.name.toLowerCase() === lower);
+    }
     return found ? { name: found.name, country: found.country, x: found.x, y: found.y } : null;
   }
 
@@ -5421,9 +5467,10 @@
   }
 
   function legFields(initial = {}) {
+    const list = travelCityDisplayList();
     return [
-      { name: "from", label: "From", type: "select", options: travelCityOptions(), default: initial.from ? `${initial.from.country}||${initial.from.name}` : "" },
-      { name: "to", label: "To", type: "select", options: travelCityOptions(), default: initial.to ? `${initial.to.country}||${initial.to.name}` : "" },
+      { name: "from", label: "From", type: "datalist", options: list, placeholder: "Search a city…", default: initial.from ? `${initial.from.name}, ${initial.from.country}` : "" },
+      { name: "to", label: "To", type: "datalist", options: list, placeholder: "Search a city…", default: initial.to ? `${initial.to.name}, ${initial.to.country}` : "" },
       { name: "roundTrip", label: "Round trip (count the return miles too)", type: "checkbox", default: initial.roundTrip !== false }
     ];
   }
@@ -5651,15 +5698,19 @@
       const vb = travelGetVB(svg);
       return { x: vb.x + ((clientX - r.left) / r.width) * vb.w, y: vb.y + ((clientY - r.top) / r.height) * vb.h };
     };
+    let moved = false;
+    let suppressClickUntil = 0;
     svg.addEventListener("pointerdown", (e) => {
-      if (e.target.closest("[data-action]") && pointers.size === 0) return; // let taps through
+      // Always start a drag — even on a country — so the whole map pans. A real
+      // tap (no movement) still opens the country via the click below.
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       try { svg.setPointerCapture(e.pointerId); } catch {}
-      if (pointers.size === 1) { const vb = travelGetVB(svg); panStart = { px: e.clientX, py: e.clientY, vb }; }
+      if (pointers.size === 1) { moved = false; const vb = travelGetVB(svg); panStart = { px: e.clientX, py: e.clientY, vb }; }
       if (pointers.size === 2) {
         const pts = [...pointers.values()];
         pinchStart = { dist: Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y), vb: travelGetVB(svg), mid: toSvg((pts[0].x + pts[1].x) / 2, (pts[0].y + pts[1].y) / 2) };
         panStart = null;
+        moved = true;
       }
     });
     svg.addEventListener("pointermove", (e) => {
@@ -5668,14 +5719,15 @@
       if (pointers.size === 2 && pinchStart) {
         const pts = [...pointers.values()];
         const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
-        // Dampen so a small finger movement doesn't zoom dramatically.
-        const factor = Math.pow(pinchStart.dist / Math.max(1, dist), 0.55);
+        // Closer to 1:1 so pinch feels direct/responsive (was heavily dampened).
+        const factor = Math.pow(pinchStart.dist / Math.max(1, dist), 0.9);
         const nw = pinchStart.vb.w * factor;
         const nh = pinchStart.vb.h * factor;
         const nx = pinchStart.mid.x - (pinchStart.mid.x - pinchStart.vb.x) * (nw / pinchStart.vb.w);
         const ny = pinchStart.mid.y - (pinchStart.mid.y - pinchStart.vb.y) * (nh / pinchStart.vb.h);
         travelSetVB(svg, { x: nx, y: ny, w: nw, h: nh });
       } else if (pointers.size === 1 && panStart) {
+        if (!moved && Math.hypot(e.clientX - panStart.px, e.clientY - panStart.py) > 5) moved = true;
         const r = svg.getBoundingClientRect();
         const dx = (e.clientX - panStart.px) / r.width * panStart.vb.w;
         const dy = (e.clientY - panStart.py) / r.height * panStart.vb.h;
@@ -5685,14 +5737,18 @@
     const end = (e) => {
       pointers.delete(e.pointerId);
       if (pointers.size < 2) pinchStart = null;
-      if (pointers.size === 0) panStart = null;
+      if (pointers.size === 0) { panStart = null; if (moved) suppressClickUntil = Date.now() + 350; }
     };
     svg.addEventListener("pointerup", end);
     svg.addEventListener("pointercancel", end);
+    // Swallow the click that follows a pan/pinch so dragging never opens a country.
+    svg.addEventListener("click", (e) => {
+      if (Date.now() < suppressClickUntil) { e.stopPropagation(); e.preventDefault(); }
+    }, true);
     svg.addEventListener("wheel", (e) => {
       e.preventDefault();
       const f = toSvg(e.clientX, e.clientY);
-      travelZoomBy(e.deltaY > 0 ? 1.08 : 0.93, f.x, f.y);
+      travelZoomBy(e.deltaY > 0 ? 1.18 : 0.85, f.x, f.y);
     }, { passive: false });
   }
 
@@ -7853,6 +7909,11 @@
           ${field.help ? `<span class="tiny">${escapeHtml(field.help)}</span>` : ""}
         </fieldset>
       `;
+    }
+    if (field.type === "datalist") {
+      const listId = `dl-${escapeHtml(field.name)}`;
+      const opts = field.options.map((o) => `<option value="${escapeHtml(typeof o === "string" ? o : o.value)}"></option>`).join("");
+      return `${label}<input type="text" ${common} ${placeholder} value="${escapeHtml(value ?? field.default ?? "")}" list="${listId}" autocomplete="off" autocorrect="off" spellcheck="false"><datalist id="${listId}">${opts}</datalist>${field.help ? `<span class="tiny">${escapeHtml(field.help)}</span>` : ""}</label>`;
     }
     if (field.type === "textarea") {
       return `${label}<textarea ${common} ${placeholder}>${escapeHtml(value ?? field.default ?? "")}</textarea>${field.help ? `<span class="tiny">${escapeHtml(field.help)}</span>` : ""}</label>`;
