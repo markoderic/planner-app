@@ -101,10 +101,13 @@ Already has `self.skipWaiting()` (install) + `self.clients.claim()` (activate) A
 - **Class↔School slide.** `open-class`→`.view-slide-fwd`, `back-to-school`→`.view-slide-back` (CSS keyframes). Works with edge-swipe too.
 - **School overview redesigned (final).** Stat tiles DROPPED. Just `renderSchoolProgress(range)`: shape = `appData.settings.schoolProgressShape` (halfring DEFAULT | ring | bar). ring/halfring = concentric (one ring per class, Better-Canvas style, `progConcentric`/`progHalfConcentric`, stroke 10/gap 5) with centered "% · done/total · Complete" label; bar = per-class labeled bars. Legend OFF by default (`schoolProgressLegend`) + counts toggle (`schoolProgressLegendCounts`) in Settings. Rings animate via `.sp-svg circle/path { transition: stroke-dashoffset }`. (`schoolProgressMode` setting removed; old `set-school-progress-mode` handler now dead/unused.)
 
+- **Progress fill animation.** School progress shapes mount EMPTY (arcs at full dash-offset / bars at width 0) with the real value in `data-target`; `setupSchoolProgress()` (post-render hook, school tab) sets them to target after a 40ms timeout so the CSS transition (`.sp-svg circle/path` stroke-dashoffset 760ms, `.prog-bar i` width 700ms) fills them up — on view, on completing an assignment, and on span change. (`progBar(...,animate)`, `progConcentric`/`progHalfConcentric` emit `data-target`.)
+- **Interactive swipe-back.** Replaced the threshold edge-swipe with a drag: touchstart at `clientX<=28` over a `.view` with a `.back-link`; touchmove translates the view with the finger (light resistance past full width) + slight fade, `preventDefault` once horizontal; touchend commits (glide off → `back.click()`) past 38% of width, else springs back with overshoot `cubic-bezier(0.34,1.56,0.64,1)`. Cancels on vertical scroll / open modal.
+
 ## Future direction (user goal, NOT started)
 User wants to eventually **rewrite the app in Swift** for the App Store and make **every single thing customizable**. Keep new features customizable/data-driven where reasonable.
 
-Current versions: styles v107, app v104, SW v128.
+Current versions: styles v108, app v107, SW v131.
 
 ## Collapse animation (already fixed — don't regress)
 `toggleDetails` in app.js animates a `.details-body` wrapped in a single `.dcl` inner via **WAAPI height** (460ms, `--ease-out`), collapsing to a true 0 (no padding residual, no fallback-timer pause). Don't go back to grid `fr` or JS-rAF height.

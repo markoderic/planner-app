@@ -1100,6 +1100,7 @@
     if (ui.activeTab === "calendar") scrollCalendarTimeline();
     if (ui.activeTab === "tasks") restoreHabitSwipe();
     if (ui.activeTab === "notes") setupNotesEditor();
+    if (ui.activeTab === "school") setupSchoolProgress();
     if (ui.activeTab === "travel") setupTravelMap();
     if (ui.activeTab === "finance") {
       setupFinanceHistory();
@@ -3724,6 +3725,23 @@
     return renderSchoolOverview();
   }
 
+  // Animate the progress shape (rings / half-rings / bars) from its previous
+  // value to the new one — fills up on first view, and tweens when an assignment
+  // is completed or the span changes.
+  function setupSchoolProgress() {
+    const stage = app.querySelector(".school-progress");
+    if (!stage) return;
+    const targets = stage.querySelectorAll("[data-target]");
+    if (!targets.length) return;
+    // Mounted empty; a beat later, ease each shape to its real value (fills up).
+    window.setTimeout(() => {
+      targets.forEach((el) => {
+        if (el.tagName.toLowerCase() === "i") el.style.width = el.dataset.target;
+        else el.setAttribute("stroke-dashoffset", el.dataset.target);
+      });
+    }, 40);
+  }
+
   // ---------- School assignment-progress overview (customizable) ----------
   function schoolProgressData(range) {
     const all = appData.school.assignments.filter((a) => dateInRange(a.dueDate, range));
@@ -3740,8 +3758,10 @@
     return { overall, perClass };
   }
 
-  function progBar(percent, color, h = 10) {
-    return `<span class="prog-bar" style="height:${h}px"><i style="width:${clamp(percent)}%;background:${color}"></i></span>`;
+  function progBar(percent, color, h = 10, animate = false) {
+    // When animated, mount at 0 and fill to the target via CSS transition.
+    const w = clamp(percent);
+    return `<span class="prog-bar" style="height:${h}px"><i ${animate ? `data-target="${w}%" style="width:0;background:${color}"` : `style="width:${w}%;background:${color}"`}></i></span>`;
   }
   function progRing(percent, color, size = 64, stroke = 8) {
     const p = clamp(percent);
@@ -3772,7 +3792,7 @@
       if (r < stroke) return;
       const c = 2 * Math.PI * r;
       const off = (c * (1 - clamp(it.percent) / 100)).toFixed(1);
-      inner += `<circle cx="${cx}" cy="${cx}" r="${r}" fill="none" stroke="rgba(255,255,255,.06)" stroke-width="${stroke}"/><circle cx="${cx}" cy="${cx}" r="${r}" fill="none" stroke="${it.color}" stroke-width="${stroke}" stroke-linecap="round" stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${off}" transform="rotate(-90 ${cx} ${cx})"/>`;
+      inner += `<circle cx="${cx}" cy="${cx}" r="${r}" fill="none" stroke="rgba(255,255,255,.06)" stroke-width="${stroke}"/><circle cx="${cx}" cy="${cx}" r="${r}" fill="none" stroke="${it.color}" stroke-width="${stroke}" stroke-linecap="round" stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${c.toFixed(1)}" data-target="${off}" transform="rotate(-90 ${cx} ${cx})"/>`;
     });
     return `<svg class="sp-svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" aria-hidden="true">${inner}</svg>`;
   }
@@ -3789,7 +3809,7 @@
       const len = Math.PI * r;
       const off = (len * (1 - clamp(it.percent) / 100)).toFixed(1);
       const d = `M ${(cx - r).toFixed(1)} ${cy} A ${r} ${r} 0 0 1 ${(cx + r).toFixed(1)} ${cy}`;
-      inner += `<path d="${d}" fill="none" stroke="rgba(255,255,255,.06)" stroke-width="${stroke}" stroke-linecap="round"/><path d="${d}" fill="none" stroke="${it.color}" stroke-width="${stroke}" stroke-linecap="round" stroke-dasharray="${len.toFixed(1)}" stroke-dashoffset="${off}"/>`;
+      inner += `<path d="${d}" fill="none" stroke="rgba(255,255,255,.06)" stroke-width="${stroke}" stroke-linecap="round"/><path d="${d}" fill="none" stroke="${it.color}" stroke-width="${stroke}" stroke-linecap="round" stroke-dasharray="${len.toFixed(1)}" stroke-dashoffset="${len.toFixed(1)}" data-target="${off}"/>`;
     });
     const h = Math.ceil(cy + stroke / 2 + 2);
     return `<svg class="sp-svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true">${inner}</svg>`;
@@ -3819,7 +3839,7 @@
 
     if (shape === "bar") {
       // Per-class labeled bars (no rings).
-      body = `<div class="sp-bars">${classes.map((c) => `<div class="sp-barrow"><span class="sp-bn">${escapeHtml(c.name)}</span>${progBar(c.percent, c.color, 9)}<span class="sp-bv">${c.completed}/${c.total}</span></div>`).join("")}</div>`;
+      body = `<div class="sp-bars">${classes.map((c) => `<div class="sp-barrow"><span class="sp-bn">${escapeHtml(c.name)}</span>${progBar(c.percent, c.color, 9, true)}<span class="sp-bv">${c.completed}/${c.total}</span></div>`).join("")}</div>`;
     } else if (shape === "halfring") {
       body = `<div class="sp-ring-stage sp-ring-stage-half">${progHalfConcentric(classes)}<div class="sp-half-center"><b>${o.percent}%</b><s>${o.completed} / ${o.total} complete</s></div></div>`;
     } else {
@@ -9835,26 +9855,65 @@
     if (event.touches && event.touches.length > 1) event.preventDefault();
   }, { passive: false });
 
-  // Edge-swipe back: a drag in from the very left edge fires the on-screen back
-  // button (class detail, note editor, travel country) — alongside the button.
-  let edgeSwipe = null;
+  // Interactive edge-swipe back: drag in from the left edge and the whole page
+  // follows your finger; past ~38% of the width it commits and navigates back,
+  // otherwise it springs back like drawing and releasing a bow.
+  let backDrag = null;
   document.addEventListener("touchstart", (event) => {
-    if (event.touches.length !== 1) { edgeSwipe = null; return; }
+    backDrag = null;
+    if (event.touches.length !== 1) return;
     const t = event.touches[0];
-    if (t.clientX > 26) { edgeSwipe = null; return; }
-    if (modalRoot.querySelector(".modal-backdrop")) { edgeSwipe = null; return; }
+    if (t.clientX > 28) return;
+    if (modalRoot.querySelector(".modal-backdrop")) return;
     const back = app.querySelector(".back-link");
-    edgeSwipe = back ? { x: t.clientX, y: t.clientY, back, fired: false } : null;
+    const view = app.querySelector(".view");
+    if (!back || !view) return;
+    backDrag = { startX: t.clientX, startY: t.clientY, curX: 0, back, view, active: false, w: window.innerWidth || 375 };
   }, { passive: true });
   document.addEventListener("touchmove", (event) => {
-    if (!edgeSwipe || edgeSwipe.fired || event.touches.length !== 1) return;
+    if (!backDrag || event.touches.length !== 1) return;
     const t = event.touches[0];
-    if (t.clientX - edgeSwipe.x > 64 && Math.abs(t.clientY - edgeSwipe.y) < 44) {
-      edgeSwipe.fired = true;
-      edgeSwipe.back.click();
+    const dx = t.clientX - backDrag.startX;
+    const dy = t.clientY - backDrag.startY;
+    if (!backDrag.active) {
+      if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 12) { backDrag = null; return; }
+      if (dx > 8) {
+        backDrag.active = true;
+        backDrag.view.style.transition = "none";
+        backDrag.view.style.willChange = "transform";
+      } else return;
+    }
+    event.preventDefault();
+    // Light resistance so it feels elastic rather than 1:1.
+    const x = Math.max(0, dx);
+    backDrag.curX = x;
+    const eased = x < backDrag.w ? x : backDrag.w + (x - backDrag.w) * 0.2;
+    backDrag.view.style.transform = `translateX(${eased}px)`;
+    backDrag.view.style.opacity = `${(1 - Math.min(0.3, x / backDrag.w * 0.6)).toFixed(3)}`;
+  }, { passive: false });
+  document.addEventListener("touchend", () => {
+    if (!backDrag || !backDrag.active) { backDrag = null; return; }
+    const { view, back, curX, w } = backDrag;
+    backDrag = null;
+    if (curX >= w * 0.38) {
+      // Commit: glide the page off to the right, then navigate.
+      view.style.transition = "transform 200ms cubic-bezier(0.3,0.7,0.2,1), opacity 200ms ease";
+      view.style.transform = `translateX(${w}px)`;
+      view.style.opacity = "0";
+      window.setTimeout(() => back.click(), 170);
+    } else {
+      // Spring back into place with a slight overshoot.
+      view.style.transition = "transform 420ms cubic-bezier(0.34,1.56,0.64,1), opacity 260ms ease";
+      view.style.transform = "translateX(0)";
+      view.style.opacity = "1";
+      window.setTimeout(() => {
+        view.style.transition = "";
+        view.style.willChange = "";
+        view.style.transform = "";
+        view.style.opacity = "";
+      }, 440);
     }
   }, { passive: true });
-  document.addEventListener("touchend", () => { edgeSwipe = null; }, { passive: true });
 
   // Long-press a note to get an Edit / Delete action sheet.
   let notePressTimer = null;
