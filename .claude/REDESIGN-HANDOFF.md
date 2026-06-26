@@ -95,7 +95,16 @@ Already has `self.skipWaiting()` (install) + `self.clients.claim()` (activate) A
 - **Chart scrubbing reliability.** `.fin-chart-hit` now `inset:-8px 0` + `touch-action:none` → scrub works touching anywhere in the chart (not just on the line), no accidental page scroll; mouse hover still shows it. (Tooltip px-clamping from before keeps it always visible.)
 - **Order Tracking tool (More · Tools).** `appData.orders[]`, `ui.moreView==="orders"`. `renderOrders`/`renderOrderCard`, `orderFields` (name, carrier/store, tracking #, status [Ordered→Delivered], order date, ETA, optional tracking URL → Track button, notes). Handlers `add/edit/delete-order`. Delivered collapse into a `<details>`. `package` icon added. `.order-*` CSS (status color chips).
 
-Current versions: styles v105, app v102, SW v126.
+- **Bill paid now subtracts from balance (bug fix).** `calculateFinance` adds `postedPaidBills` (sum of `bills.filter(b=>b.paid)` amounts) and subtracts it from `accountMoney`/`currentMoney`. `financeBalanceSeries` also pushes paid bills as dated negative flows so the chart matches.
+- **Finance graph really animates now.** CSS `transition: d` doesn't animate the SVG `d` *attribute*; replaced with a JS rAF tween in `setupFinanceChartInstance` (interpolates the 64 y-values prev→new over 520ms, easeOutCubic, `finChartPrevYs`/`finChartAnims`). Chart line is `<path>` with fixed 64 samples (`resampleSeries`) so spans morph.
+- **Chart scrubbing** `.fin-chart-hit` `inset:-8px 0` + `touch-action:none` (works touching anywhere).
+- **Class↔School slide.** `open-class`→`.view-slide-fwd`, `back-to-school`→`.view-slide-back` (CSS keyframes). Works with edge-swipe too.
+- **School overview redesigned (final).** Stat tiles DROPPED. Just `renderSchoolProgress(range)`: shape = `appData.settings.schoolProgressShape` (halfring DEFAULT | ring | bar). ring/halfring = concentric (one ring per class, Better-Canvas style, `progConcentric`/`progHalfConcentric`, stroke 10/gap 5) with centered "% · done/total · Complete" label; bar = per-class labeled bars. Legend OFF by default (`schoolProgressLegend`) + counts toggle (`schoolProgressLegendCounts`) in Settings. Rings animate via `.sp-svg circle/path { transition: stroke-dashoffset }`. (`schoolProgressMode` setting removed; old `set-school-progress-mode` handler now dead/unused.)
+
+## Future direction (user goal, NOT started)
+User wants to eventually **rewrite the app in Swift** for the App Store and make **every single thing customizable**. Keep new features customizable/data-driven where reasonable.
+
+Current versions: styles v107, app v104, SW v128.
 
 ## Collapse animation (already fixed — don't regress)
 `toggleDetails` in app.js animates a `.details-body` wrapped in a single `.dcl` inner via **WAAPI height** (460ms, `--ease-out`), collapsing to a true 0 (no padding residual, no fallback-timer pause). Don't go back to grid `fr` or JS-rAF height.

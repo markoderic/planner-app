@@ -48,8 +48,9 @@
     weeklyReview: true,
     nutrition: true,
     gymDetails: true,
-    schoolProgressShape: "bar",
-    schoolProgressMode: "class",
+    schoolProgressShape: "halfring",
+    schoolProgressLegend: false,
+    schoolProgressLegendCounts: true,
     tax: {
       autoOhio: true,
       annualGrossIncome: 0,
@@ -2260,6 +2261,9 @@
       const d = paymentHistoryDate(p);
       if (d && d <= todayStr) flows.push({ date: d, amt: -(Number(p.amount) || 0) });
     });
+    appData.finance.bills.forEach((b) => {
+      if (b.paid && b.dueDate && b.dueDate <= todayStr) flows.push({ date: b.dueDate, amt: -(Number(b.amount) || 0) });
+    });
     const points = [];
     for (let i = 0; i < n; i++) {
       const d = dateString(addDays(parseDate(todayStr), -(n - 1 - i)));
@@ -2301,9 +2305,10 @@
   }
 
   const FIN_CHART = { w: 300, h: 96, padTop: 12, padBottom: 16, samples: 64 };
-  // Remember each chart's last path so a span change morphs the line instead of
-  // teleporting (keyed by gradient id: current-money vs net-worth).
-  const finChartPrevD = {};
+  // Remember each chart's last y-positions so a span change morphs the line
+  // instead of teleporting (keyed by gradient id: current-money vs net-worth).
+  const finChartPrevYs = {};
+  const finChartAnims = {};
 
   // Resample a series to a fixed number of points so every span has the same
   // path-command count — that's what lets the SVG `d` smoothly interpolate.
@@ -2332,12 +2337,13 @@
     const n = points.length;
     const xAt = (i) => (i / (n - 1)) * w;
     const yAt = (v) => padTop + (1 - (v - min) / span) * (h - padTop - padBottom);
-    const linePts = points.map((p, i) => `${xAt(i).toFixed(2)},${yAt(p.value).toFixed(2)}`);
+    const ys = points.map((p) => Math.round(yAt(p.value) * 100) / 100);
+    const linePts = points.map((p, i) => `${xAt(i).toFixed(2)},${ys[i].toFixed(2)}`);
     const lineD = `M ${linePts.join(" L ")}`;
     const areaD = `M ${xAt(0).toFixed(2)},${(h - padBottom).toFixed(2)} L ${linePts.join(" L ")} L ${xAt(n - 1).toFixed(2)},${(h - padBottom).toFixed(2)} Z`;
     const data = points.map((p) => ({ v: Math.round(p.value * 100) / 100, d: p.date }));
     return `
-      <div class="fin-chart" data-fin-chart data-grad-id="${gradId}" style="--chart-color:${color}" data-points="${escapeHtml(JSON.stringify(data))}" data-min="${min}" data-max="${max}" data-pad-top="${padTop}" data-pad-bottom="${padBottom}" data-vh="${h}">
+      <div class="fin-chart" data-fin-chart data-grad-id="${gradId}" style="--chart-color:${color}" data-points="${escapeHtml(JSON.stringify(data))}" data-ys="${escapeHtml(JSON.stringify(ys))}" data-min="${min}" data-max="${max}" data-pad-top="${padTop}" data-pad-bottom="${padBottom}" data-vh="${h}">
         <svg class="fin-chart-svg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">
           <defs>
             <linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">
@@ -2367,28 +2373,37 @@
     const n = data.length;
     if (n < 2) return;
 
-    // Morph the line/area from the previous span's shape to the new one.
+    // Morph the line/area from the previous span's shape to the new one with a
+    // real rAF tween (CSS can't transition the SVG `d` attribute reliably).
     const gradId = chart.dataset.gradId || "finChartFill";
     const lineEl = chart.querySelector(".fin-chart-line");
     const areaEl = chart.querySelector(".fin-chart-area");
-    if (lineEl && areaEl) {
-      const targetLine = lineEl.getAttribute("d");
-      const targetArea = areaEl.getAttribute("d");
-      const prev = finChartPrevD[gradId];
-      if (prev && prev.line && prev.line !== targetLine) {
-        lineEl.style.transition = "none";
-        areaEl.style.transition = "none";
-        lineEl.setAttribute("d", prev.line);
-        areaEl.setAttribute("d", prev.area);
-        void chart.offsetWidth; // reflow so the next change animates from prev
-        window.requestAnimationFrame(() => {
-          lineEl.style.transition = "";
-          areaEl.style.transition = "";
-          lineEl.setAttribute("d", targetLine);
-          areaEl.setAttribute("d", targetArea);
-        });
+    let newYs;
+    try { newYs = JSON.parse(chart.dataset.ys || "[]"); } catch { newYs = []; }
+    if (lineEl && areaEl && newYs.length) {
+      const W = FIN_CHART.w;
+      const baseY = FIN_CHART.h - Number(chart.dataset.padBottom);
+      const N = newYs.length;
+      const xs = (i) => ((i / (N - 1)) * W).toFixed(2);
+      const buildLine = (ys) => "M " + ys.map((y, i) => `${xs(i)},${y.toFixed(2)}`).join(" L ");
+      const buildArea = (ys) => `M ${xs(0)},${baseY.toFixed(2)} L ` + ys.map((y, i) => `${xs(i)},${y.toFixed(2)}`).join(" L ") + ` L ${xs(N - 1)},${baseY.toFixed(2)} Z`;
+      const prev = finChartPrevYs[gradId];
+      if (finChartAnims[gradId]) cancelAnimationFrame(finChartAnims[gradId]);
+      if (prev && prev.length === N) {
+        const start = performance.now();
+        const dur = 520;
+        const ease = (t) => 1 - Math.pow(1 - t, 3);
+        const tick = (now) => {
+          const t = Math.min(1, (now - start) / dur);
+          const e = ease(t);
+          const cur = newYs.map((y, i) => prev[i] + (y - prev[i]) * e);
+          lineEl.setAttribute("d", buildLine(cur));
+          areaEl.setAttribute("d", buildArea(cur));
+          if (t < 1) finChartAnims[gradId] = requestAnimationFrame(tick);
+        };
+        finChartAnims[gradId] = requestAnimationFrame(tick);
       }
-      finChartPrevD[gradId] = { line: targetLine, area: targetArea };
+      finChartPrevYs[gradId] = newYs;
     }
     const min = Number(chart.dataset.min);
     const max = Number(chart.dataset.max);
@@ -3747,9 +3762,9 @@
     const d = `M ${(stroke / 2).toFixed(1)} ${cy} A ${r} ${r} 0 0 1 ${(w - stroke / 2).toFixed(1)} ${cy}`;
     return `<svg class="prog-half" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true"><path d="${d}" fill="none" stroke="rgba(255,255,255,.1)" stroke-width="${stroke}" stroke-linecap="round"/><path d="${d}" fill="none" stroke="${color}" stroke-width="${stroke}" stroke-linecap="round" stroke-dasharray="${len.toFixed(1)}" stroke-dashoffset="${off}"/></svg>`;
   }
-  function progConcentric(items, size = 110) {
-    const stroke = 7;
-    const gap = 4.5;
+  function progConcentric(items, size = 188) {
+    const stroke = 10;
+    const gap = 5;
     const cx = size / 2;
     let inner = "";
     items.forEach((it, i) => {
@@ -3757,29 +3772,27 @@
       if (r < stroke) return;
       const c = 2 * Math.PI * r;
       const off = (c * (1 - clamp(it.percent) / 100)).toFixed(1);
-      inner += `<circle cx="${cx}" cy="${cx}" r="${r}" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="${stroke}"/><circle cx="${cx}" cy="${cx}" r="${r}" fill="none" stroke="${it.color}" stroke-width="${stroke}" stroke-linecap="round" stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${off}" transform="rotate(-90 ${cx} ${cx})"/>`;
+      inner += `<circle cx="${cx}" cy="${cx}" r="${r}" fill="none" stroke="rgba(255,255,255,.06)" stroke-width="${stroke}"/><circle cx="${cx}" cy="${cx}" r="${r}" fill="none" stroke="${it.color}" stroke-width="${stroke}" stroke-linecap="round" stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${off}" transform="rotate(-90 ${cx} ${cx})"/>`;
     });
-    return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" aria-hidden="true">${inner}</svg>`;
+    return `<svg class="sp-svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" aria-hidden="true">${inner}</svg>`;
   }
-  function progHalfConcentric(items, w = 150) {
-    const stroke = 8;
+  function progHalfConcentric(items, w = 220) {
+    const stroke = 10;
     const gap = 5;
     const cx = w / 2;
-    let maxR = 0;
+    const pad = stroke / 2 + 2;
+    const cy = w / 2; // baseline so the semicircle fills the top half
     let inner = "";
     items.forEach((it, i) => {
-      const r = (w - stroke) / 2 - i * (stroke + gap);
+      const r = cx - pad - i * (stroke + gap);
       if (r < stroke) return;
-      maxR = Math.max(maxR, r);
-      const cy = (w - stroke) / 2 + stroke / 2;
       const len = Math.PI * r;
       const off = (len * (1 - clamp(it.percent) / 100)).toFixed(1);
       const d = `M ${(cx - r).toFixed(1)} ${cy} A ${r} ${r} 0 0 1 ${(cx + r).toFixed(1)} ${cy}`;
-      inner += `<path d="${d}" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="${stroke}" stroke-linecap="round"/><path d="${d}" fill="none" stroke="${it.color}" stroke-width="${stroke}" stroke-linecap="round" stroke-dasharray="${len.toFixed(1)}" stroke-dashoffset="${off}"/>`;
+      inner += `<path d="${d}" fill="none" stroke="rgba(255,255,255,.06)" stroke-width="${stroke}" stroke-linecap="round"/><path d="${d}" fill="none" stroke="${it.color}" stroke-width="${stroke}" stroke-linecap="round" stroke-dasharray="${len.toFixed(1)}" stroke-dashoffset="${off}"/>`;
     });
-    const cy = (w - stroke) / 2 + stroke / 2;
-    const h = Math.ceil(cy + stroke / 2);
-    return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true">${inner}</svg>`;
+    const h = Math.ceil(cy + stroke / 2 + 2);
+    return `<svg class="sp-svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true">${inner}</svg>`;
   }
   function progStacked(perClass, total) {
     const segs = perClass.map((c) => {
@@ -3788,41 +3801,31 @@
     }).join("");
     return `<span class="prog-bar prog-stacked" style="height:12px">${segs}</span>`;
   }
-  function progLegend(perClass) {
-    return `<div class="sp-legend">${perClass.map((c) => `<span class="sp-leg"><i style="background:${c.color}"></i>${escapeHtml(c.name)} <b>${c.completed}/${c.total}</b></span>`).join("")}</div>`;
+  function progLegend(perClass, withCounts) {
+    return `<div class="sp-legend">${perClass.map((c) => `<span class="sp-leg"><i style="background:${c.color}"></i>${escapeHtml(c.name)}${withCounts ? ` <b>${c.completed}/${c.total}</b>` : ""}</span>`).join("")}</div>`;
   }
 
   function renderSchoolProgress(range) {
-    const shape = ["bar", "ring", "halfring"].includes(appData.settings.schoolProgressShape) ? appData.settings.schoolProgressShape : "bar";
-    const mode = ["class", "combined", "overall"].includes(appData.settings.schoolProgressMode) ? appData.settings.schoolProgressMode : "class";
+    const shape = ["bar", "ring", "halfring"].includes(appData.settings.schoolProgressShape) ? appData.settings.schoolProgressShape : "halfring";
     const data = schoolProgressData(range);
     const o = data.overall;
     if (!o.total) {
       return `<section class="card panel school-progress">${emptyState("No assignments in this time span. Add some or widen the range.")}</section>`;
     }
-    const accent = "var(--accent)";
-    const head = `<div class="sp-head"><span class="sp-title">Assignments · ${escapeHtml(range.label || "")}</span><span class="sp-overall">${o.completed}/${o.total} · ${o.percent}%</span></div>`;
-    const classes = data.perClass;
+    const classes = data.perClass.length ? data.perClass : [{ id: "", name: "All", color: "var(--accent)", completed: o.completed, total: o.total, percent: o.percent }];
+    const legend = appData.settings.schoolProgressLegend ? progLegend(classes, appData.settings.schoolProgressLegendCounts !== false) : "";
+    const centerLabel = `<div class="sp-ring-center"><b>${o.percent}%</b><s>${o.completed} / ${o.total}</s><u>Complete</u></div>`;
     let body = "";
 
-    if (mode === "overall" || !classes.length) {
-      if (shape === "ring") body = `<div class="sp-center">${progRing(o.percent, accent, 104, 11)}<span class="sp-center-val">${o.percent}%</span></div>`;
-      else if (shape === "halfring") body = `<div class="sp-center sp-center-half">${progHalf(o.percent, accent, 168, 13)}<span class="sp-half-val">${o.percent}%</span></div>`;
-      else body = progBar(o.percent, accent, 12);
-    } else if (mode === "combined") {
-      if (shape === "ring") body = `<div class="sp-combined">${progConcentric(classes)}${progLegend(classes)}</div>`;
-      else if (shape === "halfring") body = `<div class="sp-combined">${progHalfConcentric(classes)}${progLegend(classes)}</div>`;
-      else body = `${progStacked(classes, o.total)}${progLegend(classes)}`;
-    } else { // per class (separate)
-      if (shape === "ring") {
-        body = `<div class="sp-cells">${classes.map((c) => `<div class="sp-cell"><div class="sp-cell-ring">${progRing(c.percent, c.color, 60, 6)}<span class="sp-cell-pct">${c.percent}%</span></div><span class="sp-cell-name">${escapeHtml(c.name)}</span></div>`).join("")}</div>`;
-      } else if (shape === "halfring") {
-        body = `<div class="sp-cells">${classes.map((c) => `<div class="sp-cell"><div class="sp-cell-half">${progHalf(c.percent, c.color, 96, 9)}<span class="sp-cell-half-pct">${c.percent}%</span></div><span class="sp-cell-name">${escapeHtml(c.name)}</span></div>`).join("")}</div>`;
-      } else {
-        body = classes.map((c) => `<div class="sp-barrow"><span class="sp-bn">${escapeHtml(c.name)}</span>${progBar(c.percent, c.color, 9)}<span class="sp-bv">${c.completed}/${c.total}</span></div>`).join("");
-      }
+    if (shape === "bar") {
+      // Per-class labeled bars (no rings).
+      body = `<div class="sp-bars">${classes.map((c) => `<div class="sp-barrow"><span class="sp-bn">${escapeHtml(c.name)}</span>${progBar(c.percent, c.color, 9)}<span class="sp-bv">${c.completed}/${c.total}</span></div>`).join("")}</div>`;
+    } else if (shape === "halfring") {
+      body = `<div class="sp-ring-stage sp-ring-stage-half">${progHalfConcentric(classes)}<div class="sp-half-center"><b>${o.percent}%</b><s>${o.completed} / ${o.total} complete</s></div></div>`;
+    } else {
+      body = `<div class="sp-ring-stage">${progConcentric(classes, 188)}${centerLabel}</div>`;
     }
-    return `<section class="card panel school-progress">${head}${body}</section>`;
+    return `<section class="card panel school-progress${shape === "bar" ? " school-progress-bars" : " school-progress-ring"}">${body}${legend}</section>`;
   }
 
   function renderSchoolOverview() {
@@ -6457,15 +6460,13 @@
 
         <div class="card panel section">
           <h3>School progress</h3>
-          <span class="tiny">The assignment progress overview at the top of the School tab.</span>
+          <span class="tiny">The assignment progress at the top of the School tab.</span>
           <label class="field"><span>Shape</span></label>
           <div class="segmented">
-            ${[["bar", "Bar"], ["ring", "Ring"], ["halfring", "Half-ring"]].map(([v, l]) => `<button type="button" class="${appData.settings.schoolProgressShape === v ? "active" : ""}" data-action="set-school-progress-shape" data-shape="${v}">${l}</button>`).join("")}
+            ${[["halfring", "Half-ring"], ["ring", "Rings"], ["bar", "Bars"]].map(([v, l]) => `<button type="button" class="${(appData.settings.schoolProgressShape || "halfring") === v ? "active" : ""}" data-action="set-school-progress-shape" data-shape="${v}">${l}</button>`).join("")}
           </div>
-          <label class="field"><span>Group by</span></label>
-          <div class="segmented">
-            ${[["class", "Per class"], ["combined", "Combined"], ["overall", "Overall"]].map(([v, l]) => `<button type="button" class="${appData.settings.schoolProgressMode === v ? "active" : ""}" data-action="set-school-progress-mode" data-mode="${v}">${l}</button>`).join("")}
-          </div>
+          <label class="checkbox-row"><input type="checkbox" data-setting="schoolProgressLegend" ${appData.settings.schoolProgressLegend ? "checked" : ""}> Show class legend</label>
+          <label class="checkbox-row"><input type="checkbox" data-setting="schoolProgressLegendCounts" ${appData.settings.schoolProgressLegendCounts !== false ? "checked" : ""}> Legend shows assignment counts</label>
         </div>
 
         <div class="card panel section">
@@ -6680,6 +6681,8 @@
     const futureCashSpendingEntries = cashSpendingEntries.filter((entry) => entry.date > today());
     const billOccurrences = appData.finance.bills.flatMap((bill) => billOccurrencesInRange(bill, range)).sort((a, b) => a.date.localeCompare(b.date));
     const billsDue = sum(billOccurrences.filter((bill) => !bill.paid), (bill) => bill.amount);
+    // A bill marked paid has left your account, so it lowers current money.
+    const postedPaidBills = sum(appData.finance.bills.filter((bill) => bill.paid), (bill) => Number(bill.amount) || 0);
     const debtPaymentOccurrences = appData.finance.debts.flatMap((debt) => debtPaymentOccurrencesInRange(debt, range)).sort((a, b) => a.date.localeCompare(b.date));
     const debtPayments = sum(debtPaymentOccurrences, (payment) => payment.amount);
     const totalDebt = sum(appData.finance.debts, (debt) => debt.balance);
@@ -6687,7 +6690,7 @@
     const investmentValue = sum(appData.finance.investments, investmentCurrentValue);
     const investmentGain = investmentValue - invested;
     const shopping = shoppingStats().remainingTotal;
-    const accountMoney = rawAccountMoney + postedIncome + postedSavings - postedAccountOutflows;
+    const accountMoney = rawAccountMoney + postedIncome + postedSavings - postedAccountOutflows - postedPaidBills;
     const currentMoney = accountMoney;
     const futureCashSpending = sum(futureCashSpendingEntries, (entry) => entry.amount);
     // Posted income is already in currentMoney, so the forecast only adds income still to come.
@@ -8591,13 +8594,17 @@
       ui.schoolView = "class";
       ui.calendarSelectedDate = "";
       window.scrollTo({ top: 0, behavior: "auto" });
-      return render();
+      render();
+      app.querySelector(".view")?.classList.add("view-slide-fwd");
+      return;
     }
     if (action === "back-to-school") {
       ui.schoolView = "overview";
       ui.calendarSelectedDate = "";
       window.scrollTo({ top: 0, behavior: "auto" });
-      return render();
+      render();
+      app.querySelector(".view")?.classList.add("view-slide-back");
+      return;
     }
     if (action === "school-calendar-prev" || action === "school-calendar-next") {
       // The school calendar card is always a month grid; its arrows step the
