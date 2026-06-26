@@ -109,10 +109,12 @@ Already has `self.skipWaiting()` (install) + `self.clients.claim()` (activate) A
 - **Task checkmark centering.** `.tk-check`/`.hb-check` switched from `display:grid;place-items:center` to flexbox + `.icon{display:block}` (the inline-block icon wasn't centering). Now 5.5px on all sides.
 - **Money trend redesign (Dashboard).** `renderDashboardMoneyGraph` rebuilt as refined grouped bars (`.mt-*`): header net (`data-mt-net`, signed/colored) + a live readout (`data-mt-readout`) + 6 month columns (current highlighted) + legend. `setupMoneyTrend` (dashboard post-render hook) grows bars from 0 and wires pointer scrub (`data-mt-bars`, touch-action pan-y) to highlight a month and update the readout/net. Months embedded as `data-months` JSON. Old `.money-*` CSS now unused.
 
+- **Swipe-back now REVEALS the destination.** The edge-swipe drags `#app` (`.app-main`) off your finger while a fixed `.back-reveal` layer behind it shows the destination (parallax `-25%→0` + dim fade). `backDestinationHtml(action)` renders it: back-to-school→`renderSchoolOverview`, notes-back→`renderNotesList`, travel-back→`renderTravel` (focus temporarily cleared). Commit ≥38% → glide off + `back.click()` + remove reveal; cancel → spring back. `clearBackReveal()` resets. CSS `.back-reveal*` (z 40) + `#app.is-back-dragging` (z 41); bottom-nav (z 20) is covered during the swipe (full-screen reveal).
+
 ## Future direction (user goal, NOT started)
 User wants to eventually **rewrite the app in Swift** for the App Store and make **every single thing customizable**. Keep new features customizable/data-driven where reasonable.
 
-Current versions: styles v110, app v109, SW v134.
+Current versions: styles v111, app v110, SW v135.
 
 ## Collapse animation (already fixed — don't regress)
 `toggleDetails` in app.js animates a `.details-body` wrapped in a single `.dcl` inner via **WAAPI height** (460ms, `--ease-out`), collapsing to a true 0 (no padding residual, no fallback-timer pause). Don't go back to grid `fr` or JS-rAF height.

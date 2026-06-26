@@ -6330,6 +6330,13 @@ body.modal-open {
 .view-slide-fwd { animation: viewSlideFwd 320ms var(--ease-out); }
 .view-slide-back { animation: viewSlideBack 320ms var(--ease-out); }
 
+/* Edge-swipe back: destination revealed underneath the sliding screen */
+.back-reveal { position: fixed; inset: 0; z-index: 40; overflow: hidden; background: var(--bg); }
+.back-reveal-inner { min-height: 100%; }
+.back-reveal .app-main { animation: none; min-height: 100vh; }
+.back-reveal-dim { position: absolute; inset: 0; background: #000; opacity: 0.32; pointer-events: none; }
+#app.is-back-dragging { position: relative; z-index: 41; background: var(--bg); min-height: 100vh; box-shadow: -16px 0 40px rgba(0, 0, 0, 0.5); }
+
 /* ============ Dashboard money trend (refined grouped bars, scrub-able) ============ */
 .money-trend-card { display: flex; flex-direction: column; gap: 12px; }
 .mt-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }

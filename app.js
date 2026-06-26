@@ -9916,10 +9916,29 @@
     if (event.touches && event.touches.length > 1) event.preventDefault();
   }, { passive: false });
 
-  // Interactive edge-swipe back: drag in from the left edge and the whole page
-  // follows your finger; past ~38% of the width it commits and navigates back,
-  // otherwise it springs back like drawing and releasing a bow.
+  // The screen the on-screen back button leads to, rendered into the reveal layer.
+  function backDestinationHtml(action) {
+    if (action === "back-to-school") return renderSchoolOverview();
+    if (action === "notes-back") return renderNotesList();
+    if (action === "travel-back") {
+      const f = ui.travelFocus, s = ui.travelStateFocus;
+      ui.travelFocus = ""; ui.travelStateFocus = "";
+      const html = renderTravel();
+      ui.travelFocus = f; ui.travelStateFocus = s;
+      return html;
+    }
+    return "";
+  }
+
+  // Interactive edge-swipe back: drag in from the left edge — the current screen
+  // slides off your finger while the destination is revealed underneath (with a
+  // parallax + dim), iOS-style. Past ~38% it commits; otherwise it springs back.
   let backDrag = null;
+  const clearBackReveal = () => {
+    document.querySelector(".back-reveal")?.remove();
+    app.classList.remove("is-back-dragging");
+    app.style.transition = ""; app.style.transform = ""; app.style.willChange = "";
+  };
   document.addEventListener("touchstart", (event) => {
     backDrag = null;
     if (event.touches.length !== 1) return;
@@ -9927,9 +9946,8 @@
     if (t.clientX > 28) return;
     if (modalRoot.querySelector(".modal-backdrop")) return;
     const back = app.querySelector(".back-link");
-    const view = app.querySelector(".view");
-    if (!back || !view) return;
-    backDrag = { startX: t.clientX, startY: t.clientY, curX: 0, back, view, active: false, w: window.innerWidth || 375 };
+    if (!back) return;
+    backDrag = { startX: t.clientX, startY: t.clientY, curX: 0, back, active: false, w: window.innerWidth || 375, reveal: null, inner: null, dim: null };
   }, { passive: true });
   document.addEventListener("touchmove", (event) => {
     if (!backDrag || event.touches.length !== 1) return;
@@ -9940,39 +9958,46 @@
       if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 12) { backDrag = null; return; }
       if (dx > 8) {
         backDrag.active = true;
-        backDrag.view.style.transition = "none";
-        backDrag.view.style.willChange = "transform";
+        const dest = backDestinationHtml(backDrag.back.dataset.action);
+        if (dest) {
+          const reveal = document.createElement("div");
+          reveal.className = "back-reveal";
+          reveal.innerHTML = `<div class="back-reveal-inner"><main class="app-main">${dest}</main></div><div class="back-reveal-dim"></div>`;
+          document.body.appendChild(reveal);
+          backDrag.reveal = reveal;
+          backDrag.inner = reveal.querySelector(".back-reveal-inner");
+          backDrag.dim = reveal.querySelector(".back-reveal-dim");
+        }
+        app.classList.add("is-back-dragging");
+        app.style.transition = "none";
+        app.style.willChange = "transform";
       } else return;
     }
     event.preventDefault();
-    // Light resistance so it feels elastic rather than 1:1.
     const x = Math.max(0, dx);
     backDrag.curX = x;
-    const eased = x < backDrag.w ? x : backDrag.w + (x - backDrag.w) * 0.2;
-    backDrag.view.style.transform = `translateX(${eased}px)`;
-    backDrag.view.style.opacity = `${(1 - Math.min(0.3, x / backDrag.w * 0.6)).toFixed(3)}`;
+    const w = backDrag.w;
+    const eased = x < w ? x : w + (x - w) * 0.2;
+    app.style.transform = `translateX(${eased}px)`;
+    if (backDrag.inner) backDrag.inner.style.transform = `translateX(${(-0.25 * (w - x)).toFixed(1)}px)`;
+    if (backDrag.dim) backDrag.dim.style.opacity = `${(0.32 * (1 - x / w)).toFixed(3)}`;
   }, { passive: false });
   document.addEventListener("touchend", () => {
     if (!backDrag || !backDrag.active) { backDrag = null; return; }
-    const { view, back, curX, w } = backDrag;
+    const { back, curX, w, reveal, inner, dim } = backDrag;
     backDrag = null;
     if (curX >= w * 0.38) {
-      // Commit: glide the page off to the right, then navigate.
-      view.style.transition = "transform 200ms cubic-bezier(0.3,0.7,0.2,1), opacity 200ms ease";
-      view.style.transform = `translateX(${w}px)`;
-      view.style.opacity = "0";
-      window.setTimeout(() => back.click(), 170);
+      app.style.transition = "transform 220ms cubic-bezier(0.3,0.72,0.2,1)";
+      app.style.transform = `translateX(${w}px)`;
+      if (inner) { inner.style.transition = "transform 220ms cubic-bezier(0.3,0.72,0.2,1)"; inner.style.transform = "translateX(0)"; }
+      if (dim) { dim.style.transition = "opacity 220ms ease"; dim.style.opacity = "0"; }
+      window.setTimeout(() => { back.click(); clearBackReveal(); }, 195);
     } else {
-      // Spring back into place with a slight overshoot.
-      view.style.transition = "transform 420ms cubic-bezier(0.34,1.56,0.64,1), opacity 260ms ease";
-      view.style.transform = "translateX(0)";
-      view.style.opacity = "1";
-      window.setTimeout(() => {
-        view.style.transition = "";
-        view.style.willChange = "";
-        view.style.transform = "";
-        view.style.opacity = "";
-      }, 440);
+      app.style.transition = "transform 400ms cubic-bezier(0.34,1.5,0.64,1)";
+      app.style.transform = "translateX(0)";
+      if (inner) { inner.style.transition = "transform 400ms cubic-bezier(0.34,1.5,0.64,1)"; inner.style.transform = `translateX(${(-0.25 * w).toFixed(1)}px)`; }
+      if (dim) { dim.style.transition = "opacity 300ms ease"; dim.style.opacity = "0.32"; }
+      window.setTimeout(clearBackReveal, 420);
     }
   }, { passive: true });
 
