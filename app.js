@@ -1047,20 +1047,33 @@
   }
 
   function setUndo(label, restore) {
-    undoState = { scope: "finance", label, restore };
+    undoState = { label, restore };
+    showUndoToast(label);
   }
 
   function undoFinanceDelete() {
-    if (!undoState?.restore) {
-      showToast("Nothing to undo.");
-      return;
-    }
+    if (!undoState?.restore) { hideUndoToast(); return; }
     undoState.restore();
-    const label = undoState.label;
     undoState = null;
     saveData();
     render();
-    showToast(`Restored ${label}.`);
+    hideUndoToast();
+  }
+
+  // Generic delete-with-undo: removes the item, re-renders, and offers an undo
+  // toast that re-inserts it at its original spot. `opts.after`/`opts.restore`
+  // run extra side-effects on delete / undo.
+  function deleteWithUndo(list, id, label, opts = {}) {
+    const removed = removeById(list, id);
+    if (!removed) return false;
+    if (opts.after) opts.after(removed.item);
+    saveData();
+    render({ quiet: true });
+    setUndo(label, () => {
+      list.splice(Math.min(removed.index, list.length), 0, removed.item);
+      if (opts.restore) opts.restore(removed.item);
+    });
+    return true;
   }
 
   function deleteFinanceItem(list, id, label) {
@@ -1070,6 +1083,47 @@
       list.splice(Math.min(removed.index, list.length), 0, removed.item);
     });
     return true;
+  }
+
+  // ---------- Undo toast (top, auto-dismiss, swipe up to dismiss) ----------
+  let undoToastEl = null;
+  let undoToastTimer = null;
+  function ensureUndoToast() {
+    if (undoToastEl) return undoToastEl;
+    undoToastEl = document.createElement("div");
+    undoToastEl.className = "undo-toast";
+    undoToastEl.innerHTML = `<div class="undo-toast-card"><span class="undo-toast-msg"></span><button type="button" class="undo-toast-btn" data-action="undo-finance-delete">${icon("undo")}<span>Undo</span></button></div>`;
+    document.body.appendChild(undoToastEl);
+    const card = undoToastEl.querySelector(".undo-toast-card");
+    let sy = null, dragging = false;
+    card.addEventListener("touchstart", (e) => { sy = e.touches[0].clientY; dragging = true; card.style.transition = "none"; }, { passive: true });
+    card.addEventListener("touchmove", (e) => {
+      if (!dragging) return;
+      const dy = e.touches[0].clientY - sy;
+      if (dy < 0) card.style.transform = `translateY(${dy}px)`;
+    }, { passive: true });
+    card.addEventListener("touchend", (e) => {
+      if (!dragging) return;
+      dragging = false;
+      card.style.transition = "";
+      const dy = (e.changedTouches[0]?.clientY ?? sy) - sy;
+      card.style.transform = "";
+      if (dy < -26) hideUndoToast();
+    }, { passive: true });
+    return undoToastEl;
+  }
+  function showUndoToast(label) {
+    const el = ensureUndoToast();
+    el.querySelector(".undo-toast-msg").textContent = `${label.charAt(0).toUpperCase()}${label.slice(1)} deleted`;
+    el.querySelector(".undo-toast-card").style.transform = "";
+    void el.offsetWidth;
+    el.classList.add("show");
+    clearTimeout(undoToastTimer);
+    undoToastTimer = window.setTimeout(() => { undoState = null; hideUndoToast(); }, 5000);
+  }
+  function hideUndoToast() {
+    clearTimeout(undoToastTimer);
+    if (undoToastEl) undoToastEl.classList.remove("show");
   }
 
   function render(options = {}) {
@@ -2010,6 +2064,7 @@
         <section>
           ${appData.dailyHabits.length ? renderHabitSwipe() : emptyState("Add recurring daily habits you do not want to rewrite.")}
         </section>
+        ${renderHabitHeatmap()}
 
         <div class="sec-head"><span class="sec-title">Tasks</span>${actionButton("add-task-category", "", "Category", "plus", "secondary")}</div>
         <div class="task-filter-chips" role="group" aria-label="Filter tasks by category">
@@ -2032,6 +2087,30 @@
         </div>
       </div>
     `;
+  }
+
+  function renderHabitHeatmap() {
+    if (!appData.dailyHabits.length) return "";
+    const weeks = 17;
+    const totalDays = weeks * 7;
+    const start = addDays(parseDate(today()), -(totalDays - 1));
+    const startPad = start.getDay(); // 0 = Sunday
+    const todayStr = today();
+    let cells = "";
+    for (let i = 0; i < startPad; i++) cells += `<span class="hm-cell hm-empty"></span>`;
+    for (let i = 0; i < totalDays; i++) {
+      const ds = dateString(addDays(start, i));
+      if (ds > todayStr) { cells += `<span class="hm-cell hm-empty"></span>`; continue; }
+      const st = habitDayStats(ds);
+      const level = st.total <= 0 ? 0 : st.percent >= 100 ? 4 : st.percent >= 75 ? 3 : st.percent >= 50 ? 2 : st.percent > 0 ? 1 : 0;
+      cells += `<span class="hm-cell hm-l${level}" title="${escapeHtml(formatDate(ds))} · ${st.completed}/${st.total}"></span>`;
+    }
+    return `
+      <div class="sec-head"><span class="sec-title">Habit streak</span></div>
+      <section class="card panel habit-heatmap">
+        <div class="hm-grid">${cells}</div>
+        <div class="hm-legend"><span>Less</span><i class="hm-cell hm-l0"></i><i class="hm-cell hm-l1"></i><i class="hm-cell hm-l2"></i><i class="hm-cell hm-l3"></i><i class="hm-cell hm-l4"></i><span>More</span></div>
+      </section>`;
   }
 
   function habitDayStats(dateStr) {
@@ -3951,6 +4030,19 @@
       `<span class="class-chip-stat">${upcoming.length} upcoming</span>`,
       `<span class="class-chip-stat">${nextUp ? `Next ${escapeHtml(formatDate(nextUp.dueDate))}` : "All caught up"}</span>`
     ].filter(Boolean).join("");
+    // Countdown to the next exam/test/final/midterm for this class only.
+    const examItem = sortByDate(upcoming.filter((a) => /\b(exam|test|final|midterm)\b/i.test(`${a.type || ""} ${a.title || ""}`)))[0];
+    let examCountdown = "";
+    if (examItem) {
+      const days = Math.round((parseDate(examItem.dueDate) - parseDate(today())) / 86400000);
+      const when = days <= 0 ? "Today" : days === 1 ? "Tomorrow" : `in ${days} days`;
+      examCountdown = `
+        <section class="card panel exam-countdown">
+          <span class="exam-cd-ic">${icon("spark")}</span>
+          <div class="exam-cd-main"><span class="exam-cd-label">Next exam</span><span class="exam-cd-title">${escapeHtml(examItem.title)}</span></div>
+          <span class="exam-cd-when ${days <= 2 ? "soon" : ""}">${when}</span>
+        </section>`;
+    }
     return `
       <div class="view class-detail" style="--class-color:${escapeHtml(color)}; --class-color-rgb:${rgbText(color)}">
         <section class="topbar class-detail-topbar">
@@ -3978,6 +4070,8 @@
           </div>
           ${klass.notes ? `<p class="tiny class-notes">${escapeHtml(klass.notes)}</p>` : ""}
         </section>
+
+        ${examCountdown}
 
         <section class="card panel section">
           <div class="section-header">
@@ -4533,7 +4627,37 @@
             ${Object.entries(legend).map(([label, color]) => `<span><i style="background:${color}"></i>${label}</span>`).join("")}
           </div>
         </section>
+
+        ${renderCalendarAgenda()}
       </div>
+    `;
+  }
+
+  function renderCalendarAgenda() {
+    const todayStr = today();
+    const days = [];
+    for (let i = 0; i < 7; i++) days.push(dateString(addDays(parseDate(todayStr), i)));
+    const months = new Set(days.map((d) => d.slice(0, 7)));
+    let events = [];
+    months.forEach((ym) => { events = events.concat(allCalendarEvents(ym)); });
+    const seen = new Set();
+    const byDate = {};
+    events.forEach((ev) => {
+      if (ev.date < days[0] || ev.date > days[6]) return;
+      const key = `${ev.kind}:${ev.id}:${ev.date}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      (byDate[ev.date] = byDate[ev.date] || []).push(ev);
+    });
+    const groups = days.map((ds) => {
+      const evs = (byDate[ds] || []).sort((a, b) => ((timeToMinutes(a.start) ?? -1) - (timeToMinutes(b.start) ?? -1)));
+      if (!evs.length) return "";
+      const label = ds === days[0] ? "Today" : ds === days[1] ? "Tomorrow" : formatDate(ds);
+      return `<div class="cal-agenda-day"><div class="cal-agenda-dlabel">${escapeHtml(label)}</div><div class="cal-agenda-list">${evs.map(renderCalendarEventRow).join("")}</div></div>`;
+    }).filter(Boolean).join("");
+    return `
+      <div class="sec-head"><span class="sec-title">Next 7 days</span></div>
+      <section class="card panel cal-week-agenda">${groups || emptyState("Nothing scheduled in the next week.")}</section>
     `;
   }
 
@@ -5503,8 +5627,23 @@
     `;
   }
 
+  function tripCountdown(trip) {
+    const start = parseDate(trip.startDate);
+    if (!start) return null;
+    const end = parseDate(trip.endDate) || start;
+    const t0 = parseDate(today());
+    const day = 86400000;
+    const dStart = Math.round((start - t0) / day);
+    const dEnd = Math.round((end - t0) / day);
+    if (dStart > 0) return { text: dStart === 1 ? "Tomorrow" : `in ${dStart} days`, state: "soon" };
+    if (dEnd >= 0) return { text: "On the trip", state: "now" };
+    const ago = -dEnd;
+    return { text: ago === 0 ? "Just ended" : `${ago} day${ago === 1 ? "" : "s"} ago`, state: "past" };
+  }
+
   function renderTripCard(trip) {
     const miles = Math.round(tripMiles(trip));
+    const cd = tripCountdown(trip);
     const legs = trip.legs || [];
     const legHtml = legs.length
       ? legs.map((leg) => `
@@ -5521,6 +5660,7 @@
           <div class="trip-head-main">
             <h3 class="trip-name">${escapeHtml(trip.name || "Trip")}</h3>
             <span class="trip-dates">${escapeHtml(tripDateLabel(trip))}</span>
+            ${cd ? `<span class="trip-countdown ${cd.state}">${icon("clock")}${escapeHtml(cd.text)}</span>` : ""}
           </div>
           <span class="trip-miles">${formatNumber(miles)}<span class="trip-miles-unit">mi</span></span>
         </div>
@@ -7571,12 +7711,8 @@
     });
     backdrop.querySelector("[data-note-delete]").addEventListener("click", () => {
       closeModal();
-      if (confirm("Delete this note?")) {
-        deleteById(appData.notes.items, id);
-        if (ui.notesEditingId === id) ui.notesEditingId = "";
-        saveData();
-        render({ quiet: true });
-      }
+      if (ui.notesEditingId === id) { ui.notesEditingId = ""; ui.noteEditMode = false; }
+      deleteWithUndo(appData.notes.items, id, "note");
     });
   }
 
@@ -7700,9 +7836,19 @@
             ${actionButton("close-modal", "", "Close", "x")}
           </div>
           <div class="modal-body">
-            <div class="form-grid">
-              ${fields.map((field) => `<div class="form-field-wrap" data-field-wrap="${escapeHtml(field.name)}">${renderField(field, initial[field.name])}</div>`).join("")}
-            </div>
+            ${(() => {
+              const fieldHtml = (field) => `<div class="form-field-wrap" data-field-wrap="${escapeHtml(field.name)}">${renderField(field, initial[field.name])}</div>`;
+              const mainFields = fields.filter((f) => !f.advanced);
+              const advancedFields = fields.filter((f) => f.advanced);
+              return `
+                <div class="form-grid">${mainFields.map(fieldHtml).join("")}</div>
+                ${advancedFields.length ? `
+                  <details class="form-advanced">
+                    <summary><span>More options</span></summary>
+                    <div class="details-body"><div class="form-grid">${advancedFields.map(fieldHtml).join("")}</div></div>
+                  </details>` : ""}
+              `;
+            })()}
             ${livePreview ? `<div class="form-live-preview" data-form-live-preview>${livePreview(initial)}</div>` : ""}
             ${showDelete ? `
             <div class="modal-delete-zone">
@@ -8407,13 +8553,12 @@
       { name: "type", label: "Type", type: "select", options: [{ value: "", label: "No type" }, "assignment", "quiz", "exam", "project", "other"] },
       { name: "dueDate", label: "Due date", type: "date", default: today(), required: true },
       { name: "dueTime", label: "Due time", type: "time" },
-      { name: "priority", label: "Priority", type: "select", options: [{ value: "", label: "No priority" }, "Low", "Medium", "High"] },
-      { name: "status", label: "Status", type: "select", options: assignmentStatusOptions() },
-      { name: "grade", label: "Grade", type: "text" },
-      { name: "pointsEarned", label: "Points earned", type: "number", step: "0.01" },
-      { name: "pointsPossible", label: "Points possible", type: "number", step: "0.01" },
-      { name: "link", label: "Link", type: "url" },
-      { name: "notes", label: "Notes", type: "textarea" }
+      { name: "priority", label: "Priority", type: "select", options: [{ value: "", label: "No priority" }, "Low", "Medium", "High"], advanced: true },
+      { name: "grade", label: "Grade", type: "text", advanced: true },
+      { name: "pointsEarned", label: "Points earned", type: "number", step: "0.01", advanced: true },
+      { name: "pointsPossible", label: "Points possible", type: "number", step: "0.01", advanced: true },
+      { name: "link", label: "Link", type: "url", advanced: true },
+      { name: "notes", label: "Notes", type: "textarea", advanced: true }
     ];
   }
 
@@ -8911,11 +9056,12 @@
         break;
       }
       case "delete-daily-habit": {
-        if (confirm("Delete this daily habit?")) {
-          deleteById(appData.dailyHabits, id);
-          Object.values(appData.habitCompletions).forEach((day) => delete day[id]);
-          rerender();
-        }
+        const habitStash = {};
+        Object.entries(appData.habitCompletions).forEach(([d, day]) => { if (day[id] !== undefined) habitStash[d] = day[id]; });
+        deleteWithUndo(appData.dailyHabits, id, "habit", {
+          after: () => Object.values(appData.habitCompletions).forEach((day) => delete day[id]),
+          restore: () => Object.entries(habitStash).forEach(([d, v]) => { (appData.habitCompletions[d] = appData.habitCompletions[d] || {})[id] = v; })
+        });
         break;
       }
       case "add-task":
@@ -8946,10 +9092,7 @@
         break;
       }
       case "delete-task":
-        if (confirm("Delete this task?")) {
-          deleteById(appData.tasks, id);
-          rerender();
-        }
+        deleteWithUndo(appData.tasks, id, "task");
         break;
       case "add-goal":
       case "edit-goal": {
@@ -8971,11 +9114,7 @@
         break;
       }
       case "delete-goal":
-        if (confirm("Delete this goal?")) {
-          deleteById(appData.goals, id);
-          rerender();
-          showToast("Goal deleted.");
-        }
+        deleteWithUndo(appData.goals, id, "goal");
         break;
       case "set-task-filter":
         ui.taskFilter = button.dataset.taskCat || "All";
@@ -9000,11 +9139,7 @@
         break;
       }
       case "delete-account":
-        if (confirm("Delete this account?")) {
-          deleteFinanceItem(appData.finance.accounts, id, "account");
-          rerender();
-          showToast("Account deleted.");
-        }
+        if (deleteFinanceItem(appData.finance.accounts, id, "account")) rerender();
         break;
       case "add-income":
       case "edit-income": {
@@ -9045,11 +9180,7 @@
         break;
       }
       case "delete-income":
-        if (confirm("Delete this income entry?")) {
-          deleteFinanceItem(appData.finance.income, id, "income entry");
-          rerender();
-          showToast("Income deleted.");
-        }
+        if (deleteFinanceItem(appData.finance.income, id, "income entry")) rerender();
         break;
       case "add-bill":
       case "edit-bill": {
@@ -9064,11 +9195,7 @@
         break;
       }
       case "delete-bill":
-        if (confirm("Delete this bill?")) {
-          deleteFinanceItem(appData.finance.bills, id, "bill");
-          rerender();
-          showToast("Bill deleted.");
-        }
+        if (deleteFinanceItem(appData.finance.bills, id, "bill")) rerender();
         break;
       case "add-spending":
       case "edit-spending": {
@@ -9077,11 +9204,7 @@
         break;
       }
       case "delete-spending":
-        if (confirm("Delete this spending entry?")) {
-          deleteSpendingItem(id);
-          rerender();
-          showToast("Spending deleted.");
-        }
+        if (deleteSpendingItem(id)) rerender();
         break;
       case "add-saving":
       case "edit-saving": {
@@ -9095,11 +9218,7 @@
         break;
       }
       case "delete-saving":
-        if (confirm("Delete this savings entry?")) {
-          deleteFinanceItem(appData.finance.savings, id, "savings entry");
-          rerender();
-          showToast("Savings entry deleted.");
-        }
+        if (deleteFinanceItem(appData.finance.savings, id, "savings entry")) rerender();
         break;
       case "add-budget":
       case "edit-budget": {
@@ -9116,11 +9235,7 @@
         break;
       }
       case "delete-budget":
-        if (confirm("Delete this budget?")) {
-          deleteById(appData.finance.budgets, id);
-          rerender();
-          showToast("Budget deleted.");
-        }
+        deleteWithUndo(appData.finance.budgets, id, "budget");
         break;
       case "search-open": {
         const type = button.dataset.type;
@@ -9154,19 +9269,21 @@
         });
         break;
       }
-      case "delete-savings-goal":
-        if (confirm("Delete this savings goal? Savings deposits linked to it will stay in history.")) {
-          deleteFinanceItem(appData.finance.savingsGoals, id, "savings goal");
-          appData.finance.savings.forEach((entry) => {
-            if (entry.goalId === id) entry.goalId = "";
-          });
-          appData.goals.forEach((goal) => {
-            if (goal.linkedSavingsGoalId === id) goal.linkedSavingsGoalId = "";
-          });
-          rerender();
-          showToast("Savings goal deleted.");
-        }
+      case "delete-savings-goal": {
+        const unlinkedEntries = [];
+        const unlinkedGoals = [];
+        deleteWithUndo(appData.finance.savingsGoals, id, "savings goal", {
+          after: () => {
+            appData.finance.savings.forEach((entry) => { if (entry.goalId === id) { unlinkedEntries.push(entry); entry.goalId = ""; } });
+            appData.goals.forEach((goal) => { if (goal.linkedSavingsGoalId === id) { unlinkedGoals.push(goal); goal.linkedSavingsGoalId = ""; } });
+          },
+          restore: () => {
+            unlinkedEntries.forEach((entry) => { entry.goalId = id; });
+            unlinkedGoals.forEach((goal) => { goal.linkedSavingsGoalId = id; });
+          }
+        });
         break;
+      }
       case "add-debt":
       case "edit-debt": {
         const item = id ? findById(appData.finance.debts, id) : { paymentHistory: [] };
@@ -9249,20 +9366,15 @@
       case "delete-debt-payment": {
         const { debt, payment } = findDebtForPayment(id);
         if (!debt || !payment) break;
-        if (confirm("Delete this payment? The amount will be added back to the balance.")) {
-          debt.balance = (Number(debt.balance) || 0) + (Number(payment.amount) || 0);
-          debt.paymentHistory = debt.paymentHistory.filter((p) => p.id !== id);
-          rerender();
-          showToast("Payment deleted.");
-        }
+        const amt = Number(payment.amount) || 0;
+        deleteWithUndo(debt.paymentHistory, id, "payment", {
+          after: () => { debt.balance = (Number(debt.balance) || 0) + amt; },
+          restore: () => { debt.balance = Math.max(0, (Number(debt.balance) || 0) - amt); }
+        });
         break;
       }
       case "delete-debt":
-        if (confirm("Delete this debt?")) {
-          deleteFinanceItem(appData.finance.debts, id, "debt");
-          rerender();
-          showToast("Debt deleted.");
-        }
+        if (deleteFinanceItem(appData.finance.debts, id, "debt")) rerender();
         break;
       case "add-investment":
       case "edit-investment": {
@@ -9271,11 +9383,7 @@
         break;
       }
       case "delete-investment":
-        if (confirm("Delete this investment?")) {
-          deleteFinanceItem(appData.finance.investments, id, "investment");
-          rerender();
-          showToast("Investment deleted.");
-        }
+        if (deleteFinanceItem(appData.finance.investments, id, "investment")) rerender();
         break;
       case "add-class":
       case "edit-class": {
@@ -9298,19 +9406,21 @@
         });
         break;
       }
-      case "delete-class":
-        if (confirm("Delete this class? Assignments will stay but lose the class link.")) {
-          deleteById(appData.school.classes, id);
-          appData.school.assignments.forEach((assignment) => {
-            if (assignment.classId === id) assignment.classId = "";
-          });
-          rerender();
-        }
+      case "delete-class": {
+        const unlinked = [];
+        deleteWithUndo(appData.school.classes, id, "class", {
+          after: () => appData.school.assignments.forEach((a) => { if (a.classId === id) { unlinked.push(a); a.classId = ""; } }),
+          restore: () => unlinked.forEach((a) => { a.classId = id; })
+        });
+        if (ui.schoolView === "class" && ui.selectedClassId === id) { ui.schoolView = "overview"; rerender(); }
         break;
+      }
       case "add-assignment":
       case "edit-assignment": {
         const item = id ? findById(appData.school.assignments, id) : { status: "not started", type: "assignment" };
-        openEdit({ title: id ? "Edit assignment" : "Add assignment", fields: assignmentFields(), initial: { ...item, status: normalizedAssignmentStatus(item.status) }, onSubmit: (values) => upsert(appData.school.assignments, id, { ...values, status: normalizedAssignmentStatus(values.status) }), deleteAction: id ? "delete-assignment" : null, deleteId: id });
+        // Status isn't in the form anymore (it's edited on the collapsed row), so
+        // keep the item's existing status instead of resetting it on save.
+        openEdit({ title: id ? "Edit assignment" : "Add assignment", fields: assignmentFields(), initial: item, onSubmit: (values) => upsert(appData.school.assignments, id, { ...values, status: normalizedAssignmentStatus(item.status) }), deleteAction: id ? "delete-assignment" : null, deleteId: id });
         break;
       }
       case "bulk-add-assignment": {
@@ -9319,10 +9429,7 @@
         break;
       }
       case "delete-assignment":
-        if (confirm("Delete this assignment?")) {
-          deleteById(appData.school.assignments, id);
-          rerender();
-        }
+        deleteWithUndo(appData.school.assignments, id, "assignment");
         break;
       case "add-trip":
         openEdit({
@@ -9347,10 +9454,7 @@
         break;
       }
       case "delete-trip":
-        if (confirm("Delete this trip?")) {
-          deleteById(appData.travel.trips, id);
-          rerender();
-        }
+        deleteWithUndo(appData.travel.trips, id, "trip");
         break;
       case "add-trip-leg": {
         const trip = findById(appData.travel.trips, id);
@@ -9371,10 +9475,8 @@
       }
       case "delete-trip-leg": {
         const trip = findById(appData.travel.trips, id);
-        if (!trip) break;
-        const legId = button.dataset.leg;
-        trip.legs = (trip.legs || []).filter((leg) => leg.id !== legId);
-        rerender();
+        if (!trip || !trip.legs) break;
+        deleteWithUndo(trip.legs, button.dataset.leg, "leg");
         break;
       }
       case "edit-gym-plan":
@@ -9407,10 +9509,7 @@
         break;
       }
       case "delete-workout":
-        if (confirm("Delete this workout?")) {
-          deleteById(appData.gym.workouts, id);
-          rerender();
-        }
+        deleteWithUndo(appData.gym.workouts, id, "workout");
         break;
       case "enable-nutrition":
         appData.settings.nutrition = true;
@@ -9438,10 +9537,7 @@
         break;
       }
       case "delete-nutrition":
-        if (confirm("Delete this nutrition entry?")) {
-          deleteById(appData.nutrition.entries, id);
-          rerender();
-        }
+        deleteWithUndo(appData.nutrition.entries, id, "meal");
         break;
       case "add-shopping":
       case "edit-shopping": {
@@ -9456,10 +9552,7 @@
         break;
       }
       case "delete-shopping":
-        if (confirm("Delete this shopping item?")) {
-          deleteById(appData.shopping, id);
-          rerender();
-        }
+        deleteWithUndo(appData.shopping, id, "item");
         break;
       case "add-order":
       case "edit-order": {
@@ -9468,10 +9561,7 @@
         break;
       }
       case "delete-order":
-        if (confirm("Delete this order?")) {
-          deleteById(appData.orders, id);
-          rerender();
-        }
+        deleteWithUndo(appData.orders, id, "order");
         break;
       case "add-bucket": {
         const input = document.getElementById("bucket-input");
@@ -9491,10 +9581,7 @@
         break;
       }
       case "delete-bucket":
-        if (confirm("Delete this bucket-list item?")) {
-          deleteById(appData.bucketList, id);
-          rerender();
-        }
+        deleteWithUndo(appData.bucketList, id, "item");
         break;
       case "new-note": {
         const folderId = (ui.notesFolderId && !["all", "pinned", "unfiled"].includes(ui.notesFolderId) && findById(appData.notes.folders, ui.notesFolderId)) ? ui.notesFolderId : "";
@@ -9547,11 +9634,8 @@
         break;
       }
       case "delete-note":
-        if (confirm("Delete this note?")) {
-          deleteById(appData.notes.items, id);
-          if (ui.notesEditingId === id) ui.notesEditingId = "";
-          rerender();
-        }
+        if (ui.notesEditingId === id) { ui.notesEditingId = ""; ui.noteEditMode = false; }
+        deleteWithUndo(appData.notes.items, id, "note");
         break;
       case "add-note-folder":
       case "edit-note-folder": {
@@ -9576,14 +9660,15 @@
         });
         break;
       }
-      case "delete-note-folder":
-        if (confirm("Delete this folder? Notes inside it become unfiled.")) {
-          appData.notes.items.forEach((note) => { if (note.folderId === id) note.folderId = ""; });
-          deleteById(appData.notes.folders, id);
-          if (ui.notesFolderId === id) ui.notesFolderId = "all";
-          rerender();
-        }
+      case "delete-note-folder": {
+        const refiled = [];
+        deleteWithUndo(appData.notes.folders, id, "folder", {
+          after: () => appData.notes.items.forEach((note) => { if (note.folderId === id) { refiled.push(note); note.folderId = ""; } }),
+          restore: () => refiled.forEach((note) => { note.folderId = id; })
+        });
+        if (ui.notesFolderId === id) { ui.notesFolderId = "all"; rerender(); }
         break;
+      }
       case "toggle-visit-country": {
         const country = button.dataset.country;
         if (!country) break;
@@ -9638,10 +9723,7 @@
         break;
       }
       case "delete-reminder":
-        if (confirm("Delete this reminder?")) {
-          deleteById(appData.reminders, id);
-          rerender();
-        }
+        deleteWithUndo(appData.reminders, id, "reminder");
         break;
       case "capture-inbox": {
         const text = document.getElementById("capture-text")?.value || "";
@@ -9662,10 +9744,7 @@
         break;
       }
       case "delete-inbox":
-        if (confirm("Delete this inbox item?")) {
-          deleteById(appData.inbox, id);
-          rerender();
-        }
+        deleteWithUndo(appData.inbox, id, "inbox item");
         break;
       case "enable-weekly-review":
         appData.settings.weeklyReview = true;

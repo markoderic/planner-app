@@ -120,21 +120,23 @@ DONE this pass:
 - **Swipe-back no longer looks like a fresh entry into School.** `fillProgressTargets(scope, animate)` snaps progress in place when `animate=false`; the reveal layer is filled immediately (`fillProgressTargets(reveal,false)`); on commit `suppressSchoolFill=true` so `setupSchoolProgress` snaps and `back-to-school` skips `view-slide-back` (captured as `fromSwipe` before render).
 - Interim CSS: native date/time field text left-aligned (`.field input[type=date]/[type=time]`) so it stops going off-screen — until custom pickers land.
 
-STILL TODO (user's list, queued as dedicated passes — keep animations smooth, no teleporting):
-1. **Custom branded pickers** — replace ALL native `<select>` dropdowns AND native date/time pickers with in-app styled menus/calendars + animations. (Big; foundational. Wire into `renderField` + `collectFormValues` via hidden inputs.)
-2. **Form simplification** — collapsible "Advanced/More" section in `openForm` for non-essential fields; assignment form: keep title/class/type/due date/due time, move priority/grade/points/link/notes to Advanced, REMOVE the redundant `status` field (already editable in the collapsed assignment row).
-3. **Undo toast** after every delete (few-sec timer + swipe-to-dismiss, swipe-up if top). Needs a generic "stash deleted item → restore" mechanism across all delete handlers.
-4. **Habit streak heatmap** (GitHub-style calendar) in Tasks, theme-accent color (the "Streak" tile).
-5. **Calendar weekly agenda** view at the bottom of the Calendar tab.
-6. **Trip countdown** (now → trip start date/time) on trip cards.
-7. **Exam countdown** inside the class detail only (detect exam-type assignment; dedicated spot).
+DONE (2026-06-27):
+- **Form simplification** — `openForm` splits fields into a main `.form-grid` + a collapsible `.form-advanced` (`<details>`) for fields flagged `advanced:true`. Assignment form: main = title/class/type/dueDate/dueTime; advanced = priority/grade/pointsEarned/pointsPossible/link/notes; `status` field REMOVED (handler keeps existing `item.status` on save so edits don't reset it).
+- **Undo toast** — `deleteWithUndo(list, id, label, opts{after,restore})` (module-level; uses `render({quiet})` NOT the handler-scoped `rerender`). `setUndo`→`showUndoToast` (top `.undo-toast`, auto-dismiss 5s, swipe-up to dismiss, Undo btn = `undo-finance-delete`). ALL delete handlers converted (confirms removed): task, goal, account, income, bill, spending, saving, budget, savings-goal, debt, debt-payment, investment, class, assignment, trip, trip-leg, workout, nutrition, shopping, order, bucket, daily-habit, note, note-folder, reminder, inbox + note long-press. Side-effecting ones use after/restore to reverse (class↔assignment links, folder refile, debt balance, habit completions).
+- **Habit heatmap** — `renderHabitHeatmap()` (17-week GitHub grid, `.hm-grid` 7 rows × auto cols, `.hm-l0..4` accent opacity) in Tasks after the habit swipe.
+- **Calendar weekly agenda** — `renderCalendarAgenda()` ("Next 7 days") at the bottom of `renderCalendarPage`, grouped by day via `allCalendarEvents` + `renderCalendarEventRow`.
+- **Trip countdown** — `tripCountdown(trip)` chip on trip cards (soon/now/past states).
+- **Exam countdown** — in `renderClassDetail` only: next upcoming exam/test/final/midterm-type assignment shows `.exam-countdown` banner ("Next exam · title · in N days").
+
+NOT DONE (deferred — doesn't carry to Swift, per user):
+1. **Custom branded pickers** (replace native select + date/time). Skipped on purpose; SwiftUI has native styleable pickers.
 
 THEN: Swift rewrite + iCloud/cloud sync + App Store readiness.
 
 ## Future direction (user goal, NOT started)
 User wants to eventually **rewrite the app in Swift** for the App Store and make **every single thing customizable**. Keep new features customizable/data-driven where reasonable.
 
-Current versions: styles v112, app v111, SW v136.
+Current versions: styles v114, app v114, SW v139.
 
 ## Collapse animation (already fixed — don't regress)
 `toggleDetails` in app.js animates a `.details-body` wrapped in a single `.dcl` inner via **WAAPI height** (460ms, `--ease-out`), collapsing to a true 0 (no padding residual, no fallback-timer pause). Don't go back to grid `fr` or JS-rAF height.
