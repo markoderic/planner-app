@@ -1607,7 +1607,7 @@
           ${snapTile("Health", String(weekGym.workouts.length), "Workouts this week", "heart", "var(--pink)", "health")}
         </section>
 
-        <div class="sec-head"><span class="sec-title">Today focus</span>${actionButton("add-task", "", "Add task", "plus", "secondary")}</div>
+        <div class="sec-head"><span class="sec-title">Today's Focus</span>${actionButton("add-task", "", "Add task", "plus", "secondary")}</div>
         <section class="card panel">
           <div class="list ${todayFocusList.length ? "grouped" : ""}">
             ${todayFocusList.length ? todayFocusList.map(renderFocusItem).join("") : emptyState("No items due today.")}
@@ -1809,7 +1809,7 @@
       const i = Math.max(0, Math.min(months.length - 1, idx));
       cols.forEach((c, n) => c.classList.toggle("cur", n === i));
       const m = months[i];
-      if (readout) readout.innerHTML = `<span class="mt-ro-label">${escapeHtml(m.label)}</span><span class="mt-ro-stats"><b class="inc">${formatCompactCurrency(m.income)}</b> in · <b class="sp">${formatCompactCurrency(m.spending)}</b> out · <b class="sv">${formatCompactCurrency(m.savings)}</b> saved</span>`;
+      if (readout) readout.innerHTML = `<span class="mt-ro-label">${escapeHtml(m.label)}</span><span class="mt-ro-stats"><b class="inc">${formatCompactCurrency(m.income)}</b> · <b class="sp">${formatCompactCurrency(m.spending)}</b> · <b class="sv">${formatCompactCurrency(m.savings)}</b></span>`;
       if (netEl) { netEl.textContent = signed(m.net); netEl.classList.toggle("neg", m.net < 0); }
     };
     update(months.length - 1);
@@ -3242,8 +3242,6 @@
   function renderSpending(range) {
     const entries = appData.finance.spending.filter((entry) => dateInRange(entry.date, range));
     const total = sum(entries, (entry) => entry.amount);
-    const necessaryTotal = sum(entries.filter((entry) => entry.necessary !== false), (entry) => entry.amount);
-    const unnecessaryTotal = Math.max(0, total - necessaryTotal);
     const cashDebitTotal = sum(entries.filter((entry) => !spendingUsesCredit(entry)), (entry) => entry.amount);
     const creditTotal = sum(entries.filter(spendingUsesCredit), (entry) => entry.amount);
     // The category breakdown and budgets are month-to-date so they stay meaningful
@@ -3259,8 +3257,6 @@
         ${metric("Spending this month", formatCurrency(sum(appData.finance.spending.filter((entry) => dateInRange(entry.date, calculateDateRange("month"))), (entry) => entry.amount)), "")}
         ${metric("Cash/debit spending", formatCurrency(cashDebitTotal), "Lowers account balances")}
         ${metric("Credit card spending", formatCurrency(creditTotal), "Raises linked card balance")}
-        ${metric("Unnecessary spending", formatCurrency(unnecessaryTotal), "Wants and leaks in this range")}
-        ${metric("Necessary spending", formatCurrency(necessaryTotal), "Needs in this range")}
         ${metric("Average daily", formatCurrency(total / daysBetween(range.start, range.end)), "Selected range")}
       </div>
       <div class="sec-head"><span class="sec-title">By category</span><span class="sec-hint">This month</span></div>
@@ -3361,7 +3357,6 @@
       details: [
         { label: "Amount", value: formatCurrency(entry.amount), money: true },
         { label: "Category", value: entry.category || "—" },
-        { label: "Type", value: entry.necessary !== false ? "Necessary" : "Unnecessary" },
         { label: "Method", value: method },
         { label: "Date", value: formatDate(entry.date) },
         linkedAccount ? { label: "Paid from", value: linkedAccount.name } : null,
@@ -3754,18 +3749,31 @@
   // Animate the progress shape (rings / half-rings / bars) from its previous
   // value to the new one — fills up on first view, and tweens when an assignment
   // is completed or the span changes.
+  let suppressSchoolFill = false;
+  // Apply a progress shape's real values. When `animate` is false they snap in
+  // place (used when swiping back into School — you're already there, so the
+  // bars/rings shouldn't replay their fill).
+  function fillProgressTargets(scope, animate) {
+    scope.querySelectorAll("[data-target]").forEach((el) => {
+      const isBar = el.tagName.toLowerCase() === "i";
+      const apply = () => { if (isBar) el.style.width = el.dataset.target; else el.setAttribute("stroke-dashoffset", el.dataset.target); };
+      if (animate) {
+        window.setTimeout(apply, 40);
+      } else {
+        el.style.transition = "none";
+        apply();
+        window.requestAnimationFrame(() => { el.style.transition = ""; });
+      }
+    });
+  }
+
   function setupSchoolProgress() {
     const stage = app.querySelector(".school-progress");
     if (!stage) return;
-    const targets = stage.querySelectorAll("[data-target]");
-    if (!targets.length) return;
-    // Mounted empty; a beat later, ease each shape to its real value (fills up).
-    window.setTimeout(() => {
-      targets.forEach((el) => {
-        if (el.tagName.toLowerCase() === "i") el.style.width = el.dataset.target;
-        else el.setAttribute("stroke-dashoffset", el.dataset.target);
-      });
-    }, 40);
+    if (!stage.querySelector("[data-target]")) return;
+    const animate = !suppressSchoolFill;
+    suppressSchoolFill = false;
+    fillProgressTargets(stage, animate);
   }
 
   // ---------- School assignment-progress overview (customizable) ----------
@@ -8216,8 +8224,7 @@
         ],
         help: cards.length ? "This spending increases that card's balance." : "Add a credit card in Debt repayment to link spending.",
         showIf: (v) => v.paymentMethod === "Credit card"
-      },
-      { name: "necessary", label: "Necessary spending", type: "checkbox", default: true, help: "Used for needs vs wants analytics." }
+      }
     ];
   }
 
@@ -8680,11 +8687,14 @@
       return;
     }
     if (action === "back-to-school") {
+      // On a swipe-back the screen is dragged in physically, so don't also play
+      // the slide-in / progress re-fill (that's what made it look like a fresh entry).
+      const fromSwipe = suppressSchoolFill;
       ui.schoolView = "overview";
       ui.calendarSelectedDate = "";
       window.scrollTo({ top: 0, behavior: "auto" });
       render();
-      app.querySelector(".view")?.classList.add("view-slide-back");
+      if (!fromSwipe) app.querySelector(".view")?.classList.add("view-slide-back");
       return;
     }
     if (action === "school-calendar-prev" || action === "school-calendar-next") {
@@ -9964,6 +9974,8 @@
           reveal.className = "back-reveal";
           reveal.innerHTML = `<div class="back-reveal-inner"><main class="app-main">${dest}</main></div><div class="back-reveal-dim"></div>`;
           document.body.appendChild(reveal);
+          // Show the revealed School already filled — it's behind you, not a fresh entry.
+          fillProgressTargets(reveal, false);
           backDrag.reveal = reveal;
           backDrag.inner = reveal.querySelector(".back-reveal-inner");
           backDrag.dim = reveal.querySelector(".back-reveal-dim");
@@ -9991,7 +10003,7 @@
       app.style.transform = `translateX(${w}px)`;
       if (inner) { inner.style.transition = "transform 220ms cubic-bezier(0.3,0.72,0.2,1)"; inner.style.transform = "translateX(0)"; }
       if (dim) { dim.style.transition = "opacity 220ms ease"; dim.style.opacity = "0"; }
-      window.setTimeout(() => { back.click(); clearBackReveal(); }, 195);
+      window.setTimeout(() => { suppressSchoolFill = true; back.click(); clearBackReveal(); }, 195);
     } else {
       app.style.transition = "transform 400ms cubic-bezier(0.34,1.5,0.64,1)";
       app.style.transform = "translateX(0)";

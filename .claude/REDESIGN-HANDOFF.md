@@ -111,10 +111,30 @@ Already has `self.skipWaiting()` (install) + `self.clients.claim()` (activate) A
 
 - **Swipe-back now REVEALS the destination.** The edge-swipe drags `#app` (`.app-main`) off your finger while a fixed `.back-reveal` layer behind it shows the destination (parallax `-25%→0` + dim fade). `backDestinationHtml(action)` renders it: back-to-school→`renderSchoolOverview`, notes-back→`renderNotesList`, travel-back→`renderTravel` (focus temporarily cleared). Commit ≥38% → glide off + `back.click()` + remove reveal; cancel → spring back. `clearBackReveal()` resets. CSS `.back-reveal*` (z 40) + `#app.is-back-dragging` (z 41); bottom-nav (z 20) is covered during the swipe (full-screen reveal).
 
+## Big consumer-polish batch (in progress — 2026-06-26)
+DONE this pass:
+- "Today focus" → "Today's Focus" (dashboard).
+- Money-trend readout drops the "in/out/saved" words (colors only): `$X · $Y · $Z`.
+- "Overview & metrics" `.dash-detail > summary` slimmed (11px/16px padding, min-height 0).
+- **Dropped necessary/unnecessary spending** entirely (removed the `necessary` field from `spendingFields`, the two metric tiles, the detail row, the calc). Data field left harmless in old entries.
+- **Swipe-back no longer looks like a fresh entry into School.** `fillProgressTargets(scope, animate)` snaps progress in place when `animate=false`; the reveal layer is filled immediately (`fillProgressTargets(reveal,false)`); on commit `suppressSchoolFill=true` so `setupSchoolProgress` snaps and `back-to-school` skips `view-slide-back` (captured as `fromSwipe` before render).
+- Interim CSS: native date/time field text left-aligned (`.field input[type=date]/[type=time]`) so it stops going off-screen — until custom pickers land.
+
+STILL TODO (user's list, queued as dedicated passes — keep animations smooth, no teleporting):
+1. **Custom branded pickers** — replace ALL native `<select>` dropdowns AND native date/time pickers with in-app styled menus/calendars + animations. (Big; foundational. Wire into `renderField` + `collectFormValues` via hidden inputs.)
+2. **Form simplification** — collapsible "Advanced/More" section in `openForm` for non-essential fields; assignment form: keep title/class/type/due date/due time, move priority/grade/points/link/notes to Advanced, REMOVE the redundant `status` field (already editable in the collapsed assignment row).
+3. **Undo toast** after every delete (few-sec timer + swipe-to-dismiss, swipe-up if top). Needs a generic "stash deleted item → restore" mechanism across all delete handlers.
+4. **Habit streak heatmap** (GitHub-style calendar) in Tasks, theme-accent color (the "Streak" tile).
+5. **Calendar weekly agenda** view at the bottom of the Calendar tab.
+6. **Trip countdown** (now → trip start date/time) on trip cards.
+7. **Exam countdown** inside the class detail only (detect exam-type assignment; dedicated spot).
+
+THEN: Swift rewrite + iCloud/cloud sync + App Store readiness.
+
 ## Future direction (user goal, NOT started)
 User wants to eventually **rewrite the app in Swift** for the App Store and make **every single thing customizable**. Keep new features customizable/data-driven where reasonable.
 
-Current versions: styles v111, app v110, SW v135.
+Current versions: styles v112, app v111, SW v136.
 
 ## Collapse animation (already fixed — don't regress)
 `toggleDetails` in app.js animates a `.details-body` wrapped in a single `.dcl` inner via **WAAPI height** (460ms, `--ease-out`), collapsing to a true 0 (no padding residual, no fallback-timer pause). Don't go back to grid `fr` or JS-rAF height.

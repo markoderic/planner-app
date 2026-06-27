@@ -5972,13 +5972,14 @@ body.modal-open {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 15px 18px;
+  min-height: 0;
+  padding: 11px 16px;
   cursor: pointer;
   list-style: none;
 }
 .dash-detail > summary::-webkit-details-marker { display: none; }
-.dash-detail .details-body { padding: 0 18px 18px; }
-.dash-detail .finance-section-title { font-size: 1rem; font-weight: 700; letter-spacing: -0.01em; }
+.dash-detail .details-body { padding: 0 16px 16px; }
+.dash-detail .finance-section-title { font-size: 0.96rem; font-weight: 700; letter-spacing: -0.01em; }
 
 /* Calmer action buttons inside list rows — keep the title as the focus */
 .item-card .item-actions .icon-btn,
@@ -6335,6 +6336,10 @@ body.modal-open {
 .back-reveal-inner { min-height: 100%; }
 .back-reveal .app-main { animation: none; min-height: 100vh; }
 .back-reveal-dim { position: absolute; inset: 0; background: #000; opacity: 0.32; pointer-events: none; }
+
+/* Interim: keep native date/time field text left-aligned & on-screen (until custom pickers) */
+.field input[type="date"], .field input[type="time"] { text-align: left; width: 100%; min-width: 0; -webkit-appearance: none; appearance: none; }
+.field input[type="date"]::-webkit-date-and-time-value { text-align: left; }
 #app.is-back-dragging { position: relative; z-index: 41; background: var(--bg); min-height: 100vh; box-shadow: -16px 0 40px rgba(0, 0, 0, 0.5); }
 
 /* ============ Dashboard money trend (refined grouped bars, scrub-able) ============ */
