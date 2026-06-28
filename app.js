@@ -1162,8 +1162,14 @@
       setupFinanceChart();
       app.querySelector(".fin-tab.active")?.scrollIntoView({ inline: "center", block: "nearest" });
     }
-    animateProgressIndicators();
-    animateCountElements(app, { force: periodTransition });
+    if (suppressEntranceAnim) {
+      // Swipe-back commit: snap everything to final values (no replayed counts).
+      suppressEntranceAnim = false;
+      syncCountElements(app);
+    } else {
+      animateProgressIndicators();
+      animateCountElements(app, { force: periodTransition });
+    }
     if (ui.activeTab !== "finance") app.classList.remove("finance-shortcuts-hidden");
     lastScrollY = window.scrollY || 0;
     restoreSchoolFilterState(options.schoolFilterState, { keepSelectedClass: options.keepSelectedClassFilter });
@@ -1360,6 +1366,19 @@
         return;
       }
       animateCountElement(element, previous, target);
+    });
+  }
+
+  // Snap every count element to its final value and update the tracked state,
+  // without animating. Used on swipe-back commit so the destination view shows
+  // settled numbers instead of re-counting on arrival.
+  function syncCountElements(root = app) {
+    root.querySelectorAll("[data-count-key]").forEach((element) => {
+      const key = element.dataset.countKey;
+      const target = Number(element.dataset.countValue) || 0;
+      numberAnimationState.set(key, target);
+      element.classList.remove("is-counting");
+      element.textContent = formatAnimatedNumber(target, countOptions(element));
     });
   }
 
@@ -2054,10 +2073,10 @@
         ${topbar("Tasks", "", actionButton("add-task", "", "Add task", "plus", "primary"))}
 
         <section class="task-statrow">
-          <div class="task-stat"><span class="n" style="color:var(--green)">${dayHabits.percent}%</span><span class="l">Daily</span></div>
-          <div class="task-stat"><span class="n">${weekHabits.percent}%</span><span class="l">Weekly</span></div>
-          <div class="task-stat"><span class="n">${dayHabits.streak}</span><span class="l">Streak</span></div>
-          <div class="task-stat"><span class="n">${stats.completed}/${stats.total}</span><span class="l">Tasks</span></div>
+          <div class="task-stat"><span class="n" style="color:var(--green)">${countSpan("tasks:stat:daily", dayHabits.percent, { suffix: "%" })}</span><span class="l">Daily</span></div>
+          <div class="task-stat"><span class="n">${countSpan("tasks:stat:weekly", weekHabits.percent, { suffix: "%" })}</span><span class="l">Weekly</span></div>
+          <div class="task-stat"><span class="n">${countSpan("tasks:stat:streak", dayHabits.streak)}</span><span class="l">Streak</span></div>
+          <div class="task-stat"><span class="n">${countSpan("tasks:stat:done", stats.completed)}/${countSpan("tasks:stat:total", stats.total)}</span><span class="l">Tasks</span></div>
         </section>
 
         <div class="sec-head"><span class="sec-title">Daily habits</span>${actionButton("add-daily-habit", "", "Add habit", "plus", "secondary")}</div>
@@ -2584,13 +2603,13 @@
     return `
       <section class="card panel finance-hero">
         <div class="fh-lab">Current money</div>
-        <div class="fh-big">${escapeHtml(formatCurrency(finance.currentMoney))}</div>
+        <div class="fh-big">${countSpan("finance:hero:current", finance.currentMoney, { format: "currency" })}</div>
         ${trend}
         ${series.length >= 2 ? renderFinanceChart(series, "var(--green)") : ""}
         <div class="fh-mini">
-          <div class="hm"><span class="n">${escapeHtml(formatCompactCurrency(safeFinance.safeToSpend))}</span><span class="l">Safe to spend</span></div>
-          <div class="hm"><span class="n">${escapeHtml(formatCompactCurrency(finance.projectedBalance))}</span><span class="l">Projected</span></div>
-          <div class="hm"><span class="n">${escapeHtml(formatCompactCurrency(finance.netWorth))}</span><span class="l">Net worth</span></div>
+          <div class="hm"><span class="n">${countSpan("finance:hero:safe", safeFinance.safeToSpend, { format: "compact-currency" })}</span><span class="l">Safe to spend</span></div>
+          <div class="hm"><span class="n">${countSpan("finance:hero:projected", finance.projectedBalance, { format: "compact-currency" })}</span><span class="l">Projected</span></div>
+          <div class="hm"><span class="n">${countSpan("finance:hero:networth", finance.netWorth, { format: "compact-currency" })}</span><span class="l">Net worth</span></div>
         </div>
         ${rangeToggle("finance", ui.financeSpan)}
         ${customRangeControls("finance", range)}
@@ -3829,6 +3848,10 @@
   // value to the new one — fills up on first view, and tweens when an assignment
   // is completed or the span changes.
   let suppressSchoolFill = false;
+  // When true, the next render() skips count-up / progress entrance animations.
+  // Used when committing a swipe-back so the destination doesn't look like it
+  // freshly reloaded (numbers re-counting) the instant you land on it.
+  let suppressEntranceAnim = false;
   // Apply a progress shape's real values. When `animate` is false they snap in
   // place (used when swiping back into School — you're already there, so the
   // bars/rings shouldn't replay their fill).
@@ -10082,7 +10105,18 @@
       app.style.transform = `translateX(${w}px)`;
       if (inner) { inner.style.transition = "transform 220ms cubic-bezier(0.3,0.72,0.2,1)"; inner.style.transform = "translateX(0)"; }
       if (dim) { dim.style.transition = "opacity 220ms ease"; dim.style.opacity = "0"; }
-      window.setTimeout(() => { suppressSchoolFill = true; back.click(); clearBackReveal(); }, 195);
+      window.setTimeout(() => {
+        // Reset #app to its resting position BEFORE rendering the destination, so
+        // the freshly-rendered view paints at x:0 with no transform snap. Suppress
+        // the entrance animations so it doesn't look like a fresh reload, and snap
+        // School progress (we're returning to it, not entering it).
+        suppressSchoolFill = true;
+        suppressEntranceAnim = true;
+        app.classList.remove("is-back-dragging");
+        app.style.transition = ""; app.style.transform = ""; app.style.willChange = "";
+        back.click();
+        document.querySelector(".back-reveal")?.remove();
+      }, 195);
     } else {
       app.style.transition = "transform 400ms cubic-bezier(0.34,1.5,0.64,1)";
       app.style.transform = "translateX(0)";
